@@ -3,8 +3,33 @@ package client
 import (
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestDomainUpgradePreservesCustomServersAndOverrides(t *testing.T) {
+	for _, test := range []struct{ name, saved, override, want string }{
+		{"legacy deployment", "http://223.166.147.252:8250/", "", "http://www.yucg.cn:8250"},
+		{"custom server", "http://127.0.0.1:9000", "", "http://127.0.0.1:9000"},
+		{"explicit IP override", "http://223.166.147.252:8250", "http://223.166.147.252:8250", "http://223.166.147.252:8250"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "connection.json"), []byte(`{"server":"`+test.saved+`"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			client, err := New(Options{Directory: dir, Listen: "127.0.0.1:0", Server: test.override})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			if got := client.Config().Server; got != test.want {
+				t.Fatalf("got %s want %s", got, test.want)
+			}
+		})
+	}
+}
 
 func TestLocalServerRequiresSecretAndRejectsForeignOrigin(t *testing.T) {
 	c, e := New(Options{Directory: t.TempDir(), Listen: "127.0.0.1:0", Server: "http://127.0.0.1:9"})

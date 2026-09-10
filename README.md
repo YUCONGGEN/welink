@@ -4,8 +4,8 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 
 ## 使用
 
-- 下载页：<http://223.166.147.252:8251/>
-- 默认服务：`http://223.166.147.252:8250`
+- 下载页：<http://www.yucg.cn:8251/>
+- 默认服务：`http://www.yucg.cn:8250`
 - Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
 - Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
 - 注册时填写昵称和密码，登录别名可留空。系统分配永久数字 WeLink 号码，用该号码登录、搜索和添加好友。

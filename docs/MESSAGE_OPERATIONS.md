@@ -13,3 +13,5 @@ Windows 右键与 Android 长按共用消息菜单。支持文字复制、收藏
 Android 的触摸验证使用 Chrome 手机视口与触摸输入，不等同于 Android 真机验收。现有本机模拟器无法稳定运行完整系统，真机扫码、原生会议和远控互通仍未完成。整体 QQ 功能对照继续以 `FEATURE_PARITY.md` 为准。
 
 本版已构建 Windows 客户端与安装器，并通过原生 WebView2 启动检查；Android 四种 ABI 打包、Lint、APK v2 签名和 16 KB 对齐检查通过。升级部署保留原账号和消息，数据库备份为远端 `~/bin/welink/data/welink-before-messages-20260911.db`，旧服务端保留为 `welink-server.previous`。HTTP 8250 服务健康检查通过，8251 下载目录提供本版安装包及 `SHA256SUMS.txt`。
+
+默认服务器使用用户提供的 `http://www.yucg.cn:8250`，下载页为 `http://www.yucg.cn:8251`。域名 A 记录及两个端口已验证。旧版保存的原始部署 IP 配置会在启动时自动使用该域名，显式命令行参数和其他自定义服务器保持不变；账号及本地登录存储不受影响。

@@ -8,6 +8,6 @@ const p=spawn(exe,['-data',data,'-listen','127.0.0.1:18748'],{windowsHide:true,s
 try{
  let result;
  for(let i=0;i<100;i++){try{result=JSON.parse(await fs.readFile(report,'utf8'));break}catch{}if(p.exitCode!==null)throw Error('Native process exited before rendering');await new Promise(r=>setTimeout(r,250))}
- assert.ok(result,'WebView2 did not report rendered UI');assert.equal(result.ready,true);assert.equal(result.server,'http://223.166.147.252:8250');assert.equal(result.status,401);assert.equal(result.registration,true);assert.ok(result.width>=760&&result.height>=540);
+ assert.ok(result,'WebView2 did not report rendered UI');assert.equal(result.ready,true);assert.equal(result.server,'http://www.yucg.cn:8250');assert.equal(result.status,401);assert.equal(result.registration,true);assert.ok(result.width>=760&&result.height>=540);
  console.log(JSON.stringify({ok:true,nativeWindow:'WebView2',...result},null,2));
 }finally{if(p.exitCode===null)p.kill()}

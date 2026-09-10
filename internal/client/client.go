@@ -26,7 +26,7 @@ import (
 	"welink/internal/yudesk/desktop"
 )
 
-var DefaultServer = "http://223.166.147.252:8250"
+var DefaultServer = "http://www.yucg.cn:8250"
 var DefaultFingerprint = ""
 
 type Config struct {
@@ -69,6 +69,11 @@ func New(o Options) (*Client, error) {
 	}
 	if raw, e := os.ReadFile(filepath.Join(o.Directory, "connection.json")); e == nil {
 		_ = json.Unmarshal(raw, &config)
+	}
+	// The deployment's original IP and its new domain identify the same server.
+	// Preserve explicit command-line overrides and custom server configurations.
+	if strings.TrimRight(config.Server, "/") == "http://223.166.147.252:8250" && DefaultServer == "http://www.yucg.cn:8250" {
+		config.Server = DefaultServer
 	}
 	config.Platform = runtime.GOOS
 	if o.Mobile {
