@@ -31,8 +31,17 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			var peer string
 			_ = s.db.QueryRow("SELECT user_id FROM members WHERE conversation_id=? AND user_id<>?", cid, uid(r)).Scan(&peer)
 			u, _ := s.user(peer)
+			canSend := contactAllowed(s.db, uid(r), peer)
+			u.Online = u.Online && canSend
+			if canSend {
+				_ = s.db.QueryRow("SELECT remark FROM friends WHERE user_id=? AND peer_id=?", uid(r), peer).Scan(&u.Remark)
+			}
 			c["peer"] = u
+			c["canSend"] = canSend
 			c["name"] = u.Name
+			if u.Remark != "" {
+				c["name"] = u.Remark
+			}
 			c["avatar"] = u.Avatar
 		} else if g, e := readGroup(s.db, cid, uid(r)); e == nil {
 			c["group"] = g
@@ -64,12 +73,17 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "请选择成员并填写有效的群名称")
 		return
 	}
+	tx, e := s.db.Begin()
+	if e != nil {
+		s.dbError(w, e)
+		return
+	}
+	defer tx.Rollback()
 	ids := []string{}
 	for id := range set {
 		ids = append(ids, id)
 		if id != uid(r) {
-			var n int
-			if s.db.QueryRow("SELECT 1 FROM friends WHERE user_id=? AND peer_id=?", uid(r), id).Scan(&n) != nil {
+			if !contactAllowed(tx, uid(r), id) {
 				fail(w, 403, "只能与已添加的好友创建会话")
 				return
 			}
@@ -80,17 +94,11 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 	if p.Kind == "direct" {
 		direct = strings.Join(ids, ":")
 		var old string
-		if s.db.QueryRow("SELECT id FROM conversations WHERE direct_key=?", direct).Scan(&old) == nil {
+		if tx.QueryRow("SELECT id FROM conversations WHERE direct_key=?", direct).Scan(&old) == nil {
 			ok(w, map[string]string{"id": old})
 			return
 		}
 	}
-	tx, e := s.db.Begin()
-	if e != nil {
-		s.dbError(w, e)
-		return
-	}
-	defer tx.Rollback()
 	id := newID()
 	if _, e = tx.Exec("INSERT INTO conversations(id,kind,name,owner,direct_key,created) VALUES(?,?,?,?,?,?)", id, p.Kind, strings.TrimSpace(p.Name), uid(r), direct, now()); e != nil {
 		s.dbError(w, e)

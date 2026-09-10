@@ -63,6 +63,11 @@ type meetingDirectory struct {
 	rooms map[string]*meetingRoom
 }
 
+func (s *Server) isGroupMeeting(room *meetingRoom) bool {
+	var number string
+	return room.ConversationID != "" && s.db.QueryRow("SELECT number FROM group_profiles WHERE conversation_id=?", room.ConversationID).Scan(&number) == nil
+}
+
 func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) {
 	if !s.rate(r, "create-meeting:"+uid(r), 12, time.Hour) {
 		fail(w, 429, "发起会议过于频繁")
@@ -240,8 +245,13 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "你已被主持人移出本次会议")
 		return
 	}
-	var groupNumber string
-	if room.ConversationID != "" && s.db.QueryRow("SELECT number FROM group_profiles WHERE conversation_id=?", room.ConversationID).Scan(&groupNumber) == nil && !s.member(room.ConversationID, u.ID) {
+	groupMeeting := s.isGroupMeeting(room)
+	if !groupMeeting && u.ID != room.Owner && contactBlocked(s.db, u.ID, room.Owner) {
+		s.meetings.Unlock()
+		fail(w, 403, "无法加入该会议")
+		return
+	}
+	if groupMeeting && !s.member(room.ConversationID, u.ID) {
 		s.meetings.Unlock()
 		fail(w, 403, "只有当前群成员可以加入群会议")
 		return

@@ -46,6 +46,10 @@ func (s *Server) inviteRemote(w http.ResponseWriter, r *http.Request) {
 	}
 	var recipient string
 	_ = s.db.QueryRow("SELECT user_id FROM members WHERE conversation_id=? AND user_id<>?", p.ConversationID, uid(r)).Scan(&recipient)
+	if !contactAllowed(s.db, uid(r), recipient) {
+		fail(w, 403, "只有当前好友可以发起远程协助")
+		return
+	}
 	if !s.online(recipient) {
 		fail(w, 409, "对方当前不在线")
 		return
@@ -161,7 +165,7 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "远程协助未获双方同意或已结束")
 		return
 	}
-	if !s.member(v.ConversationID, user) {
+	if !s.member(v.ConversationID, user) || !contactAllowed(s.db, v.Requester, v.Recipient) {
 		fail(w, 403, "不再属于该会话")
 		return
 	}
@@ -189,6 +193,10 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 		s.publishRemote(v)
 	}()
 	if !s.sessionAlive(c) {
+		return
+	}
+	current, err := s.remote(v.ID)
+	if err != nil || current.State != "accepted" || !contactAllowed(s.db, v.Requester, v.Recipient) {
 		return
 	}
 	go func() {

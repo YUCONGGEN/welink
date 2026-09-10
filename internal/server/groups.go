@@ -45,8 +45,8 @@ func (s *Server) canSpeak(cid, user string) bool {
 	}
 	g, err := readGroup(s.db, cid, user)
 	if err == sql.ErrNoRows {
-		var kind string
-		return s.db.QueryRow("SELECT kind FROM conversations WHERE id=?", cid).Scan(&kind) == nil && kind == "direct"
+		var peer string
+		return s.db.QueryRow("SELECT m.user_id FROM members m JOIN conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.kind='direct' AND m.user_id<>?", cid, user).Scan(&peer) == nil && contactAllowed(s.db, user, peer)
 	}
 	return err == nil && (g.manager() || (!g.AllMuted && g.MuteUntil <= now()))
 }

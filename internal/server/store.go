@@ -58,6 +58,10 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(contactSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -125,17 +129,19 @@ func newID() string {
 func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
-	ID        string `json:"id"`
-	Number    string `json:"number"`
-	Account   string `json:"account"`
-	Name      string `json:"name"`
-	Avatar    string `json:"avatar"`
-	Bio       string `json:"bio"`
-	Online    bool   `json:"online"`
-	Remark    string `json:"remark,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Nickname  string `json:"nickname,omitempty"`
-	MuteUntil int64  `json:"muteUntil,omitempty"`
+	ID             string `json:"id"`
+	Number         string `json:"number"`
+	Account        string `json:"account"`
+	Name           string `json:"name"`
+	Avatar         string `json:"avatar"`
+	Bio            string `json:"bio"`
+	Online         bool   `json:"online"`
+	Remark         string `json:"remark,omitempty"`
+	Role           string `json:"role,omitempty"`
+	Nickname       string `json:"nickname,omitempty"`
+	MuteUntil      int64  `json:"muteUntil,omitempty"`
+	ContactGroupID string `json:"contactGroupId,omitempty"`
+	Note           string `json:"note,omitempty"`
 }
 type Message struct {
 	Seq            int64             `json:"seq"`

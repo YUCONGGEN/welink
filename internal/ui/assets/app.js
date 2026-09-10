@@ -19,6 +19,228 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/contacts.js
+  function createContacts({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, refresh: refresh2, renderSidebar: renderSidebar2, renderMain: renderMain2, stopMedia, requestFriend: requestFriend2, contextMenu: contextMenu2 }) {
+    const $2 = (s) => document.querySelector(s), title = (u) => u.remark || u.name;
+    const modal2 = (...args) => {
+      var _a;
+      showModal(...args);
+      (_a = $2(".modal")) == null ? void 0 : _a.classList.add("contacts-modal");
+    };
+    function bind(id, fn) {
+      const b = $2("#" + id);
+      if (b) b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await fn();
+        } catch (e) {
+          error(e);
+        } finally {
+          b.disabled = false;
+        }
+      };
+    }
+    const error = (e) => {
+      const n = $2("#modal-error");
+      if (n) n.textContent = e.message;
+      else toast2(e.message);
+    };
+    function collapsed() {
+      try {
+        return new Set(JSON.parse(localStorage.getItem("welink_contact_groups_" + S2.user.id) || "[]"));
+      } catch (e) {
+        return /* @__PURE__ */ new Set();
+      }
+    }
+    function sidebar() {
+      const closed = collapsed(), q = S2.search.toLowerCase(), list = S2.friends.filter((u) => (u.name + u.remark + u.account + u.number + (u.note || "")).toLowerCase().includes(q)), groups2 = [{ id: "", name: "我的好友" }, ...S2.contactGroups];
+      return '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + groups2.map((g) => {
+        const people = list.filter((u) => (u.contactGroupId || "") === g.id), total = S2.friends.filter((u) => (u.contactGroupId || "") === g.id).length, hidden = !q && closed.has(g.id);
+        if (q && !people.length) return "";
+        return '<button class="contact-folder '.concat(hidden ? "collapsed" : "", '" data-contact="toggle" data-group-id="').concat(g.id, '">').concat(icon2("down"), "<b>").concat(esc2(g.name), "</b><small>").concat(people.filter((u) => u.online).length, "/").concat(total, "</small></button>").concat(hidden ? "" : people.map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(title(u)), '</b></div><div class="row-preview"><span>').concat(esc2(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join(""));
+      }).join("") + (!S2.friends.length ? '<div class="empty-list">还没有好友<br>添加好友，开始新的聊天</div>' : q && !list.length ? '<div class="empty-list">没有找到好友</div>' : "");
+    }
+    function profile2(u) {
+      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u)), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">好友设置</button></div>');
+    }
+    async function edit(id) {
+      const detail = await api2("/api/contacts/" + id), u = detail.user;
+      if (!detail.friend) {
+        modal2("联系人资料", '<div class="contact-person">'.concat(av2(u, "large"), "<h3>").concat(esc2(u.name), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div><p class="hint">').concat(detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。", "</p>"), detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
+        bind("contact-unblock", async () => {
+          await api2("/api/contact-blocks/" + id, { method: "DELETE" });
+          await refresh2();
+          await edit(id);
+        });
+        bind("contact-add", () => requestFriend2(id, u.name));
+        return;
+      }
+      modal2("好友设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">好友分组</label><select id="contact-folder"><option value="">我的好友</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">删除好友</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      bind("contact-save", async () => {
+        await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value } });
+        closeModal2();
+        await refresh2();
+        toast2("好友设置已保存");
+      });
+    }
+    function confirmRemove(id, block) {
+      var _a;
+      const u = S2.friends.find((u2) => u2.id === id) || ((_a = S2.conversations.find((c) => {
+        var _a2;
+        return ((_a2 = c.peer) == null ? void 0 : _a2.id) === id;
+      })) == null ? void 0 : _a.peer) || { name: "该用户" };
+      modal2(block ? "加入黑名单" : "删除好友", '<p class="contact-confirm">确定'.concat(block ? "拉黑" : "删除", " ").concat(esc2(title(u)), '？</p><p class="hint">').concat(block ? "将解除好友关系，不再接收对方的私聊和好友申请。" : "解除好友关系后，重新联系需要再次添加好友。", "已有聊天记录与共同群聊会保留，双方的远程协助和单聊会议会结束。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
+      bind("contact-remove-confirm", async () => {
+        await api2((block ? "/api/contact-blocks/" : "/api/contacts/") + id, { method: block ? "POST" : "DELETE", body: block ? {} : void 0 });
+        closeModal2();
+        await refresh2();
+        toast2(block ? "已加入黑名单" : "已删除好友");
+      });
+    }
+    async function groups() {
+      await refresh2();
+      modal2("好友分组", '<div class="contact-group-item"><span>我的好友</span><small>默认分组</small></div>'.concat(S2.contactGroups.map((g, i) => '<div class="contact-group-item"><span>'.concat(esc2(g.name), "<small>").concat(g.count, ' 位好友</small></span><button data-contact="group-up" data-group-id="').concat(g.id, '" ').concat(i === 0 ? "disabled" : "", ' title="上移">↑</button><button data-contact="group-down" data-group-id="').concat(g.id, '" ').concat(i === S2.contactGroups.length - 1 ? "disabled" : "", ' title="下移">↓</button><button data-contact="group-edit" data-group-id="').concat(g.id, '">重命名</button><button data-contact="group-delete" data-group-id="').concat(g.id, '" class="danger">删除</button></div>')).join(""), '<p class="hint">删除分组会将其中好友移到“我的好友”，保留备注和描述。</p>'), '<button class="secondary" data-action="close-modal">完成</button><button class="primary" data-contact="group-create">新建分组</button>', true);
+    }
+    function groupForm(id) {
+      const g = S2.contactGroups.find((x) => x.id === id);
+      modal2(g ? "重命名分组" : "新建分组", '<label for="contact-group-name">分组名称</label><input id="contact-group-name" maxlength="24" placeholder="例如：同事、家人" value="' + esc2((g == null ? void 0 : g.name) || "") + '">', '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-save">保存</button>');
+      bind("contact-group-save", async () => {
+        await api2("/api/contact-groups" + (g ? "/" + g.id : ""), { method: g ? "PATCH" : "POST", body: { name: $2("#contact-group-name").value } });
+        await groups();
+      });
+      $2("#contact-group-name").focus();
+    }
+    async function moveGroup(id, delta) {
+      const order = S2.contactGroups.map((g) => g.id), i = order.indexOf(id), to = i + delta;
+      if (i < 0 || to < 0 || to >= order.length) return;
+      [order[i], order[to]] = [order[to], order[i]];
+      await action2("/api/contact-groups/order", { ids: order });
+      await groups();
+    }
+    async function blocks() {
+      const list = await api2("/api/contact-blocks");
+      modal2("黑名单", '<p class="hint">解除拉黑不会自动恢复好友关系，需要重新添加。</p>'.concat(list.map((u) => '<div class="contact-block-row">'.concat(av2(u), "<span><b>").concat(esc2(u.name), "</b><small>").concat(esc2(u.number), '</small></span><button class="secondary" data-contact="unblock" data-user="').concat(u.id, '">解除</button></div>')).join("") || '<p class="empty-list">黑名单为空</p>'), '<button class="secondary" data-contact="privacy">返回</button>');
+    }
+    async function privacy() {
+      const p = await api2("/api/contact-privacy");
+      modal2("联系人与隐私", '<label class="contact-switch">允许被搜索到<input id="contact-searchable" type="checkbox" '.concat(p.searchable ? "checked" : "", '></label><p class="hint">关闭后，陌生人无法通过号码、别名或昵称搜索到你，已有好友仍能找到你。</p><label class="contact-switch">接收好友申请<input id="contact-requests" type="checkbox" ').concat(p.allowRequests ? "checked" : "", '></label><p class="hint">关闭后不接收新的好友申请，已有待处理申请仍可处理。</p><button class="contact-settings-row" data-contact="blocks">黑名单').concat(icon2("chevron"), '</button><button class="contact-settings-row" data-contact="groups">好友分组').concat(icon2("chevron"), "</button>"), '<button class="primary" id="contact-privacy-save">保存</button>');
+      bind("contact-privacy-save", async () => {
+        await api2("/api/contact-privacy", { method: "PATCH", body: { searchable: $2("#contact-searchable").checked, allowRequests: $2("#contact-requests").checked } });
+        closeModal2();
+        toast2("隐私设置已保存");
+      });
+    }
+    function syncComposer() {
+      var _a;
+      const c = S2.conversations.find((c2) => c2.id === S2.active), composer = $2(".composer");
+      if (!composer) return;
+      const blocked = (c == null ? void 0 : c.kind) === "direct" && c.canSend === false, was = composer.classList.contains("contact-unavailable");
+      if (blocked && !was) stopMedia();
+      composer.classList.toggle("contact-unavailable", blocked);
+      let banner = $2("#contact-unavailable-banner");
+      if (!banner) {
+        composer.insertAdjacentHTML("beforeend", '<div id="contact-unavailable-banner" class="contact-unavailable-banner"></div>');
+        banner = $2("#contact-unavailable-banner");
+      }
+      ;
+      banner.innerHTML = blocked ? '<span>你们暂时无法私聊，请先确认好友关系。</span><button data-contact="edit" data-user="'.concat(c.peer.id, '">查看联系人</button>') : "";
+      if (blocked || was) $2("#composer").disabled = blocked;
+      if ((c == null ? void 0 : c.kind) === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + '<small id="typing-status">'.concat(((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线", "</small>");
+    }
+    function menu(id, x, y) {
+      contextMenu2(x, y, '<button data-contact="edit" data-user="'.concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">删除好友</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
+    }
+    document.addEventListener("contextmenu", (e) => {
+      const row = e.target.closest(".contact-row[data-profile]");
+      if (row) {
+        e.preventDefault();
+        menu(row.dataset.profile, e.clientX, e.clientY);
+      }
+    });
+    let touchTimer2, holdUntil = 0;
+    document.addEventListener("touchstart", (e) => {
+      const row = e.target.closest(".contact-row[data-profile]");
+      if (row) {
+        const p = e.touches[0];
+        touchTimer2 = setTimeout(() => {
+          holdUntil = Date.now() + 1e3;
+          menu(row.dataset.profile, p.clientX, p.clientY);
+        }, 550);
+      }
+    }, { passive: true });
+    for (const type of ["touchend", "touchmove", "touchcancel"]) document.addEventListener(type, () => clearTimeout(touchTimer2), { passive: true });
+    document.addEventListener("click", (e) => {
+      if (Date.now() < holdUntil && e.target.closest(".contact-row")) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-contact]");
+      if (!b || !S2.user) return;
+      try {
+        switch (b.dataset.contact) {
+          case "edit":
+            await edit(b.dataset.user);
+            break;
+          case "delete":
+            confirmRemove(b.dataset.user, false);
+            break;
+          case "block":
+            confirmRemove(b.dataset.user, true);
+            break;
+          case "groups":
+            await groups();
+            break;
+          case "group-create":
+            groupForm();
+            break;
+          case "group-edit":
+            groupForm(b.dataset.groupId);
+            break;
+          case "group-up":
+            await moveGroup(b.dataset.groupId, -1);
+            break;
+          case "group-down":
+            await moveGroup(b.dataset.groupId, 1);
+            break;
+          case "group-delete": {
+            const g = S2.contactGroups.find((g2) => g2.id === b.dataset.groupId);
+            modal2("删除分组", '<p class="contact-confirm">确定删除 ' + esc2(g.name) + "？好友会移入默认分组。</p>", '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-delete">确定</button>');
+            bind("contact-group-delete", async () => {
+              await api2("/api/contact-groups/" + g.id, { method: "DELETE" });
+              await groups();
+            });
+            break;
+          }
+          case "toggle": {
+            const list = collapsed(), id = b.dataset.groupId;
+            if (list.has(id)) list.delete(id);
+            else list.add(id);
+            localStorage.setItem("welink_contact_groups_" + S2.user.id, JSON.stringify([...list]));
+            renderSidebar2();
+            break;
+          }
+          case "privacy":
+            await privacy();
+            break;
+          case "blocks":
+            await blocks();
+            break;
+          case "unblock":
+            b.disabled = true;
+            await api2("/api/contact-blocks/" + b.dataset.user, { method: "DELETE" });
+            await refresh2();
+            await blocks();
+            break;
+        }
+      } catch (e2) {
+        error(e2);
+      }
+    });
+    return { sidebar, profile: profile2, edit, privacy, syncComposer };
+  }
+
   // internal/ui/src/groups.js
   function createGroups({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, refresh: refresh2, selectConversation: selectConversation2, renderMain: renderMain2, copy, stopMedia }) {
     const $2 = (s) => document.querySelector(s), roles = { owner: "群主", admin: "管理员", member: "成员" }, modes = { open: "允许任何人加入", approval: "需要管理员审核", closed: "不允许申请加入" };
@@ -860,7 +1082,7 @@
       };
     }
     function targets(tab) {
-      const recent = S2.conversations.map((c) => {
+      const recent = S2.conversations.filter((c) => c.canSend !== false).map((c) => {
         var _a;
         return { key: c.id, cid: c.id, name: c.name, kind: c.kind, avatar: ((_a = c.peer) == null ? void 0 : _a.avatar) || "group" };
       });
@@ -1897,7 +2119,7 @@
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => '<span class="avatar '.concat(esc(u.avatar || "blue"), " ").concat(size, '">').concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -1999,7 +2221,7 @@
     if (!list) return;
     if (S.tab === "contacts") {
       const pending = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length;
-      list.innerHTML = '<button class="notify-row" data-action="requests">'.concat(icon("bell"), "好友通知").concat(pending ? '<span class="badge">'.concat(pending, "</span>") : "", '</button><button class="notify-row group-notice-row" data-group="requests">').concat(icon("contacts"), "群通知").concat(S.groupRequests.some((q) => q.canReview && q.status === "pending") ? '<span class="badge">' + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length + "</span>" : "", '</button><div class="contact-tab"><button data-contact-tab="friends" class="').concat(S.contactTab === "friends" ? "active" : "", '">好友</button><button data-contact-tab="groups" class="').concat(S.contactTab === "groups" ? "active" : "", '">群聊</button></div>').concat(S.contactTab === "friends" ? '<div class="contact-group">'.concat(icon("down"), '我的好友 <span class="muted">').concat(S.friends.length, "</span></div>").concat(S.friends.filter((u) => "".concat(u.name).concat(u.account).concat(u.number).toLowerCase().includes(S.search.toLowerCase())).map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc(u.remark || u.name), '</b></div><div class="row-preview"><span>').concat(esc(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join("") || '<div class="empty-list">还没有好友<br>添加好友，开始新的聊天</div>') : S.conversations.filter((c) => {
+      list.innerHTML = '<button class="notify-row" data-action="requests">'.concat(icon("bell"), "好友通知").concat(pending ? '<span class="badge">'.concat(pending, "</span>") : "", '</button><button class="notify-row group-notice-row" data-group="requests">').concat(icon("contacts"), "群通知").concat(S.groupRequests.some((q) => q.canReview && q.status === "pending") ? '<span class="badge">' + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length + "</span>" : "", '</button><div class="contact-tab"><button data-contact-tab="friends" class="').concat(S.contactTab === "friends" ? "active" : "", '">好友</button><button data-contact-tab="groups" class="').concat(S.contactTab === "groups" ? "active" : "", '">群聊</button></div>').concat(S.contactTab === "friends" ? Contacts.sidebar() : S.conversations.filter((c) => {
         var _a;
         return c.kind === "group" && (c.name + (((_a = c.group) == null ? void 0 : _a.number) || "")).toLowerCase().includes(S.search.toLowerCase());
       }).map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
@@ -2137,6 +2359,7 @@
     renderSharing();
     Media.mount();
     Groups.syncComposer();
+    Contacts.syncComposer();
   }
   function empty(title, sub, add = false) {
     return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">添加好友</button>' : "", "</div>");
@@ -2298,12 +2521,17 @@
     var _a, _b;
     if (!S.user) return;
     const userId = S.user.id;
-    const [conversations, friends, requests, groupRequests] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests")]);
+    const [conversations, friends, requests, groupRequests, contactGroups] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests"), api("/api/contact-groups")]);
     if (((_a = S.user) == null ? void 0 : _a.id) !== userId) return;
     S.conversations = conversations;
     S.friends = friends;
     S.requests = requests;
     S.groupRequests = groupRequests;
+    S.contactGroups = contactGroups;
+    if (S.profile) {
+      S.profile = friends.find((u) => u.id === S.profile.id) || null;
+      if (S.tab === "contacts") renderMain();
+    }
     if (S.active && !conversations.some((c2) => c2.id === S.active)) {
       Media.reset();
       Forwarding.reset(false);
@@ -2319,6 +2547,7 @@
     const c = activeConversation();
     if (c && $("#typing-status")) $("#typing-status").textContent = c.kind === "direct" ? ((_b = c.peer) == null ? void 0 : _b.online) ? "在线" : "离线" : "群聊";
     Groups.syncComposer();
+    Contacts.syncComposer();
   }
   function queueRefresh() {
     clearTimeout(refreshTimer);
@@ -2353,7 +2582,7 @@
       }
     };
     ws.onmessage = (e) => {
-      var _a2;
+      var _a2, _b;
       let event;
       try {
         event = JSON.parse(e.data);
@@ -2368,7 +2597,7 @@
           markRead().catch(() => {
           });
         } else if (S.active !== d.conversationId && d.sender !== S.user.id && !((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted)) {
-          if (document.hidden && Notification.permission === "granted") new Notification(d.name, { body: preview(d), icon: "/assets/icon.svg" });
+          if (document.hidden && Notification.permission === "granted") new Notification(((_b = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _b.remark) || d.name, { body: preview(d), icon: "/assets/icon.svg" });
           document.title = "新消息 · WeLink";
         }
         queueRefresh();
@@ -2380,8 +2609,8 @@
         if (d.conversationId === S.active && d.userId !== S.user.id && $("#typing-status")) {
           $("#typing-status").textContent = "对方正在输入…";
           setTimeout(() => {
-            var _a3, _b;
-            if ($("#typing-status")) $("#typing-status").textContent = ((_b = (_a3 = activeConversation()) == null ? void 0 : _a3.peer) == null ? void 0 : _b.online) ? "在线" : "";
+            var _a3, _b2;
+            if ($("#typing-status")) $("#typing-status").textContent = ((_b2 = (_a3 = activeConversation()) == null ? void 0 : _a3.peer) == null ? void 0 : _b2.online) ? "在线" : "";
           }, 3200);
         }
       } else if (event.type === "meeting-invite") {
@@ -2481,21 +2710,21 @@
   }
   function renderContactProfile() {
     const u = S.profile;
-    $("#main-content").innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), '<h2>个人资料</h2></header><div class="contact-profile">').concat(av(u, "large", true), "<h2>").concat(esc(u.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(u.number || u.account), '</span><p class="profile-bio">').concat(esc(u.bio || "这个人很酷，还没有写签名。"), '</p><button class="primary" data-start-chat="').concat(u.id, '">发消息</button></div>');
+    $("#main-content").innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), '<h2>个人资料</h2></header><div class="contact-profile">').concat(Contacts.profile(u), "</div>");
   }
   async function showRequests() {
     modal("好友通知", '<div class="inline-loading">正在读取…</div>', "", true);
     await refresh();
-    $(".modal-body").innerHTML = S.requests.map((q) => '<div class="utility-row">'.concat(av(q), '<div class="body"><b>').concat(esc(q.name), "</b><p>").concat(q.sender === S.user.id ? "我：" : "").concat(esc(q.message), "</p><p>").concat(shortTime(q.created), "</p></div>").concat(q.status === "pending" && q.recipient === S.user.id ? '<div class="request-actions"><button class="secondary" data-resolve="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-resolve="').concat(q.id, '" data-accept="true">同意</button></div>') : '<span class="muted">'.concat({ pending: "等待验证", accepted: "已添加", rejected: "已拒绝" }[q.status], "</span>"), "</div>")).join("") || '<div class="empty-list">暂无好友通知</div>';
+    $(".modal-body").innerHTML = S.requests.map((q) => '<div class="utility-row">'.concat(av(q), '<div class="body"><b>').concat(esc(q.name), "</b><p>").concat(q.sender === S.user.id ? "我：" : "").concat(esc(q.message), "</p><p>").concat(shortTime(q.created), "</p></div>").concat(q.status === "pending" && q.recipient === S.user.id ? '<div class="request-actions"><button class="secondary" data-resolve="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-resolve="').concat(q.id, '" data-accept="true">同意</button></div>') : '<span class="muted">'.concat({ pending: "等待验证", accepted: "已添加", rejected: "已拒绝", cancelled: "已取消" }[q.status], "</span>"), "</div>")).join("") || '<div class="empty-list">暂无好友通知</div>';
   }
   async function chatDetail() {
-    var _a;
+    var _a, _b;
     if (((_a = activeConversation()) == null ? void 0 : _a.kind) === "group") {
       await Groups.detail();
       return;
     }
     const c = await api("/api/conversations/".concat(S.active)), mine = c.owner === S.user.id, local = activeConversation();
-    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-contact="edit" data-user="').concat(((_b = local.peer) == null ? void 0 : _b.id) || "", '">好友设置</button><button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       const p = { pinned: $("#detail-pin").checked, muted: $("#detail-mute").checked };
       if (c.kind === "group" && mine) {
@@ -2560,7 +2789,7 @@
     $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", '></label><label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label><div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", '></label><label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label><div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -2951,7 +3180,7 @@
   document.addEventListener("click", async (e) => {
     var _a, _b, _c, _d;
     const b = e.target.closest("button,a,[data-preview-image]");
-    if (!e.target.closest(".context-menu")) (_a = $(".context-menu")) == null ? void 0 : _a.remove();
+    (_a = $(".context-menu")) == null ? void 0 : _a.remove();
     if (!b) return;
     try {
       if (b.dataset.nav) {
@@ -3266,6 +3495,7 @@
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
+  var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });

@@ -26,7 +26,7 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
     $('#selection-delete-confirm').onclick=async e=>{e.target.disabled=true;try{await action(`/api/conversations/${state.cid}/messages/delete`,{messageIds:ids});if(S.active===state.cid)S.messages=S.messages.filter(m=>!ids.includes(m.id));reset();closeModal();queueRefresh();toast('已删除所选消息')}catch(error){$('#modal-error').textContent=error.message;e.target.disabled=false}};
   }
   function targets(tab){
-    const recent=S.conversations.map(c=>({key:c.id,cid:c.id,name:c.name,kind:c.kind,avatar:c.peer?.avatar||'group'}));
+    const recent=S.conversations.filter(c=>c.canSend!==false).map(c=>({key:c.id,cid:c.id,name:c.name,kind:c.kind,avatar:c.peer?.avatar||'group'}));
     if(tab==='groups')return recent.filter(c=>c.kind==='group');
     if(tab==='friends')return S.friends.map(u=>{const existing=S.conversations.find(c=>c.kind==='direct'&&c.peer?.id===u.id);return {key:existing?.id||'user:'+u.id,cid:existing?.id,userId:u.id,name:u.remark||u.name,number:u.number,avatar:u.avatar}});
     return recent;

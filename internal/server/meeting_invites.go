@@ -26,8 +26,7 @@ func (s *Server) meetingInvitees(user, cid string, members []string) ([]string, 
 		rows.Close()
 	}
 	for _, id := range members {
-		var exists int
-		if id != user && s.db.QueryRow("SELECT 1 FROM friends WHERE user_id=? AND peer_id=?", user, id).Scan(&exists) != nil {
+		if id != user && !contactAllowed(s.db, user, id) {
 			return nil, errors.New("只能邀请会话成员或好友")
 		}
 		ids[id] = true
@@ -35,6 +34,9 @@ func (s *Server) meetingInvitees(user, cid string, members []string) ([]string, 
 	delete(ids, user)
 	out := []string{}
 	for id := range ids {
+		if contactBlocked(s.db, user, id) {
+			continue
+		}
 		out = append(out, id)
 	}
 	return out, nil

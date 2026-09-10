@@ -113,6 +113,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"POST /api/contact-groups/order": s.orderContactGroups,
+		"GET /api/contact-groups":        s.listContactGroups, "POST /api/contact-groups": s.saveContactGroup, "PATCH /api/contact-groups/{id}": s.saveContactGroup, "DELETE /api/contact-groups/{id}": s.deleteContactGroup,
+		"GET /api/contacts/{user}": s.contactDetail, "PATCH /api/contacts/{user}": s.updateContact, "DELETE /api/contacts/{user}": s.deleteContact, "GET /api/contact-blocks": s.listBlocks, "POST /api/contact-blocks/{user}": s.blockContact, "DELETE /api/contact-blocks/{user}": s.unblockContact,
+		"GET /api/contact-privacy": s.contactPrivacy, "PATCH /api/contact-privacy": s.updateContactPrivacy,
 		"GET /api/groups": s.searchGroups, "POST /api/groups/{id}/join": s.joinGroup, "GET /api/group-requests": s.groupRequests, "POST /api/group-requests/{request}": s.resolveGroupRequest,
 		"PATCH /api/groups/{id}": s.updateGroup, "PATCH /api/groups/{id}/members/{user}": s.updateGroupMember, "POST /api/groups/{id}/transfer": s.transferGroup, "DELETE /api/groups/{id}": s.dissolveGroup,
 		"GET /api/auth/sessions": s.listSessions, "DELETE /api/auth/sessions/{id}": s.revokeDevice, "POST /api/auth/sessions/revoke-others": s.revokeOtherDevices, "POST /api/auth/password": s.changePassword,
@@ -252,6 +256,14 @@ func (s *Server) audience(cid string) []string {
 }
 func (s *Server) pushConversation(cid, kind string, data any) { s.push(s.audience(cid), kind, data) }
 func (s *Server) dbError(w http.ResponseWriter, err error) {
+	if strings.Contains(err.Error(), "contact_send_forbidden") {
+		fail(w, 403, "你们暂时无法私聊，请先确认好友关系")
+		return
+	}
+	if strings.Contains(err.Error(), "contact_request_forbidden") {
+		fail(w, 403, "暂时无法添加该用户")
+		return
+	}
 	if strings.Contains(err.Error(), "group_send_forbidden") {
 		fail(w, 403, "你已被禁言或不在该群，无法发送消息")
 		return

@@ -161,7 +161,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		ok(w, out)
 		return
 	}
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND (u.account=? OR CAST(n.number AS TEXT)=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), strings.ToLower(q), q, "%"+escapeLike(q)+"%")
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND (NOT EXISTS(SELECT 1 FROM contact_privacy p WHERE p.user_id=u.id AND p.searchable=0) OR EXISTS(SELECT 1 FROM friends f WHERE f.user_id=? AND f.peer_id=u.id)) AND NOT EXISTS(SELECT 1 FROM contact_blocks b WHERE (b.user_id=? AND b.peer_id=u.id) OR (b.user_id=u.id AND b.peer_id=?)) AND (u.account=? OR CAST(n.number AS TEXT)=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), uid(r), uid(r), uid(r), strings.ToLower(q), q, "%"+escapeLike(q)+"%")
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -170,8 +170,12 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var u User
 		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number)
-		u.Online = s.online(u.ID)
+		u.Online = false
 		out = append(out, u)
+	}
+	rows.Close()
+	for i := range out {
+		out[i].Online = s.online(out[i].ID) && contactAllowed(s.db, uid(r), out[i].ID)
 	}
 	ok(w, out)
 }
@@ -181,7 +185,7 @@ func escapeLike(s string) string {
 	return strings.ReplaceAll(s, "_", `\_`)
 }
 func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,f.remark,n.number FROM friends f JOIN users u ON u.id=f.peer_id JOIN user_numbers n ON n.user_id=u.id WHERE f.user_id=? ORDER BY u.name", uid(r))
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,f.remark,n.number,COALESCE(p.group_id,''),COALESCE(p.note,'') FROM friends f JOIN users u ON u.id=f.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN contact_preferences p ON p.user_id=f.user_id AND p.peer_id=f.peer_id WHERE f.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -190,7 +194,7 @@ func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
 	out := []User{}
 	for rows.Next() {
 		var u User
-		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number)
+		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number, &u.ContactGroupID, &u.Note)
 		u.Online = s.online(u.ID)
 		out = append(out, u)
 	}
@@ -236,6 +240,10 @@ func (s *Server) addRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	id := newID()
 	if _, e := s.db.Exec("INSERT INTO requests(id,sender,recipient,message,created) VALUES(?,?,?,?,?)", id, uid(r), p.UserID, p.Message, now()); e != nil {
+		if strings.Contains(e.Error(), "contact_request_forbidden") {
+			s.dbError(w, e)
+			return
+		}
 		fail(w, 409, "申请已发送，请等待对方处理")
 		return
 	}
