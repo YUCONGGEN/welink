@@ -19,8 +19,487 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/media.js
+  function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2 }) {
+    const $2 = (s, r = document) => r.querySelector(s);
+    const mic = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0ZM5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>';
+    const sound = '<svg class="voice-sound" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 4-4v12l-4-4H3v-4Z"/><path d="M13 8a6 6 0 0 1 0 8"/><path d="M17 4a11 11 0 0 1 0 16"/></svg>';
+    const seconds = (ms) => Math.max(1, Math.ceil(Number(ms || 0) / 1e3));
+    const clock = (ms) => {
+      const n = Math.max(0, Math.floor(Number(ms || 0) / 1e3));
+      return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
+    };
+    let mode = false, recording = null, hold = null, videoPlayer = null, playing = null;
+    const audio = document.createElement("audio");
+    audio.id = "welink-audio-player";
+    audio.preload = "none";
+    audio.style.display = "none";
+    document.body.append(audio);
+    function played() {
+      var _a;
+      try {
+        return new Set(JSON.parse(localStorage.getItem("welink_voice_played_" + ((_a = S2.user) == null ? void 0 : _a.id)) || "[]"));
+      } catch (e) {
+        return /* @__PURE__ */ new Set();
+      }
+    }
+    function markPlayed(id) {
+      const ids = played();
+      ids.add(id);
+      localStorage.setItem("welink_voice_played_" + S2.user.id, JSON.stringify([...ids].slice(-500)));
+    }
+    function bubble(m, rootID = "") {
+      var _a;
+      if (m.kind === "voice") return '<button class="voice-message" data-play-voice="'.concat(m.attachmentId, '" data-media-message="').concat(m.id || rootID, '" data-duration="').concat(Number(m.durationMs) || 0, '" aria-label="播放语音 ').concat(seconds(m.durationMs), ' 秒" style="width:').concat(Math.min(220, 95 + Math.sqrt(seconds(m.durationMs)) * 15), 'px">').concat(sound, "<span>").concat(seconds(m.durationMs), "″</span>").concat(m.sender && m.sender !== ((_a = S2.user) == null ? void 0 : _a.id) && !played().has(m.attachmentId) ? '<i class="voice-unplayed"></i>' : "", "</button>");
+      return '<button class="video-message" data-play-video="'.concat(m.attachmentId, '" data-media-message="').concat(m.id || rootID, '" data-media-root="').concat(rootID, '" data-media-name="').concat(esc2(m.fileName || "视频"), '" aria-label="播放视频"><video muted playsinline preload="metadata" src="').concat(fileURL2(m.attachmentId), '" tabindex="-1"></video><span class="video-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" style="fill:currentColor;stroke:none"/></svg></span><span class="video-duration">').concat(clock(m.durationMs), "</span></button>");
+    }
+    function tools() {
+      return '<button class="icon-btn" title="语音消息" aria-label="语音消息" data-media="voice-mode">'.concat(mic, "</button>");
+    }
+    function input() {
+      return '<div id="voice-input" class="voice-input hidden"><button class="voice-hold" data-media="voice-hold">按住说话</button><div class="desktop-voice-controls"><span id="voice-status">语音最长 60 秒</span><button class="primary" data-media="voice-start">开始录音</button><button class="secondary hidden" data-media="voice-cancel">取消</button><button class="primary hidden" data-media="voice-finish">发送语音</button></div></div><input id="video-input" class="file-input" type="file" accept="video/mp4,video/webm"><input id="video-capture-input" class="file-input" type="file" accept="video/*" capture="environment">';
+    }
+    function mount() {
+      var _a, _b, _c;
+      (_a = $2(".composer")) == null ? void 0 : _a.classList.toggle("voice-mode", mode);
+      (_b = $2("#voice-input")) == null ? void 0 : _b.classList.toggle("hidden", !mode);
+      (_c = $2("[data-media=voice-mode]")) == null ? void 0 : _c.classList.toggle("active", mode);
+      for (const id of ["video-input", "video-capture-input"]) if ($2("#" + id)) $2("#" + id).onchange = (e) => {
+        const file = e.target.files[0];
+        e.target.value = "";
+        if (file) sendVideo(file);
+      };
+      renderRecording();
+    }
+    function renderRecording() {
+      var _a, _b, _c, _d;
+      const state = recording, ready = state == null ? void 0 : state.context, elapsed = ready ? state.frames / state.rate : 0, cancelled = hold == null ? void 0 : hold.cancel;
+      if ($2("#voice-status")) $2("#voice-status").textContent = state ? ready ? "正在录音 ".concat(Math.floor(elapsed), " / 60 秒") : "正在请求麦克风权限…" : "语音最长 60 秒";
+      const holdButton = $2("[data-media=voice-hold]");
+      if (holdButton) {
+        holdButton.textContent = state ? cancelled ? "松开取消" : "松开发送，上滑取消" : "按住说话";
+        holdButton.classList.toggle("recording", !!state);
+      }
+      (_a = $2("[data-media=voice-start]")) == null ? void 0 : _a.classList.toggle("hidden", !!state);
+      (_b = $2("[data-media=voice-cancel]")) == null ? void 0 : _b.classList.toggle("hidden", !state);
+      (_c = $2("[data-media=voice-finish]")) == null ? void 0 : _c.classList.toggle("hidden", !state);
+      if ($2("[data-media=voice-finish]")) $2("[data-media=voice-finish]").disabled = !ready;
+      if (!state) {
+        (_d = $2("#voice-record-overlay")) == null ? void 0 : _d.remove();
+        return;
+      }
+      if (!$2("#voice-record-overlay")) document.body.insertAdjacentHTML("beforeend", '<aside id="voice-record-overlay" class="voice-record-overlay" aria-live="polite"><div class="record-wave">'.concat(Array.from({ length: 7 }, () => "<i></i>").join(""), "</div><b></b><p></p></aside>"));
+      const overlay = $2("#voice-record-overlay");
+      overlay.classList.toggle("cancelling", !!cancelled);
+      $2("b", overlay).textContent = ready ? "".concat(Math.floor(elapsed), "″") : "正在请求麦克风权限";
+      $2("p", overlay).textContent = cancelled ? "松开手指，取消发送" : state.held ? "松开发送，上滑取消" : "录音完成后点击发送";
+      overlay.style.setProperty("--voice-level", String(0.35 + Math.min(1, (state.level || 0) * 8)));
+    }
+    async function begin(held) {
+      var _a, _b;
+      if (recording || !S2.active || !S2.user) return;
+      if (!((_a = navigator.mediaDevices) == null ? void 0 : _a.getUserMedia) || !window.AudioContext && !window.webkitAudioContext) {
+        toast2("当前设备不支持录音，请更新 WebView 或检查麦克风");
+        return;
+      }
+      audio.pause();
+      const state = recording = { cid: S2.active, userId: S2.user.id, held, chunks: [], frames: 0, rate: 0 };
+      renderRecording();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
+        if (recording !== state || document.hidden) {
+          stream.getTracks().forEach((t) => t.stop());
+          if (!document.hidden && S2.active === state.cid && ((_b = S2.user) == null ? void 0 : _b.id) === state.userId) {
+            mode = true;
+            mount();
+            toast2("麦克风已允许，请重新开始录音");
+          }
+          return;
+        }
+        state.stream = stream;
+        const Context = window.AudioContext || window.webkitAudioContext;
+        const context = new Context();
+        state.context = context;
+        state.rate = context.sampleRate;
+        await context.resume();
+        if (recording !== state) {
+          release(state);
+          return;
+        }
+        state.source = context.createMediaStreamSource(stream);
+        state.processor = context.createScriptProcessor(4096, 1, 1);
+        state.silence = context.createGain();
+        state.silence.gain.value = 0;
+        state.processor.onaudioprocess = (e) => {
+          if (recording !== state) return;
+          const input2 = e.inputBuffer.getChannelData(0), remaining = Math.max(0, Math.floor(state.rate * 60) - state.frames), data = input2.slice(0, Math.min(input2.length, remaining));
+          state.chunks.push(data);
+          state.frames += data.length;
+          let level = 0;
+          for (let i = 0; i < data.length; i += 16) level += data[i] * data[i];
+          state.level = Math.sqrt(level / Math.max(1, data.length / 16));
+          if (state.frames >= state.rate * 60 && !state.limit) {
+            state.limit = true;
+            setTimeout(() => finish(false), 0);
+          }
+        };
+        state.source.connect(state.processor);
+        state.processor.connect(state.silence);
+        state.silence.connect(context.destination);
+        state.timer = setInterval(renderRecording, 150);
+        renderRecording();
+        for (const track of stream.getTracks()) track.onended = () => {
+          if (recording === state) finish(true);
+        };
+      } catch (error) {
+        if (recording === state) {
+          recording = null;
+          release(state);
+          renderRecording();
+          toast2(error.name === "NotAllowedError" ? "未获得麦克风权限，请允许后重新录制" : "无法录音：" + error.message);
+        }
+      }
+    }
+    function release(state) {
+      var _a, _b;
+      clearInterval(state.timer);
+      if (state.processor) state.processor.onaudioprocess = null;
+      for (const node of [state.source, state.processor, state.silence]) try {
+        node == null ? void 0 : node.disconnect();
+      } catch (e) {
+      }
+      ;
+      (_a = state.stream) == null ? void 0 : _a.getTracks().forEach((t) => {
+        t.onended = null;
+        t.stop();
+      });
+      (_b = state.context) == null ? void 0 : _b.close().catch(() => {
+      });
+    }
+    function wav(state) {
+      const all = new Float32Array(state.frames);
+      let offset = 0;
+      for (const chunk of state.chunks) {
+        all.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const rate = 24e3, length = Math.min(rate * 60, Math.floor(all.length * rate / state.rate)), buffer = new ArrayBuffer(44 + length * 2), view = new DataView(buffer), str = (at, text) => {
+        for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
+      };
+      str(0, "RIFF");
+      view.setUint32(4, 36 + length * 2, true);
+      str(8, "WAVE");
+      str(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, rate, true);
+      view.setUint32(28, rate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      str(36, "data");
+      view.setUint32(40, length * 2, true);
+      const ratio = state.rate / rate;
+      for (let i = 0; i < length; i++) {
+        const at = i * ratio, start = Math.floor(at), end = Math.min(all.length, Math.max(start + 1, Math.floor((i + 1) * ratio)));
+        let sample = 0;
+        for (let j = start; j < end; j++) sample += all[j];
+        sample = Math.max(-1, Math.min(1, sample / (end - start)));
+        view.setInt16(44 + i * 2, sample < 0 ? sample * 32768 : sample * 32767, true);
+      }
+      return new File([buffer], "语音-" + Date.now() + ".wav", { type: "audio/wav" });
+    }
+    function finish(cancel) {
+      const state = recording;
+      if (!state) return;
+      recording = null;
+      hold = null;
+      release(state);
+      renderRecording();
+      if (cancel) return;
+      if (!state.rate || state.frames / state.rate < 0.7) {
+        toast2("说话时间太短，请重新录制");
+        return;
+      }
+      if (!S2.user || S2.user.id !== state.userId) return;
+      sendMedia(wav(state), "voice", {}, state.cid).catch(showRetry);
+    }
+    async function sendMedia(file, kind, metadata = {}, cid = S2.active) {
+      if (!cid || !S2.user) return;
+      if (file.size > 50 * 1024 * 1024) throw Error("文件不能超过 50 MB");
+      const owner = S2.user.id, clientId = randomID2();
+      let attachment;
+      const deliver = async () => {
+        var _a, _b;
+        try {
+          if (((_a = S2.user) == null ? void 0 : _a.id) !== owner) throw Error("登录账号已变化，请重新选择要发送的内容");
+          if (!attachment) {
+            const form = new FormData();
+            form.append("conversationId", cid);
+            form.append("file", file);
+            form.append("mediaKind", kind);
+            for (const [key, value] of Object.entries(metadata)) form.append(key, String(value));
+            toast2(kind === "voice" ? "正在发送语音…" : "正在发送视频…");
+            attachment = await api2("/api/files", { method: "POST", body: form });
+          }
+          if (((_b = S2.user) == null ? void 0 : _b.id) !== owner) throw Error("登录账号已变化，请重新选择要发送的内容");
+          const m = await action2("/api/conversations/".concat(cid, "/messages"), { kind, attachmentId: attachment.id, text: "", clientId });
+          if (S2.active === cid) {
+            if (S2.historyMode) {
+              S2.messages = await api2("/api/conversations/".concat(cid, "/messages"));
+              S2.historyMode = false;
+            } else if (!S2.messages.some((x) => x.id === m.id)) S2.messages.push(m);
+            renderMessages2();
+          }
+          queueRefresh2();
+          toast2("发送成功");
+          return m;
+        } catch (error) {
+          error.retry = deliver;
+          throw error;
+        }
+      };
+      return deliver();
+    }
+    function showRetry(error) {
+      if (!S2.user) {
+        toast2(error.message);
+        return;
+      }
+      modal2("发送未完成", '<p class="hint">'.concat(esc2(error.message), "。录音或视频暂时保留在本窗口，可以重试发送。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="media-retry">重试发送</button>');
+      $2("#media-retry").onclick = async (e) => {
+        e.target.disabled = true;
+        try {
+          await error.retry();
+          closeModal2();
+        } catch (next) {
+          showRetry(next);
+        }
+      };
+    }
+    function videoMetadata(file) {
+      return new Promise((resolve, reject) => {
+        const v = document.createElement("video"), url = URL.createObjectURL(file);
+        v.preload = "metadata";
+        v.muted = true;
+        let timer, done = false;
+        const finish2 = (error, result) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          v.onloadedmetadata = v.ondurationchange = v.ontimeupdate = v.onerror = null;
+          v.removeAttribute("src");
+          v.load();
+          URL.revokeObjectURL(url);
+          error ? reject(error) : resolve(result);
+        };
+        const check = () => {
+          const duration = v.duration;
+          if (Number.isFinite(duration) && duration > 0 && v.videoWidth && v.videoHeight) finish2(null, { durationMs: Math.round(duration * 1e3), width: v.videoWidth, height: v.videoHeight });
+        };
+        v.onloadedmetadata = () => {
+          check();
+          if (!done && !Number.isFinite(v.duration)) try {
+            v.currentTime = 1e10;
+          } catch (e) {
+          }
+        };
+        v.ondurationchange = v.ontimeupdate = check;
+        v.onerror = () => finish2(Error("当前设备无法播放这段视频"));
+        timer = setTimeout(() => finish2(Error("无法读取视频信息")), 15e3);
+        v.src = url;
+      });
+    }
+    async function sendVideo(file) {
+      const cid = S2.active;
+      if (!cid) return;
+      if (file.size > 50 * 1024 * 1024) {
+        toast2("视频不能超过 50 MB");
+        return;
+      }
+      const fallback = (error) => {
+        modal2("无法直接发送视频", '<p class="hint">'.concat(esc2(error.message), "，可以作为普通文件发送给对方。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');
+        $2("#video-send-file").onclick = () => {
+          closeModal2();
+          if (S2.active === cid) upload2(file, true);
+          else toast2("聊天已切换，请重新选择文件");
+        };
+      };
+      let metadata;
+      try {
+        metadata = await videoMetadata(file);
+      } catch (error) {
+        fallback(error);
+        return;
+      }
+      try {
+        await sendMedia(file, "video", metadata, cid);
+      } catch (error) {
+        if (error.status === 400) fallback(error);
+        else showRetry(error);
+      }
+    }
+    function sync() {
+      var _a;
+      document.querySelectorAll("[data-play-voice]").forEach((button) => {
+        var _a2;
+        const active = (playing == null ? void 0 : playing.id) === button.dataset.playVoice && !audio.paused;
+        button.classList.toggle("is-playing", active);
+        button.setAttribute("aria-label", (active ? "暂停语音" : "播放语音") + " " + seconds(button.dataset.duration) + " 秒");
+        if (played().has(button.dataset.playVoice)) (_a2 = $2(".voice-unplayed", button)) == null ? void 0 : _a2.remove();
+      });
+      if (recording && ((_a = $2(".composer")) == null ? void 0 : _a.classList.contains("selection-hidden"))) finish(true);
+    }
+    function stopVideo() {
+      if (videoPlayer) {
+        videoPlayer.pause();
+        videoPlayer.removeAttribute("src");
+        videoPlayer.load();
+        videoPlayer = null;
+      }
+    }
+    function reset() {
+      finish(true);
+      audio.pause();
+      playing = null;
+      stopVideo();
+      mode = false;
+      mount();
+    }
+    function invalidate(id) {
+      if ((playing == null ? void 0 : playing.messageID) === id) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+        playing = null;
+      }
+      if ((videoPlayer == null ? void 0 : videoPlayer.dataset.messageId) === id) {
+        stopVideo();
+        if ($2(".video-viewer")) closeModal2();
+      }
+    }
+    async function playVoice(button) {
+      finish(true);
+      stopVideo();
+      const id = button.dataset.playVoice;
+      if ((playing == null ? void 0 : playing.id) === id && !audio.paused) {
+        audio.pause();
+        return;
+      }
+      if ((playing == null ? void 0 : playing.id) !== id) {
+        audio.pause();
+        audio.src = fileURL2(id);
+        playing = { id, messageID: button.dataset.mediaMessage };
+      }
+      if (audio.ended) audio.currentTime = 0;
+      try {
+        await audio.play();
+        if (S2.user && (playing == null ? void 0 : playing.id) === id) markPlayed(id);
+        sync();
+      } catch (error) {
+        if (S2.user) toast2("无法播放语音，请检查网络或下载后播放");
+        sync();
+      }
+    }
+    function playVideo(button) {
+      finish(true);
+      audio.pause();
+      stopVideo();
+      modal2(button.dataset.mediaName || "视频", '<div class="video-viewer"><video id="message-video-player" controls playsinline preload="metadata" src="'.concat(fileURL2(button.dataset.playVideo), '"></video><p class="hint">').concat(esc2(button.dataset.mediaName || "视频"), "</p></div>"), (button.dataset.mediaRoot ? '<button class="secondary" data-fw="record-return">返回聊天记录</button>' : "") + '<button class="secondary" data-download="' + button.dataset.playVideo + '" data-filename="' + esc2(button.dataset.mediaName || "视频") + '">保存视频</button>', true);
+      videoPlayer = $2("#message-video-player");
+      videoPlayer.dataset.messageId = button.dataset.mediaMessage;
+      videoPlayer.onerror = () => toast2("当前设备无法播放此视频，可保存文件后播放");
+      videoPlayer.play().catch(() => {
+      });
+    }
+    for (const type of ["play", "pause", "ended"]) audio.addEventListener(type, sync);
+    new MutationObserver(() => {
+      if (videoPlayer && !document.contains(videoPlayer)) stopVideo();
+    }).observe($2("#overlays"), { childList: true, subtree: true });
+    document.addEventListener("click", (e) => {
+      var _a;
+      const button = e.target.closest("[data-media],[data-play-voice],[data-play-video]");
+      if (!button) return;
+      if (button.dataset.playVoice) {
+        playVoice(button);
+        return;
+      }
+      if (button.dataset.playVideo) {
+        playVideo(button);
+        return;
+      }
+      switch (button.dataset.media) {
+        case "voice-mode":
+          finish(true);
+          mode = !mode;
+          if (mode) (_a = $2("#composer")) == null ? void 0 : _a.blur();
+          mount();
+          break;
+        case "voice-start":
+          begin(false);
+          break;
+        case "voice-cancel":
+          finish(true);
+          break;
+        case "voice-finish":
+          finish(false);
+          break;
+        case "video":
+          if (window.WeLinkAndroid) {
+            modal2("发送视频", '<button class="remote-choice" id="video-from-gallery">' + icon2("folder") + '从相册选择</button><button class="remote-choice" id="video-from-camera">' + icon2("video") + '拍摄视频</button><p class="hint">支持 MP4、WebM，单个文件不超过 50 MB。</p>');
+            $2("#video-from-gallery").onclick = () => {
+              closeModal2();
+              $2("#video-input").click();
+            };
+            $2("#video-from-camera").onclick = () => {
+              closeModal2();
+              $2("#video-capture-input").click();
+            };
+          } else $2("#video-input").click();
+          break;
+      }
+    });
+    document.addEventListener("pointerdown", (e) => {
+      const button = e.target.closest("[data-media=voice-hold]");
+      if (!button || e.button !== 0) return;
+      e.preventDefault();
+      hold = { pointer: e.pointerId, y: e.clientY, cancel: false };
+      button.setPointerCapture(e.pointerId);
+      begin(true);
+    });
+    document.addEventListener("pointermove", (e) => {
+      if (hold && hold.pointer === e.pointerId) {
+        hold.cancel = e.clientY < hold.y - 60;
+        renderRecording();
+      }
+    });
+    document.addEventListener("pointerup", (e) => {
+      if (hold && hold.pointer === e.pointerId) {
+        const cancel = hold.cancel;
+        hold = null;
+        finish(cancel);
+      }
+    });
+    document.addEventListener("pointercancel", () => {
+      if (hold) {
+        hold = null;
+        finish(true);
+      }
+    });
+    document.addEventListener("click", (e) => {
+      if (e.target.closest("[data-nav],[data-conversation],[data-action=back],[data-action=logout]")) reset();
+    }, true);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) reset();
+    });
+    window.addEventListener("blur", () => finish(true));
+    window.WeLinkMediaBackground = reset;
+    window.WeLinkMediaBeforeModal = () => finish(true);
+    return { bubble, tools, input, mount, reset, invalidate, sync, sendVideo };
+  }
+
   // internal/ui/src/forwarding.js
-  function createForwarding({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, preview: preview2, fullTime: fullTime2, bytes: bytes2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2 }) {
+  function createForwarding({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, preview: preview2, fullTime: fullTime2, bytes: bytes2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, mediaBubble }) {
     const $2 = (s, r = document) => r.querySelector(s);
     let selection = null, chooser = null, viewer = null;
     function selected(message) {
@@ -215,6 +694,7 @@
         let content = esc2(item.text);
         if (item.kind === "image") content = '<img loading="lazy" src="'.concat(fileURL2(item.attachmentId), '" alt="').concat(esc2(item.fileName || "图片"), '" data-forward-image="').concat(item.attachmentId, '">');
         else if (item.kind === "file") content = '<button class="file-card" data-download="'.concat(item.attachmentId, '" data-filename="').concat(esc2(item.fileName), '">').concat(icon2("file"), "<span><b>").concat(esc2(item.fileName), "</b><small>").concat(bytes2(item.fileSize), " · 点击下载</small></span></button>");
+        else if (item.kind === "voice" || item.kind === "video") content = mediaBubble(item, viewer.id);
         else if (item.record) content = '<button class="forward-card" data-forward-nested="'.concat(index, '">').concat(previewRecord(item.record), "</button>");
         else if (item.kind === "meeting") content = esc2("[会议]");
         return '<article class="forward-record-item">'.concat(av2(item), "<div><header><b>").concat(esc2(item.name), "</b><time>").concat(fullTime2(item.created), '</time></header><div class="forward-record-content">').concat(content, "</div>").concat(item.quote ? '<p class="forward-record-quote">'.concat(esc2(item.quote.name + "：" + item.quote.text), "</p>") : "", "</div></article>");
@@ -292,6 +772,7 @@
           showDocument();
           break;
         case "image-back":
+        case "record-return":
           showDocument();
           break;
       }
@@ -343,11 +824,14 @@
     }
     async function open() {
       const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
-      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
+      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
       let timer;
       $2("#history-search").oninput = () => {
         clearTimeout(timer);
         ++state.revision;
+        state.items = [];
+        state.more = false;
+        $2("#history-results").innerHTML = '<p class="hint">正在查找…</p>';
         timer = setTimeout(() => load(), 250);
       };
       for (const id of ["kind", "sender", "from", "to"]) $2("#history-" + id).onchange = () => {
@@ -1167,11 +1651,13 @@
   }
   var action = (p, body = {}) => api(p, { method: "POST", body });
   function modal(title, body, footer = "", wide = false) {
+    var _a;
+    (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
     $("#overlays").innerHTML = '<div class="modal-backdrop"><section class="modal '.concat(wide ? "wide" : "", '" role="dialog" aria-modal="true" aria-label="').concat(esc(title), '"><header class="modal-head"><h3>').concat(esc(title), "</h3>").concat(btn("close", "关闭", "close-modal"), '</header><div class="modal-body">').concat(body, '<div class="form-error" id="modal-error"></div></div>').concat(footer ? '<footer class="modal-footer">'.concat(footer, "</footer>") : "", "</section></div>");
     modalHandler = null;
     setTimeout(() => {
-      var _a;
-      return (_a = $(".modal input:not([type=checkbox])")) == null ? void 0 : _a.focus();
+      var _a2;
+      return (_a2 = $(".modal input:not([type=checkbox])")) == null ? void 0 : _a2.focus();
     }, 40);
   }
   var modalError = (e) => {
@@ -1263,7 +1749,7 @@
         return "[会议]";
       }
     }
-    return m.recalled ? "消息已撤回" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
+    return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
   }
   function conversationRow(c) {
     return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
@@ -1316,7 +1802,7 @@
       return;
     }
     ;
-    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(btn("phone", "语音通话", "meeting-audio-call")).concat(btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image")).concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), '</textarea><div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
+    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(btn("phone", "语音通话", "meeting-audio-call")).concat(btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
     renderMessages();
     const input = $("#composer");
     input.oninput = () => {
@@ -1360,6 +1846,7 @@
     };
     renderReply();
     renderSharing();
+    Media.mount();
   }
   function empty(title, sub, add = false) {
     return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">添加好友</button>' : "", "</div>");
@@ -1373,6 +1860,7 @@
     const mine = m.sender === S.user.id;
     const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
     let content = esc(m.text);
+    if (m.kind === "voice" || m.kind === "video") content = Media.bubble(m);
     if (m.kind === "forward") content = Forwarding.card(m);
     if (m.kind === "meeting") {
       try {
@@ -1383,7 +1871,7 @@
     }
     if (m.kind === "image") content = '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
     if (m.kind === "file") content = '<button class="file-card" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">').concat(icon("file"), "<span><b>").concat(esc(m.fileName), "</b><small>").concat(bytes(m.fileSize), " · 点击下载</small></span></button>");
-    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
+    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -1401,6 +1889,7 @@
     if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
     if (!S.messages.length) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
     Forwarding.sync();
+    Media.sync();
     if (!keep || near) area.scrollTop = area.scrollHeight;
     else area.scrollTop = old;
     $$("img", area).forEach((img) => img.onload = () => {
@@ -1409,6 +1898,7 @@
   }
   async function selectConversation(id) {
     var _a;
+    Media.reset();
     Forwarding.reset(false);
     S.active = id;
     S.historyMode = false;
@@ -1480,7 +1970,11 @@
     d.closest(".composer").classList.toggle("has-reply", !!S.reply);
     d.innerHTML = S.reply ? "<span>回复 ".concat(esc(S.reply.name), "：").concat(esc(preview(S.reply)), "</span>").concat(btn("close", "取消引用", "cancel-reply")) : "";
   }
-  async function upload(file) {
+  async function upload(file, forceFile = false) {
+    if (!forceFile && (/^video\//.test(file.type) || /\.(mp4|webm|m4v)$/i.test(file.name))) {
+      await Media.sendVideo(file);
+      return;
+    }
     if (file.size > 50 * 1024 * 1024) {
       toast("文件不能超过 50 MB");
       return;
@@ -1620,6 +2114,7 @@
   }
   async function logout(notify = true) {
     if (S.signingOut) return;
+    Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
     try {
@@ -1736,7 +2231,7 @@
       const items = await api("/api/favorites"), list = $("#favorites-list");
       if (!list) return;
       list.className = "";
-      list.innerHTML = items.map((m) => '<div class="utility-row">'.concat(av(m), '<div class="body"><b>').concat(esc(m.name), "</b><p>").concat(esc(preview(m)), "</p><p>").concat(fullTime(m.created), "</p>").concat(m.kind === "forward" ? '<button class="secondary" data-forward-view="'.concat(m.id, '">查看聊天记录</button>') : "").concat(m.attachmentId ? '<button class="secondary" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">下载附件</button>') : "", "</div>").concat(btn("trash", "取消收藏", "unfavorite", 'data-mid="'.concat(m.id, '"')), "</div>")).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
+      list.innerHTML = items.map((m) => '<div class="utility-row">'.concat(av(m), '<div class="body"><b>').concat(esc(m.name), "</b><p>").concat(esc(preview(m)), "</p><p>").concat(fullTime(m.created), "</p>").concat(m.kind === "voice" || m.kind === "video" ? '<div class="favorite-media">'.concat(Media.bubble(m), "</div>") : "").concat(m.kind === "forward" ? '<button class="secondary" data-forward-view="'.concat(m.id, '">查看聊天记录</button>') : "").concat(m.attachmentId ? '<button class="secondary" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">下载附件</button>') : "", "</div>").concat(btn("trash", "取消收藏", "unfavorite", 'data-mid="'.concat(m.id, '"')), "</div>")).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
     } catch (e) {
       toast(e.message);
     }
@@ -1818,6 +2313,7 @@
   }
   function applyRecall(message) {
     var _a, _b;
+    Media.invalidate(message.id);
     Forwarding.invalidate(message.id);
     const i = S.messages.findIndex((m) => m.id === message.id);
     if (i >= 0) S.messages[i] = message;
@@ -1832,6 +2328,7 @@
   }
   function applyDeletion(message) {
     var _a;
+    Media.invalidate(message.id);
     Forwarding.removed(message.id);
     if (S.active === message.conversationId) {
       S.messages = S.messages.filter((m) => m.id !== message.id);
@@ -2458,7 +2955,8 @@
     }
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
-  var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh });
+  var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });

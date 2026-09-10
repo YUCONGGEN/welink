@@ -275,7 +275,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "%"+escapeLike(q)+"%", "%"+escapeLike(q)+"%")
 	}
 	if kind := r.URL.Query().Get("kind"); kind != "" {
-		if kind != "text" && kind != "image" && kind != "file" && kind != "meeting" && kind != "forward" {
+		if kind != "text" && kind != "image" && kind != "file" && kind != "meeting" && kind != "forward" && kind != "voice" && kind != "video" {
 			fail(w, 400, "消息类型错误")
 			return
 		}
@@ -350,7 +350,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	if p.Kind == "" {
 		p.Kind = "text"
 	}
-	if !validText(p.Text, 6000) || len(p.ClientID) < 8 || len(p.ClientID) > 100 || (p.Kind != "text" && p.Kind != "image" && p.Kind != "file") || (p.Kind == "text" && strings.TrimSpace(p.Text) == "") {
+	if !validText(p.Text, 6000) || len(p.ClientID) < 8 || len(p.ClientID) > 100 || (p.Kind != "text" && p.Kind != "image" && p.Kind != "file" && p.Kind != "voice" && p.Kind != "video") || (p.Kind == "text" && strings.TrimSpace(p.Text) == "") {
 		fail(w, 400, "消息内容无效或超过 6000 字")
 		return
 	}
@@ -364,6 +364,14 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		if p.Kind == "image" && !strings.HasPrefix(mime, "image/") {
 			fail(w, 400, "该附件不是图片")
 			return
+		}
+		if p.Kind == "voice" || p.Kind == "video" {
+			var kind string
+			if s.db.QueryRow("SELECT kind FROM attachment_media WHERE attachment_id=?", p.AttachmentID).Scan(&kind) != nil || kind != p.Kind {
+				fail(w, 400, "请上传有效的语音或视频后发送")
+				return
+			}
+			p.Text = ""
 		}
 	} else {
 		p.AttachmentID = ""
@@ -434,6 +442,9 @@ func (s *Server) recall(w http.ResponseWriter, r *http.Request) {
 	m.FileName = ""
 	m.FileSize = 0
 	m.MIME = ""
+	m.DurationMS = 0
+	m.Width = 0
+	m.Height = 0
 	m.Reply = nil
 	s.pushConversation(m.ConversationID, "recall", m)
 	ok(w, m)

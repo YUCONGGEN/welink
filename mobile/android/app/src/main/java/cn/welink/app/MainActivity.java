@@ -9,6 +9,7 @@ import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.*;
 import android.provider.Settings;
+import android.provider.MediaStore;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
@@ -16,6 +17,7 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.Executors;
+import java.util.ArrayList;
 
 public final class MainActivity extends Activity {
     private WebView web;
@@ -23,6 +25,8 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> chooser;
     private String pendingDownload;
     private String pendingCookies;
+    private PermissionRequest pendingWebPermission;
+    private boolean pendingVideoCapture;
     private final Handler main=new Handler(Looper.getMainLooper());
     private WeLinkApp app(){return (WeLinkApp)getApplication();}
     @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);start();}
@@ -41,11 +45,36 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view,String url){CookieManager.getInstance().flush();}
         });
         web.setWebChromeClient(new WebChromeClient(){
-            @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params){if(chooser!=null)chooser.onReceiveValue(null);chooser=callback;Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);String[] types=params.getAcceptTypes();intent.setType(types.length>0&&types[0].startsWith("image/")?"image/*":"*/*");startActivityForResult(intent,40);return true;}
+            @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params){finishChooser(null);chooser=callback;String[] types=params.getAcceptTypes();String type=types.length>0?types[0]:"";if(params.isCaptureEnabled()&&type.startsWith("video/")){pendingVideoCapture=true;if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.CAMERA},62);else captureVideo();}else{Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType(type.startsWith("image/")?"image/*":type.startsWith("video/")?"video/*":"*/*");launchPicker(intent);}return true;}
+            @Override public void onPermissionRequest(PermissionRequest request){main.post(()->requestWebPermission(request));}
+            @Override public void onPermissionRequestCanceled(PermissionRequest request){main.post(()->{if(pendingWebPermission==request)pendingWebPermission=null;});}
         });
         setContentView(web);getWindow().getDecorView();if(Build.VERSION.SDK_INT>=30){getWindow().setDecorFitsSystemWindows(true);}web.loadUrl(url);
     }
     private boolean isLocal(Uri uri){return origin!=null&&uri.toString().startsWith(origin+"/");}
+    private boolean isLocalOrigin(Uri uri){return origin!=null&&(origin.equals(uri.toString())||(origin+"/").equals(uri.toString()));}
+    private void requestWebPermission(PermissionRequest request){
+        if(web==null||!isLocalOrigin(request.getOrigin())){request.deny();return;}
+        ArrayList<String> missing=new ArrayList<>();
+        for(String resource:request.getResources()){
+            String permission;
+            if(PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource))permission=Manifest.permission.RECORD_AUDIO;
+            else if(PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource))permission=Manifest.permission.CAMERA;
+            else{request.deny();return;}
+            if(checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED&&!missing.contains(permission))missing.add(permission);
+        }
+        if(missing.isEmpty()){request.grant(request.getResources());return;}
+        if(pendingWebPermission!=null)pendingWebPermission.deny();
+        pendingWebPermission=request;requestPermissions(missing.toArray(new String[0]),61);
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){
+        super.onRequestPermissionsResult(request,permissions,grants);
+        if(request==61){PermissionRequest pending=pendingWebPermission;pendingWebPermission=null;if(pending==null)return;boolean allowed=web!=null&&isLocalOrigin(pending.getOrigin());for(String resource:pending.getResources()){String permission=PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)?Manifest.permission.RECORD_AUDIO:Manifest.permission.CAMERA;allowed&=checkSelfPermission(permission)==PackageManager.PERMISSION_GRANTED;}if(allowed)pending.grant(pending.getResources());else pending.deny();}
+        if(request==62&&pendingVideoCapture){if(checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)captureVideo();else{finishChooser(null);Toast.makeText(this,"拍摄视频需要相机权限",Toast.LENGTH_SHORT).show();}}
+    }
+    private void captureVideo(){Intent capture=new Intent(MediaStore.ACTION_VIDEO_CAPTURE);capture.putExtra(MediaStore.EXTRA_DURATION_LIMIT,60);capture.putExtra(MediaStore.EXTRA_SIZE_LIMIT,50L*1024*1024);capture.putExtra(MediaStore.EXTRA_VIDEO_QUALITY,1);launchPicker(capture);}
+    private void launchPicker(Intent intent){try{startActivityForResult(intent,40);}catch(ActivityNotFoundException|SecurityException error){finishChooser(null);Toast.makeText(this,"无法打开相机或文件选择器，请检查系统应用与权限",Toast.LENGTH_LONG).show();}}
+    private void finishChooser(Uri[] result){ValueCallback<Uri[]> callback=chooser;chooser=null;pendingVideoCapture=false;if(callback!=null)callback.onReceiveValue(result);}
     private final class Bridge {
         @JavascriptInterface public void scanQRCode(){main.post(()->startActivityForResult(new Intent(MainActivity.this,QrScannerActivity.class),42));}
         @JavascriptInterface public void openMeeting(String code,String token,String name,boolean host,boolean microphone,boolean camera){main.post(()->{if(!code.matches("[1-9][0-9]{8}")||!token.matches("[a-f0-9]{64}"))return;Intent meeting=new Intent(MainActivity.this,MeetingActivity.class).putExtra("code",code).putExtra("token",token).putExtra("name",name).putExtra("host",host).putExtra("microphone",microphone).putExtra("camera",camera);startActivity(meeting);});}
@@ -53,8 +82,9 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void requestNotifications(){main.post(()->{if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},60);});}
         @JavascriptInterface public void downloadFile(String path,String name){main.post(()->{if(!path.matches("/api/files/[a-f0-9]{32}"))return;pendingDownload=origin+path;pendingCookies=CookieManager.getInstance().getCookie(origin);Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.addCategory(Intent.CATEGORY_OPENABLE);i.setType("application/octet-stream");i.putExtra(Intent.EXTRA_TITLE,name.replace('/','_').replace('\\','_'));startActivityForResult(i,41);});}
     }
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==42){if(result==RESULT_OK&&data!=null&&web!=null){String value=data.getStringExtra("qr");if(value!=null)web.evaluateJavascript("window.WeLinkQrScanned&&window.WeLinkQrScanned("+org.json.JSONObject.quote(value)+")",null);}return;}if(request==40){if(chooser!=null){chooser.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);chooser=null;}return;}if(request==41&&result==RESULT_OK&&data!=null){Uri destination=data.getData();String address=pendingDownload,cookies=pendingCookies;pendingDownload=null;pendingCookies=null;if(address!=null)Executors.newSingleThreadExecutor().execute(()->download(address,cookies,destination));return;}if(request==50&&result==RESULT_OK&&data!=null){Intent service=new Intent(this,CaptureService.class).putExtra("result",result).putExtra("projection",data);startForegroundService(service);if(!RemoteAccessibilityService.available())new AlertDialog.Builder(this).setTitle("远程触控权限").setMessage("仅观看不需要此权限。如需好友操作手机，请在系统无障碍设置中主动启用 WeLink 远程触控。").setNegativeButton("仅共享屏幕",null).setPositiveButton("前往设置",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).show();}}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==42){if(result==RESULT_OK&&data!=null&&web!=null){String value=data.getStringExtra("qr");if(value!=null)web.evaluateJavascript("window.WeLinkQrScanned&&window.WeLinkQrScanned("+org.json.JSONObject.quote(value)+")",null);}return;}if(request==40){Uri uri=result==RESULT_OK&&data!=null?data.getData():null;if(uri==null&&result==RESULT_OK&&data!=null&&data.getClipData()!=null&&data.getClipData().getItemCount()>0)uri=data.getClipData().getItemAt(0).getUri();finishChooser(uri==null?null:new Uri[]{uri});return;}if(request==41&&result==RESULT_OK&&data!=null){Uri destination=data.getData();String address=pendingDownload,cookies=pendingCookies;pendingDownload=null;pendingCookies=null;if(address!=null)Executors.newSingleThreadExecutor().execute(()->download(address,cookies,destination));return;}if(request==50&&result==RESULT_OK&&data!=null){Intent service=new Intent(this,CaptureService.class).putExtra("result",result).putExtra("projection",data);startForegroundService(service);if(!RemoteAccessibilityService.available())new AlertDialog.Builder(this).setTitle("远程触控权限").setMessage("仅观看不需要此权限。如需好友操作手机，请在系统无障碍设置中主动启用 WeLink 远程触控。").setNegativeButton("仅共享屏幕",null).setPositiveButton("前往设置",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).show();}}
     private void download(String address,String cookies,Uri destination){HttpURLConnection conn=null;try{conn=(HttpURLConnection)new URL(address).openConnection();conn.setConnectTimeout(15000);conn.setReadTimeout(30000);conn.setRequestProperty("Cookie",cookies==null?"":cookies);if(conn.getResponseCode()!=200)throw new IOException("下载失败："+conn.getResponseCode());try(InputStream in=conn.getInputStream();OutputStream out=getContentResolver().openOutputStream(destination,"w")){if(out==null)throw new IOException("无法保存文件");byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}main.post(()->Toast.makeText(this,"文件已保存",Toast.LENGTH_SHORT).show());}catch(Exception e){main.post(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}finally{if(conn!=null)conn.disconnect();}}
     @Override public void onBackPressed(){if(web!=null){web.evaluateJavascript("(()=>{const b=document.querySelector('.remote-screen [data-action=stop-remote]')||document.querySelector('.modal [data-action=close-modal]')||document.querySelector('.in-chat [data-action=back]');if(b){b.click();return true}return false})()",value->{if(!"true".equals(value))moveTaskToBack(true);});}else super.onBackPressed();}
-    @Override protected void onDestroy(){if(chooser!=null){chooser.onReceiveValue(null);chooser=null;}if(web!=null){web.removeJavascriptInterface("WeLinkAndroid");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onPause(){if(web!=null)web.evaluateJavascript("window.WeLinkMediaBackground&&window.WeLinkMediaBackground()",null);super.onPause();}
+    @Override protected void onDestroy(){finishChooser(null);if(pendingWebPermission!=null){pendingWebPermission.deny();pendingWebPermission=null;}if(web!=null){web.removeJavascriptInterface("WeLinkAndroid");web.destroy();web=null;}super.onDestroy();}
 }

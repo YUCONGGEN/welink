@@ -1,4 +1,4 @@
-export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,av,preview,fullTime,bytes,fileURL,randomID,renderMessages,queueRefresh}) {
+export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,av,preview,fullTime,bytes,fileURL,randomID,renderMessages,queueRefresh,mediaBubble}) {
   const $=(s,r=document)=>r.querySelector(s);
   let selection=null,chooser=null,viewer=null;
   function selected(message){return selection?.cid===S.active&&selection.ids.has(message.id)}
@@ -77,6 +77,7 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
       let content=esc(item.text);
       if(item.kind==='image')content=`<img loading="lazy" src="${fileURL(item.attachmentId)}" alt="${esc(item.fileName||'图片')}" data-forward-image="${item.attachmentId}">`;
       else if(item.kind==='file')content=`<button class="file-card" data-download="${item.attachmentId}" data-filename="${esc(item.fileName)}">${icon('file')}<span><b>${esc(item.fileName)}</b><small>${bytes(item.fileSize)} · 点击下载</small></span></button>`;
+      else if(item.kind==='voice'||item.kind==='video')content=mediaBubble(item,viewer.id);
       else if(item.record)content=`<button class="forward-card" data-forward-nested="${index}">${previewRecord(item.record)}</button>`;
       else if(item.kind==='meeting')content=esc('[会议]');
       return `<article class="forward-record-item">${av(item)}<div><header><b>${esc(item.name)}</b><time>${fullTime(item.created)}</time></header><div class="forward-record-content">${content}</div>${item.quote?`<p class="forward-record-quote">${esc(item.quote.name+'：'+item.quote.text)}</p>`:''}</div></article>`;
@@ -103,7 +104,7 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
       case 'selected-forward':if(selection)open([...selection.ids]);break;
       case 'selected-delete':deleteSelected();break;
       case 'record-back':viewer?.stack.pop();showDocument();break;
-      case 'image-back':showDocument();break;
+      case 'image-back':case 'record-return':showDocument();break;
     }
   });
   return {checkbox,selected,sync,reset,removed,invalidate,open,card};

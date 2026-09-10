@@ -24,6 +24,9 @@ type forwardItem struct {
 	FileName     string           `json:"fileName,omitempty"`
 	FileSize     int64            `json:"fileSize,omitempty"`
 	MIME         string           `json:"mime,omitempty"`
+	DurationMS   int64            `json:"durationMs,omitempty"`
+	Width        int              `json:"width,omitempty"`
+	Height       int              `json:"height,omitempty"`
 	Quote        *forwardQuote    `json:"quote,omitempty"`
 	Record       *forwardDocument `json:"record,omitempty"`
 }
@@ -165,7 +168,7 @@ func (s *Server) performForward(user string, p forwardRequest) (forwardResult, [
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Seq < sources[j].Seq })
 	doc := forwardDocument{Title: forwardTitle(sources), Items: make([]forwardItem, 0, len(sources))}
 	for _, m := range sources {
-		item := forwardItem{Name: m.Name, Avatar: m.Avatar, Created: m.Created, Kind: m.Kind, Text: m.Text, AttachmentID: m.AttachmentID, FileName: m.FileName, FileSize: m.FileSize, MIME: m.MIME}
+		item := forwardItem{Name: m.Name, Avatar: m.Avatar, Created: m.Created, Kind: m.Kind, Text: m.Text, AttachmentID: m.AttachmentID, FileName: m.FileName, FileSize: m.FileSize, MIME: m.MIME, DurationMS: m.DurationMS, Width: m.Width, Height: m.Height}
 		if m.Reply != nil {
 			item.Quote = &forwardQuote{Name: m.Reply.Name, Text: forwardPreview(m.Reply.Kind, m.Reply.Text, m.Reply.FileName, m.Reply.Recalled)}
 		}
@@ -282,6 +285,10 @@ func forwardPreview(kind, text, file string, recalled bool) string {
 	switch kind {
 	case "image":
 		return "[图片]"
+	case "voice":
+		return "[语音]"
+	case "video":
+		return "[视频]"
 	case "file":
 		return "[文件] " + file
 	case "meeting":
@@ -341,6 +348,9 @@ func cloneForwardAttachments(tx *sql.Tx, doc *forwardDocument, cid, user, source
 				return err
 			}
 			if _, err := tx.Exec("INSERT INTO attachment_blobs VALUES(?,?)", id, blob); err != nil {
+				return err
+			}
+			if _, err := tx.Exec("INSERT INTO attachment_media SELECT ?,kind,duration_ms,width,height FROM attachment_media WHERE attachment_id=?", id, item.AttachmentID); err != nil {
 				return err
 			}
 			item.AttachmentID = id

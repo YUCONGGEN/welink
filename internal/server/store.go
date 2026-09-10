@@ -30,6 +30,7 @@ CREATE INDEX IF NOT EXISTS message_history ON messages(conversation_id,seq);
 CREATE TABLE IF NOT EXISTS message_deletions(user_id TEXT NOT NULL REFERENCES users(id), message_id TEXT NOT NULL REFERENCES messages(id), created INTEGER NOT NULL, PRIMARY KEY(user_id,message_id));
 CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), conversation_id TEXT NOT NULL REFERENCES conversations(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS attachment_blobs(attachment_id TEXT PRIMARY KEY REFERENCES attachments(id), blob_id TEXT NOT NULL REFERENCES attachments(id));
+CREATE TABLE IF NOT EXISTS attachment_media(attachment_id TEXT PRIMARY KEY REFERENCES attachments(id),kind TEXT NOT NULL,duration_ms INTEGER NOT NULL,width INTEGER NOT NULL DEFAULT 0,height INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS forward_records(message_id TEXT PRIMARY KEY REFERENCES messages(id), data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS forward_batches(user_id TEXT NOT NULL REFERENCES users(id), client_id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(user_id,client_id));
 CREATE TABLE IF NOT EXISTS favorites(user_id TEXT NOT NULL REFERENCES users(id), message_id TEXT NOT NULL REFERENCES messages(id), created INTEGER NOT NULL, PRIMARY KEY(user_id,message_id));
@@ -146,6 +147,9 @@ type Message struct {
 	FileName       string            `json:"fileName,omitempty"`
 	FileSize       int64             `json:"fileSize,omitempty"`
 	MIME           string            `json:"mime,omitempty"`
+	DurationMS     int64             `json:"durationMs,omitempty"`
+	Width          int               `json:"width,omitempty"`
+	Height         int               `json:"height,omitempty"`
 	Reply          *MessageReference `json:"reply,omitempty"`
 }
 
@@ -158,7 +162,7 @@ type MessageReference struct {
 	Recalled bool   `json:"recalled"`
 }
 
-const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,u.name,u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id `
+const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,u.name,u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0),COALESCE(am.duration_ms,0),COALESCE(am.width,0),COALESCE(am.height,0) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id LEFT JOIN attachment_media am ON am.attachment_id=m.attachment_id `
 
 const messageVisible = `NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=?) `
 
@@ -166,7 +170,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanMessage(s scanner) (m Message, err error) {
 	var reply MessageReference
-	err = s.Scan(&m.Seq, &m.ID, &m.ConversationID, &m.Sender, &m.Kind, &m.Text, &m.AttachmentID, &m.ReplyID, &m.ClientID, &m.Recalled, &m.Created, &m.Name, &m.Avatar, &m.FileName, &m.FileSize, &m.MIME, &reply.ID, &reply.Name, &reply.Kind, &reply.Text, &reply.FileName, &reply.Recalled)
+	err = s.Scan(&m.Seq, &m.ID, &m.ConversationID, &m.Sender, &m.Kind, &m.Text, &m.AttachmentID, &m.ReplyID, &m.ClientID, &m.Recalled, &m.Created, &m.Name, &m.Avatar, &m.FileName, &m.FileSize, &m.MIME, &reply.ID, &reply.Name, &reply.Kind, &reply.Text, &reply.FileName, &reply.Recalled, &m.DurationMS, &m.Width, &m.Height)
 	if reply.ID != "" && !m.Recalled {
 		if reply.Recalled {
 			reply.Text = ""

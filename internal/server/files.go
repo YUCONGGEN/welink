@@ -75,12 +75,33 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
-	if _, e = s.db.Exec("INSERT INTO attachments VALUES(?,?,?,?,?,?,?)", id, uid(r), cid, name, typ, size, now()); e != nil {
+	media, typ, e := inspectMedia(path, r.FormValue("mediaKind"), typ, r.PostForm)
+	if e != nil {
+		fail(w, 400, e.Error())
+		return
+	}
+	tx, e := s.db.Begin()
+	if e != nil {
+		s.dbError(w, e)
+		return
+	}
+	defer tx.Rollback()
+	if _, e = tx.Exec("INSERT INTO attachments VALUES(?,?,?,?,?,?,?)", id, uid(r), cid, name, typ, size, now()); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	if media != nil {
+		if _, e = tx.Exec("INSERT INTO attachment_media VALUES(?,?,?,?,?)", id, media.Kind, media.DurationMS, media.Width, media.Height); e != nil {
+			s.dbError(w, e)
+			return
+		}
+	}
+	if e = tx.Commit(); e != nil {
 		s.dbError(w, e)
 		return
 	}
 	committed = true
-	ok(w, map[string]any{"id": id, "name": name, "mime": typ, "size": size})
+	ok(w, map[string]any{"id": id, "name": name, "mime": typ, "size": size, "media": media})
 }
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	var cid, name, typ, blob string
@@ -104,7 +125,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	disposition := "attachment"
-	if typ == "image/png" || typ == "image/jpeg" || typ == "image/gif" || typ == "image/webp" {
+	if typ == "image/png" || typ == "image/jpeg" || typ == "image/gif" || typ == "image/webp" || typ == "audio/wav" || typ == "video/mp4" || typ == "video/webm" {
 		disposition = "inline"
 	}
 	w.Header().Set("Content-Type", typ)
