@@ -291,6 +291,14 @@ func forwardPreview(kind, text, file string, recalled bool) string {
 		return "[视频]"
 	case "file":
 		return "[文件] " + file
+	case "call":
+		var call struct {
+			Mode string `json:"mode"`
+		}
+		if json.Unmarshal([]byte(text), &call) == nil && call.Mode == "video" {
+			return "[视频通话]"
+		}
+		return "[语音通话]"
 	case "meeting":
 		return "[会议]"
 	case "forward":

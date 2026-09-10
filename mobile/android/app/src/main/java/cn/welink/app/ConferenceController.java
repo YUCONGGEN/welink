@@ -67,6 +67,9 @@ final class ConferenceController {
     private final Conference channel;
     private final String code, localName;
     private final boolean requestedHost;
+    private final boolean callMode;
+    private long callStarted;
+    private final Runnable callClock=new Runnable(){public void run(){if(closed)return;if(callStarted>0){long elapsed=Math.max(0,(System.currentTimeMillis()-callStarted)/1000);presentation.setConnection(String.format(java.util.Locale.getDefault(),"%02d:%02d",elapsed/60,elapsed%60),false);}main.postDelayed(this,1000);}};
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService reader=Executors.newSingleThreadExecutor(r->new Thread(r,"WeLink-conference-read"));
     private final ExecutorService writer=Executors.newSingleThreadExecutor(r->new Thread(r,"WeLink-conference-write"));
@@ -94,8 +97,8 @@ final class ConferenceController {
     private File recordFile;
     private final Runnable projectionStopped=()->{if(closed)return;if(screenSharing)stopScreenShare();if(recording)stopRecording(true);};
 
-    ConferenceController(MeetingActivity activity, Conference channel, String code, String name, boolean host, boolean microphone, boolean camera) throws Exception {
-        this.activity=activity;this.channel=channel;this.code=code;this.localName=name;this.requestedHost=host;
+    ConferenceController(MeetingActivity activity, Conference channel, String code, String name, boolean host, boolean microphone, boolean camera, String callMode, String peerName) throws Exception {
+        this.activity=activity;this.channel=channel;this.code=code;this.localName=name;this.requestedHost=host;this.callMode=!callMode.isEmpty();
         initializeWebRTC(activity.getApplicationContext());
         egl=EglBase.create();
         factory=PeerConnectionFactory.builder()
@@ -103,7 +106,7 @@ final class ConferenceController {
                 .setVideoDecoderFactory(new DefaultVideoDecoderFactory(egl.getEglBaseContext()))
                 .createPeerConnectionFactory();
         audioManager=(AudioManager)activity.getSystemService(Context.AUDIO_SERVICE);oldAudioMode=audioManager.getMode();oldSpeaker=audioManager.isSpeakerphoneOn();audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);audioManager.setSpeakerphoneOn(true);
-        presentation=new ConferenceUi(activity,code,egl.getEglBaseContext(),new ConferenceUi.Actions(){
+        presentation=new ConferenceUi(activity,code,callMode,peerName,egl.getEglBaseContext(),new ConferenceUi.Actions(){
             @Override public void microphone(){toggleMicrophone();}
             @Override public void camera(){toggleCamera();}
             @Override public void switchCamera(){ConferenceController.this.switchCamera();}
@@ -117,7 +120,7 @@ final class ConferenceController {
         local.microphone=audioTrack!=null&&audioTrack.enabled();local.camera=cameraTrack!=null&&cameraTrack.enabled();
         presentation.upsert(local.view(true));if(cameraTrack!=null)presentation.attachVideo("local",cameraTrack,true);render();
         ConferenceProjectionService.onStopped=projectionStopped;
-        reader.execute(this::readLoop);
+        reader.execute(this::readLoop);if(this.callMode)main.post(callClock);
     }
 
     android.view.View view(){return presentation.root;}
@@ -137,6 +140,7 @@ final class ConferenceController {
         case "signal": signal(message);break;
         case "ended": finish(message.optString("message","主持人已结束会议"),false);break;
         case "mute": if(audioTrack!=null){audioTrack.setEnabled(false);local().microphone=false;sendState();render();notice("主持人已将麦克风静音");}break;
+        case "call-state": callStarted=message.optLong("started");break;
         case "pong": break;
         default: break;
     }}catch(Exception failure){finish("会议数据异常，请重新加入",true);}}
@@ -177,7 +181,7 @@ final class ConferenceController {
     private void stopProjectionServiceIfIdle(){if(!screenSharing&&!recording)activity.stopService(new Intent(activity,ConferenceProjectionService.class));}
 
     void transfer(String id){if(isHost()&&participants.containsKey(id)&&!id.equals(selfID))try{send(new JSONObject().put("type","transfer").put("to",id));}catch(Exception ignored){}}
-    void leave(boolean endForAll){if(closed)return;intentional=true;if(isHost()&&endForAll){try{JSONObject end=new JSONObject().put("type","end");writer.execute(()->{try{channel.send(end.toString());}catch(Exception ignored){}main.post(()->finish("",false));});}catch(Exception failure){finish("",false);}}else finish("",false);}
+    void leave(boolean endForAll){if(closed)return;intentional=true;if(callMode||(isHost()&&endForAll)){try{JSONObject end=new JSONObject().put("type",callMode?"call-end":"end");writer.execute(()->{try{channel.send(end.toString());}catch(Exception ignored){}main.post(()->finish("",false));});}catch(Exception failure){finish("",false);}}else finish("",false);}
 
     private void sendState(){Participant local=local();if(local==null||selfID.isEmpty())return;try{send(new JSONObject().put("type","state").put("microphone",local.microphone).put("camera",local.camera).put("screen",local.screen).put("recording",local.recording));}catch(Exception ignored){}}
     private void send(JSONObject message){if(closed)return;writer.execute(()->{try{channel.send(message.toString());}catch(Exception failure){main.post(()->{if(!closed)finish("会议信令发送失败，请重新加入",true);});}});}
@@ -188,11 +192,11 @@ final class ConferenceController {
     private void notice(String message){activity.conferenceNotice(message);}
     private String safeName(String value){value=value==null?"":value.trim();return value.isEmpty()?"参会者":value;}
 
-    private void finish(String reason,boolean unexpected){if(closed)return;closed=true;ConferenceProjectionService.onStopped=null;for(Peer peer:new ArrayList<>(peers.values()))peer.close();peers.clear();if(screenSharing||screenCapturer!=null)stopScreenShare();if(recording||recorder!=null)stopRecording(false);channel.close();reader.shutdownNow();writer.shutdown();if(cameraCapturer!=null){try{cameraCapturer.stopCapture();}catch(Exception ignored){}cameraCapturer.dispose();}if(cameraTrack!=null)cameraTrack.dispose();if(cameraSource!=null)cameraSource.dispose();if(cameraTexture!=null)cameraTexture.dispose();if(audioTrack!=null)audioTrack.dispose();if(audioSource!=null)audioSource.dispose();presentation.release();factory.dispose();egl.release();audioManager.setMode(oldAudioMode);audioManager.setSpeakerphoneOn(oldSpeaker);activity.onConferenceClosed(reason,unexpected&&!intentional);}
+    private void finish(String reason,boolean unexpected){if(closed)return;closed=true;main.removeCallbacks(callClock);ConferenceProjectionService.onStopped=null;for(Peer peer:new ArrayList<>(peers.values()))peer.close();peers.clear();if(screenSharing||screenCapturer!=null)stopScreenShare();if(recording||recorder!=null)stopRecording(false);channel.close();reader.shutdownNow();writer.shutdown();if(cameraCapturer!=null){try{cameraCapturer.stopCapture();}catch(Exception ignored){}cameraCapturer.dispose();}if(cameraTrack!=null)cameraTrack.dispose();if(cameraSource!=null)cameraSource.dispose();if(cameraTexture!=null)cameraTexture.dispose();if(audioTrack!=null)audioTrack.dispose();if(audioSource!=null)audioSource.dispose();presentation.release();factory.dispose();egl.release();audioManager.setMode(oldAudioMode);audioManager.setSpeakerphoneOn(oldSpeaker);activity.onConferenceClosed(reason,unexpected&&!intentional);}
 
     private final class Peer implements PeerConnection.Observer {final String id;PeerConnection pc;RtpSender audioSender,videoSender;boolean remoteSet,makingOffer;final List<IceCandidate> candidates=new ArrayList<>();Peer(String id){this.id=id;}void close(){if(pc!=null){pc.close();pc.dispose();pc=null;}}
         @Override public void onSignalingChange(PeerConnection.SignalingState state){}
-        @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state){main.post(()->{if(state==PeerConnection.IceConnectionState.FAILED||state==PeerConnection.IceConnectionState.DISCONNECTED)presentation.setConnection("部分成员网络不稳定",true);else if(state==PeerConnection.IceConnectionState.CONNECTED||state==PeerConnection.IceConnectionState.COMPLETED)presentation.setConnection("音视频已连接",false);});}
+        @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state){main.post(()->{if(state==PeerConnection.IceConnectionState.FAILED||state==PeerConnection.IceConnectionState.DISCONNECTED)presentation.setConnection("部分成员网络不稳定",true);else if(state==PeerConnection.IceConnectionState.CONNECTED||state==PeerConnection.IceConnectionState.COMPLETED){presentation.setConnection("音视频已连接",false);if(callMode){try{send(new JSONObject().put("type","call-connected"));}catch(Exception ignored){}}}});}
         @Override public void onIceConnectionReceivingChange(boolean receiving){}
         @Override public void onIceGatheringChange(PeerConnection.IceGatheringState state){}
         @Override public void onIceCandidate(IceCandidate candidate){main.post(()->sendSignal(id,"candidate",null,candidate));}

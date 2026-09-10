@@ -308,6 +308,13 @@ func (s *Server) removeContact(w http.ResponseWriter, r *http.Request, block boo
 	var cid string
 	_ = s.db.QueryRow("SELECT id FROM conversations WHERE direct_key=?", strings.Join(pair, ":")).Scan(&cid)
 	s.meetings.Lock()
+	if calls, e := s.activeCallRecords(); e == nil {
+		for _, call := range calls {
+			if call.ConversationID == cid {
+				_, _ = s.finishCallLocked(call, "unavailable")
+			}
+		}
+	}
 	for code, room := range s.meetings.rooms {
 		if cid != "" && room.ConversationID == cid {
 			s.finishMeetingLocked(code, "好友关系已变化")

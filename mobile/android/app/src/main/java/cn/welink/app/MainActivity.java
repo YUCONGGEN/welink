@@ -21,6 +21,10 @@ import java.util.ArrayList;
 
 public final class MainActivity extends Activity {
     private WebView web;
+    private static java.lang.ref.WeakReference<MainActivity> current=new java.lang.ref.WeakReference<>(null);
+    private android.media.Ringtone callRing;
+    private android.media.ToneGenerator callTone;
+    private Runnable ringRepeat;
     private String origin;
     private ValueCallback<Uri[]> chooser;
     private String pendingDownload;
@@ -29,7 +33,7 @@ public final class MainActivity extends Activity {
     private boolean pendingVideoCapture;
     private final Handler main=new Handler(Looper.getMainLooper());
     private WeLinkApp app(){return (WeLinkApp)getApplication();}
-    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);start();}
+    @Override public void onCreate(Bundle state){super.onCreate(state);current=new java.lang.ref.WeakReference<>(this);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);start();}
     private void start(){
         LinearLayout loading=new LinearLayout(this);loading.setGravity(Gravity.CENTER);loading.setOrientation(LinearLayout.VERTICAL);loading.setBackgroundColor(Color.rgb(239,248,255));TextView title=new TextView(this);title.setText(R.string.app_name);title.setTextColor(Color.rgb(0,153,255));title.setTextSize(34);loading.addView(title);setContentView(loading);
         Executors.newSingleThreadExecutor().execute(()->{try{String url=app().engine().url();origin="http://"+Uri.parse(url).getAuthority();main.post(()->{try{showWeb(url);}catch(RuntimeException unavailable){title.setText("系统 WebView 组件不可用，请更新 Android System WebView 后重试。");title.setTextSize(16);Button retry=new Button(this);retry.setText(R.string.retry);retry.setOnClickListener(v->start());loading.addView(retry);setContentView(loading);}});}catch(Exception e){main.post(()->{title.setText(getString(R.string.startup_failed,e.getMessage()));title.setTextSize(16);Button retry=new Button(this);retry.setText(R.string.retry);retry.setOnClickListener(v->start());loading.addView(retry);});}});
@@ -75,7 +79,15 @@ public final class MainActivity extends Activity {
     private void captureVideo(){Intent capture=new Intent(MediaStore.ACTION_VIDEO_CAPTURE);capture.putExtra(MediaStore.EXTRA_DURATION_LIMIT,60);capture.putExtra(MediaStore.EXTRA_SIZE_LIMIT,50L*1024*1024);capture.putExtra(MediaStore.EXTRA_VIDEO_QUALITY,1);launchPicker(capture);}
     private void launchPicker(Intent intent){try{startActivityForResult(intent,40);}catch(ActivityNotFoundException|SecurityException error){finishChooser(null);Toast.makeText(this,"无法打开相机或文件选择器，请检查系统应用与权限",Toast.LENGTH_LONG).show();}}
     private void finishChooser(Uri[] result){ValueCallback<Uri[]> callback=chooser;chooser=null;pendingVideoCapture=false;if(callback!=null)callback.onReceiveValue(result);}
+    private void stopRinging(){if(ringRepeat!=null)main.removeCallbacks(ringRepeat);ringRepeat=null;if(callRing!=null){callRing.stop();callRing=null;}if(callTone!=null){callTone.release();callTone=null;}}
+    private void ring(boolean incoming){stopRinging();try{if(incoming){callRing=android.media.RingtoneManager.getRingtone(this,android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE));if(callRing==null)return;ringRepeat=new Runnable(){public void run(){if(callRing==null)return;if(!callRing.isPlaying())callRing.play();main.postDelayed(this,3000);}};}else{callTone=new android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC,40);ringRepeat=new Runnable(){public void run(){if(callTone==null)return;callTone.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE,1000);main.postDelayed(this,3200);}};}main.post(ringRepeat);}catch(RuntimeException unavailable){stopRinging();}}
+    static void notifyCallClosed(String id){MainActivity activity=current.get();if(activity!=null)activity.main.post(()->{if(activity.web!=null)activity.web.evaluateJavascript("window.WeLinkCallNativeClosed&&window.WeLinkCallNativeClosed("+org.json.JSONObject.quote(id)+")",null);});}
     private final class Bridge {
+        @JavascriptInterface public void callRinging(boolean incoming){main.post(()->ring(incoming));}
+        @JavascriptInterface public void stopCallRinging(){main.post(MainActivity.this::stopRinging);}
+        @JavascriptInterface public void closeCall(String id){main.post(()->MeetingActivity.closeCall(id));}
+        @JavascriptInterface public void openCall(String code,String token,String name,String id,String peer,String mode){main.post(()->{if(code==null||!code.matches("[1-9][0-9]{8}")||token==null||!token.matches("[a-f0-9]{64}")||id==null||!id.matches("[a-f0-9]{32}")||!("audio".equals(mode)||"video".equals(mode)))return;stopRinging();startActivity(new Intent(MainActivity.this,MeetingActivity.class).putExtra("code",code).putExtra("token",token).putExtra("name",name).putExtra("microphone",true).putExtra("camera","video".equals(mode)).putExtra("call_id",id).putExtra("call_mode",mode).putExtra("peer_name",peer));});}
+
         @JavascriptInterface public void scanQRCode(){main.post(()->startActivityForResult(new Intent(MainActivity.this,QrScannerActivity.class),42));}
         @JavascriptInterface public void openMeeting(String code,String token,String name,boolean host,boolean microphone,boolean camera){main.post(()->{if(!code.matches("[1-9][0-9]{8}")||!token.matches("[a-f0-9]{64}"))return;Intent meeting=new Intent(MainActivity.this,MeetingActivity.class).putExtra("code",code).putExtra("token",token).putExtra("name",name).putExtra("host",host).putExtra("microphone",microphone).putExtra("camera",camera);startActivity(meeting);});}
         @JavascriptInterface public void requestSharing(){main.post(()->{if(app().sharing)return;new AlertDialog.Builder(MainActivity.this).setTitle("开启屏幕共享").setMessage("好友接受远程协助后可以看到你的屏幕。你可以随时在通知中停止共享。远程操作还需要单独开启触控权限。").setNegativeButton("取消",null).setPositiveButton("继续",(d,w)->{MediaProjectionManager mgr=(MediaProjectionManager)getSystemService(MEDIA_PROJECTION_SERVICE);startActivityForResult(mgr.createScreenCaptureIntent(),50);}).show();});}
@@ -86,5 +98,5 @@ public final class MainActivity extends Activity {
     private void download(String address,String cookies,Uri destination){HttpURLConnection conn=null;try{conn=(HttpURLConnection)new URL(address).openConnection();conn.setConnectTimeout(15000);conn.setReadTimeout(30000);conn.setRequestProperty("Cookie",cookies==null?"":cookies);if(conn.getResponseCode()!=200)throw new IOException("下载失败："+conn.getResponseCode());try(InputStream in=conn.getInputStream();OutputStream out=getContentResolver().openOutputStream(destination,"w")){if(out==null)throw new IOException("无法保存文件");byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}main.post(()->Toast.makeText(this,"文件已保存",Toast.LENGTH_SHORT).show());}catch(Exception e){main.post(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}finally{if(conn!=null)conn.disconnect();}}
     @Override public void onBackPressed(){if(web!=null){web.evaluateJavascript("(()=>{const b=document.querySelector('.remote-screen [data-action=stop-remote]')||document.querySelector('.modal [data-action=close-modal]')||document.querySelector('.in-chat [data-action=back]');if(b){b.click();return true}return false})()",value->{if(!"true".equals(value))moveTaskToBack(true);});}else super.onBackPressed();}
     @Override protected void onPause(){if(web!=null)web.evaluateJavascript("window.WeLinkMediaBackground&&window.WeLinkMediaBackground()",null);super.onPause();}
-    @Override protected void onDestroy(){finishChooser(null);if(pendingWebPermission!=null){pendingWebPermission.deny();pendingWebPermission=null;}if(web!=null){web.removeJavascriptInterface("WeLinkAndroid");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){stopRinging();if(current.get()==this)current.clear();finishChooser(null);if(pendingWebPermission!=null){pendingWebPermission.deny();pendingWebPermission=null;}if(web!=null){web.removeJavascriptInterface("WeLinkAndroid");web.destroy();web=null;}super.onDestroy();}
 }

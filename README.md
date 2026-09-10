@@ -21,7 +21,8 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 - 好友右键 / 长按可设置备注、分组、私有描述，删除好友或加入黑名单。分组支持创建、重命名、排序、折叠和删除；备注、分组、描述同步到同账号其他设备。“设置 → 联系人与隐私”可管理黑名单，以及是否允许陌生人搜索、是否接收新的好友申请。删除 / 拉黑保留聊天记录和共同群聊，结束双方远程协助及单聊会议；解除拉黑后需要重新添加好友。
 - “设置 → 账号与安全”可修改密码、查看登录设备并退出指定设备 / 其他设备。退出立即断开对应聊天、会议与远程协助；修改密码会保留当前设备、退出其他设备，并使未完成的扫码授权失效。
 - 在好友单聊中发起远程协助，对方同意后开始。Android 共享屏幕需系统 MediaProjection 授权；远程触控另需主动开启无障碍权限。
-- 从“会议”或聊天右上角发起音视频会议，输入 9 位会议号加入，也可以邀请当前好友 / 群。参考 YuDesk 的会议目前最多 8 人、最长 2 小时；主持人可共享屏幕、转交主持、录制和结束会议。两端会议均采用白色面板、浅灰背景和蓝色控件。安卓录制当前只保存屏幕画面，不含声音。
+- 好友单聊右上角可拨打语音 / 视频电话，对方接听后连接；支持视频来电语音接听、取消 / 拒绝 / 忙线 / 超时、通话计时和记录。详情见 [通话说明](docs/CALLS.md)。
+- 从“会议”或群聊右上角发起音视频会议，输入 9 位会议号加入，也可以邀请当前好友 / 群。参考 YuDesk 的会议目前最多 8 人、最长 2 小时；主持人可共享屏幕、转交主持、录制和结束会议。两端会议均采用白色面板、浅灰背景和蓝色控件。安卓录制当前只保存屏幕画面，不含声音。
 
 HTTP 由本次部署要求指定：登录与聊天传输不使用 TLS。远控数据通道使用 YuDesk 加密协议；会议音视频使用 WebRTC DTLS/SRTP，信令经 HTTP/WebSocket。当前没有 TURN 媒体中转，严格 NAT 环境可能无法建立会议直连。
 
@@ -66,6 +67,7 @@ go test ./internal/yudesk/secureconn ./internal/yudesk/protocol ./internal/yudes
 node scripts/windows-smoke.mjs
 node scripts/ui-test.mjs
 node scripts/meeting-test.mjs
+node scripts/calls-test.mjs
 node scripts/qr-login-test.mjs
 node scripts/message-operations-test.mjs
 node scripts/forwarding-test.mjs

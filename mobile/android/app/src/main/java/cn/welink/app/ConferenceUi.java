@@ -56,23 +56,24 @@ final class ConferenceUi {
     private final Map<String, Tile> tiles = new LinkedHashMap<>();
     private final Tool mic, camera, switchCamera, share, members, record, leave;
     private boolean memberPanelOpen;
+    private final String callMode;
 
-    ConferenceUi(Activity activity, String code, EglBase.Context eglContext, Actions actions) {
-        this.activity=activity;this.actions=actions;this.eglContext=eglContext;
+    ConferenceUi(Activity activity, String code, String callMode, String peerName, EglBase.Context eglContext, Actions actions) {
+        this.activity=activity;this.actions=actions;this.callMode=callMode;this.eglContext=eglContext;
         root=new FrameLayout(activity);root.setBackgroundColor(0xfff5f6f7);
 
-        grid=new TileGrid(activity);grid.setPadding(dp(8),dp(58),dp(8),dp(82));
+        grid=new TileGrid(activity,callMode);grid.setPadding(dp(8),dp(58),dp(8),dp(82));
         root.addView(grid,new FrameLayout.LayoutParams(-1,-1));
 
         LinearLayout top=row();top.setPadding(dp(18),dp(8),dp(12),dp(8));top.setBackground(fade(0xffffffff,0xffffffff));
-        LinearLayout heading=column();TextView title=text("WeLink 会议",15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(code.replaceAll("(\\d{3})(?=\\d)","$1 "),12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
+        LinearLayout heading=column();TextView title=text(callMode.isEmpty()?"WeLink 会议":peerName,15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(callMode.isEmpty()?code.replaceAll("(\\d{3})(?=\\d)","$1 "):"video".equals(callMode)?"WeLink 视频通话":"WeLink 语音通话",12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
         recordingBadge=text("● 录制中",12,0xffff7272);recordingBadge.setVisibility(View.GONE);recordingBadge.setPadding(dp(10),0,dp(10),0);top.addView(recordingBadge,new LinearLayout.LayoutParams(-2,dp(42)));
         connection=text("正在连接…",12,0xff8995a4);connection.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);top.addView(connection,new LinearLayout.LayoutParams(-2,dp(42)));
         FrameLayout.LayoutParams topParams=new FrameLayout.LayoutParams(-1,dp(58),Gravity.TOP);root.addView(top,topParams);
 
         HorizontalScrollView toolbarScroll=new HorizontalScrollView(activity);toolbarScroll.setHorizontalScrollBarEnabled(false);toolbarScroll.setFillViewport(true);toolbarScroll.setBackgroundColor(0xffffffff);
         LinearLayout toolbar=row();toolbar.setGravity(Gravity.CENTER);toolbar.setPadding(dp(8),dp(4),dp(8),dp(4));
-        mic=tool("麦克风",this.actions::microphone);camera=tool("摄像头",this.actions::camera);switchCamera=tool("切换镜头",this.actions::switchCamera);share=tool("共享屏幕",this.actions::share);members=tool("成员",()->setMembersOpen(!memberPanelOpen));record=tool("录制",this.actions::record);leave=tool("离开",this.actions::leave);leave.label.setTextColor(0xffff7272);
+        mic=tool("麦克风",this.actions::microphone);camera=tool("摄像头",this.actions::camera);switchCamera=tool("切换镜头",this.actions::switchCamera);share=tool("共享屏幕",this.actions::share);members=tool("成员",()->setMembersOpen(!memberPanelOpen));record=tool("录制",this.actions::record);leave=tool(callMode.isEmpty()?"离开":"挂断",this.actions::leave);leave.label.setTextColor(0xffff7272);
         for(Tool tool:new Tool[]{mic,camera,switchCamera,share,members,record,leave})toolbar.addView(tool.root,new LinearLayout.LayoutParams(dp(72),dp(70)));
         toolbarScroll.addView(toolbar,new HorizontalScrollView.LayoutParams(-1,-1));
         FrameLayout.LayoutParams toolbarParams=new FrameLayout.LayoutParams(-1,dp(78),Gravity.BOTTOM);root.addView(toolbarScroll,toolbarParams);
@@ -92,7 +93,7 @@ final class ConferenceUi {
     void upsert(Member member) {
         Tile tile=tiles.get(member.id);
         if(tile==null){tile=new Tile(member.id,member.name);tiles.put(member.id,tile);grid.addView(tile.root);}
-        tile.name=member.name;tile.self=member.self;tile.host=member.host;tile.microphone=member.microphone;tile.camera=member.camera;tile.screen=member.screen;tile.recording=member.recording;tile.render();grid.requestLayout();
+        tile.name=member.name;tile.self=member.self;tile.host=member.host;tile.microphone=member.microphone;tile.camera=member.camera;tile.screen=member.screen;tile.recording=member.recording;tile.root.setTag(member.self);tile.root.setVisibility("audio".equals(callMode)&&member.self?View.GONE:View.VISIBLE);tile.renderer.setZOrderMediaOverlay(!callMode.isEmpty()&&member.self);tile.render();if(!callMode.isEmpty())for(Tile local:tiles.values())if(local.self)local.root.bringToFront();grid.requestLayout();
     }
 
     void attachVideo(String id, VideoTrack track, boolean mirror) {
@@ -107,6 +108,7 @@ final class ConferenceUi {
     }
 
     void renderMembers(List<Member> values, boolean selfIsHost) {
+        if(!callMode.isEmpty())return;
         memberList.removeAllViews();count.setText(String.format(Locale.getDefault(),"%d 人",values.size()));
         boolean anyRecording=false;
         for(Member member:values){
@@ -121,6 +123,7 @@ final class ConferenceUi {
 
     void setControls(boolean microphone,boolean cameraEnabled,boolean screen,boolean recording,boolean host) {
         mic.setActive(microphone,microphone?"静音":"解除静音");camera.setActive(cameraEnabled,cameraEnabled?"关闭视频":"开启视频");switchCamera.root.setVisibility(cameraEnabled?View.VISIBLE:View.GONE);share.root.setVisibility(host?View.VISIBLE:View.GONE);record.root.setVisibility(host?View.VISIBLE:View.GONE);share.setActive(screen,screen?"停止共享":"共享屏幕");record.setActive(recording,recording?"停止录制":"录制");leave.label.setText(host?"结束会议":"离开会议");
+        if(!callMode.isEmpty()){share.root.setVisibility(View.GONE);record.root.setVisibility(View.GONE);members.root.setVisibility(View.GONE);camera.root.setVisibility("audio".equals(callMode)?View.GONE:View.VISIBLE);leave.label.setText("挂断");}
     }
 
     void setMembersOpen(boolean open){memberPanelOpen=open;memberPanel.setVisibility(open?View.VISIBLE:View.GONE);members.setActive(open,"成员");}
@@ -135,16 +138,19 @@ final class ConferenceUi {
     }
 
     private static final class TileGrid extends ViewGroup {
-        TileGrid(Context context){super(context);setClipToPadding(false);}
-        @Override protected void onMeasure(int widthMeasureSpec,int heightMeasureSpec){int width=MeasureSpec.getSize(widthMeasureSpec),height=MeasureSpec.getSize(heightMeasureSpec);int innerW=Math.max(0,width-getPaddingLeft()-getPaddingRight()),innerH=Math.max(0,height-getPaddingTop()-getPaddingBottom()),count=getChildCount(),columns=count<=1?1:count<=4?2:count<=6?3:4,rows=Math.max(1,(count+columns-1)/columns),gap=dp(getContext(),8),cellW=Math.max(0,(innerW-gap*(columns-1))/columns),cellH=Math.max(0,(innerH-gap*(rows-1))/rows);for(int i=0;i<count;i++)getChildAt(i).measure(MeasureSpec.makeMeasureSpec(cellW,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(cellH,MeasureSpec.EXACTLY));setMeasuredDimension(width,height);}
-        @Override protected void onLayout(boolean changed,int left,int top,int right,int bottom){int count=getChildCount(),columns=count<=1?1:count<=4?2:count<=6?3:4,rows=Math.max(1,(count+columns-1)/columns),gap=dp(getContext(),8),innerW=getWidth()-getPaddingLeft()-getPaddingRight(),innerH=getHeight()-getPaddingTop()-getPaddingBottom(),cellW=(innerW-gap*(columns-1))/columns,cellH=(innerH-gap*(rows-1))/rows;for(int i=0;i<count;i++){int col=i%columns,row=i/columns,x=getPaddingLeft()+col*(cellW+gap),y=getPaddingTop()+row*(cellH+gap);getChildAt(i).layout(x,y,x+cellW,y+cellH);}}
+        private final String callMode;
+        TileGrid(Context context,String callMode){super(context);this.callMode=callMode;setClipToPadding(false);}
+        private void measureCall(int width,int height){int w=Math.max(0,width-getPaddingLeft()-getPaddingRight()),h=Math.max(0,height-getPaddingTop()-getPaddingBottom());for(int i=0;i<getChildCount();i++){View child=getChildAt(i);boolean self=Boolean.TRUE.equals(child.getTag());child.measure(MeasureSpec.makeMeasureSpec(self?Math.min(w,dp(getContext(),110)):w,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(self?Math.min(h,dp(getContext(),148)):h,MeasureSpec.EXACTLY));}setMeasuredDimension(width,height);}
+        private void layoutCall(){for(int i=0;i<getChildCount();i++){View child=getChildAt(i);boolean self=Boolean.TRUE.equals(child.getTag());int x=self?getWidth()-getPaddingRight()-child.getMeasuredWidth()-dp(getContext(),8):getPaddingLeft(),y=getPaddingTop()+(self?dp(getContext(),8):0);child.layout(x,y,x+child.getMeasuredWidth(),y+child.getMeasuredHeight());}}
+        @Override protected void onMeasure(int widthMeasureSpec,int heightMeasureSpec){if(!callMode.isEmpty()){measureCall(MeasureSpec.getSize(widthMeasureSpec),MeasureSpec.getSize(heightMeasureSpec));return;}int width=MeasureSpec.getSize(widthMeasureSpec),height=MeasureSpec.getSize(heightMeasureSpec);int innerW=Math.max(0,width-getPaddingLeft()-getPaddingRight()),innerH=Math.max(0,height-getPaddingTop()-getPaddingBottom()),count=getChildCount(),columns=count<=1?1:count<=4?2:count<=6?3:4,rows=Math.max(1,(count+columns-1)/columns),gap=dp(getContext(),8),cellW=Math.max(0,(innerW-gap*(columns-1))/columns),cellH=Math.max(0,(innerH-gap*(rows-1))/rows);for(int i=0;i<count;i++)getChildAt(i).measure(MeasureSpec.makeMeasureSpec(cellW,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(cellH,MeasureSpec.EXACTLY));setMeasuredDimension(width,height);}
+        @Override protected void onLayout(boolean changed,int left,int top,int right,int bottom){if(!callMode.isEmpty()){layoutCall();return;}int count=getChildCount(),columns=count<=1?1:count<=4?2:count<=6?3:4,rows=Math.max(1,(count+columns-1)/columns),gap=dp(getContext(),8),innerW=getWidth()-getPaddingLeft()-getPaddingRight(),innerH=getHeight()-getPaddingTop()-getPaddingBottom(),cellW=(innerW-gap*(columns-1))/columns,cellH=(innerH-gap*(rows-1))/rows;for(int i=0;i<count;i++){int col=i%columns,row=i/columns,x=getPaddingLeft()+col*(cellW+gap),y=getPaddingTop()+row*(cellH+gap);getChildAt(i).layout(x,y,x+cellW,y+cellH);}}
     }
 
     private final class Tool {final LinearLayout root;final MeetingIcon glyph;final TextView label;Tool(String title,Runnable action){root=column();root.setGravity(Gravity.CENTER);root.setBackground(ripple(Color.TRANSPARENT,10));glyph=new MeetingIcon(activity,title);label=text(title,11,0xff657382);label.setGravity(Gravity.CENTER);root.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));root.addView(label,new LinearLayout.LayoutParams(-1,dp(30)));root.setOnClickListener(v->action.run());root.setContentDescription(title);}void setActive(boolean active,String title){glyph.active=active;glyph.invalidate();label.setText(title);label.setTextColor(active?0xff0099ff:0xff657382);root.setContentDescription(title);}}
     private static final class MeetingIcon extends View {
         final String kind;final Paint pen=new Paint(Paint.ANTI_ALIAS_FLAG);boolean active;
         MeetingIcon(Context context,String kind){super(context);this.kind=kind;}
-        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.save();canvas.scale(getWidth()/24f,getHeight()/24f);pen.setStyle(Paint.Style.STROKE);pen.setStrokeWidth(1.6f);pen.setStrokeCap(Paint.Cap.ROUND);pen.setStrokeJoin(Paint.Join.ROUND);pen.setColor(kind.equals("离开")?0xffdc535a:active?0xff0099ff:0xff718095);
+        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);canvas.save();canvas.scale(getWidth()/24f,getHeight()/24f);pen.setStyle(Paint.Style.STROKE);pen.setStrokeWidth(1.6f);pen.setStrokeCap(Paint.Cap.ROUND);pen.setStrokeJoin(Paint.Join.ROUND);pen.setColor((kind.equals("离开")||kind.equals("挂断"))?0xffdc535a:active?0xff0099ff:0xff718095);
             switch(kind){
                 case "麦克风":canvas.drawRoundRect(9,2,15,14,3,3,pen);canvas.drawArc(6,5,18,18,0,180,false,pen);canvas.drawLine(6,9,6,12,pen);canvas.drawLine(18,9,18,12,pen);canvas.drawLine(12,18,12,22,pen);canvas.drawLine(8,22,16,22,pen);break;
                 case "摄像头":canvas.drawRoundRect(2,5,16,19,2,2,pen);path(canvas,new float[]{16,9,22,6,22,18,16,15},true);break;
@@ -152,6 +158,7 @@ final class ConferenceUi {
                 case "共享屏幕":canvas.drawRoundRect(2,3,22,18,2,2,pen);canvas.drawLine(8,22,16,22,pen);canvas.drawLine(12,18,12,22,pen);path(canvas,new float[]{8,10,12,6,16,10},false);canvas.drawLine(12,6,12,14,pen);break;
                 case "成员":canvas.drawCircle(9,7,3,pen);canvas.drawArc(2,13,16,25,180,180,false,pen);canvas.drawArc(14,4,21,11,260,170,false,pen);canvas.drawArc(14,13,24,25,260,100,false,pen);break;
                 case "录制":canvas.drawCircle(12,12,9,pen);pen.setStyle(Paint.Style.FILL);canvas.drawCircle(12,12,4,pen);break;
+                case "挂断":canvas.drawArc(2,6,22,24,210,120,false,pen);path(canvas,new float[]{3,10,3,16,7,16,7,10},false);path(canvas,new float[]{17,10,17,16,21,16,21,10},false);break;
                 case "离开":path(canvas,new float[]{10,3,3,3,3,21,10,21},false);canvas.drawLine(9,12,22,12,pen);path(canvas,new float[]{17,7,22,12,17,17},false);break;
                 default:canvas.drawCircle(12,12,8,pen);
             }canvas.restore();
@@ -162,7 +169,7 @@ final class ConferenceUi {
     private LinearLayout row(){LinearLayout v=new LinearLayout(activity);v.setOrientation(LinearLayout.HORIZONTAL);v.setGravity(Gravity.CENTER_VERTICAL);return v;}
     private LinearLayout column(){LinearLayout v=new LinearLayout(activity);v.setOrientation(LinearLayout.VERTICAL);return v;}
     private TextView text(String value,int size,int color){TextView v=new TextView(activity);v.setText(value);v.setTextSize(size);v.setTextColor(color);v.setIncludeFontPadding(false);v.setGravity(Gravity.CENTER_VERTICAL);return v;}
-    private String memberLabel(String name,boolean self,boolean host){return name+(self?"（我）":"")+(host?" · 主持人":"");}
+    private String memberLabel(String name,boolean self,boolean host){return name+(self?"（我）":"")+(host&&callMode.isEmpty()?" · 主持人":"");}
     private String initial(String name){String value=name==null?"":name.trim();if(value.isEmpty())return "参";int end=value.offsetByCodePoints(0,1);return value.substring(0,end).toUpperCase(Locale.getDefault());}
     private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private RippleDrawable ripple(int color,int radius){return new RippleDrawable(ColorStateList.valueOf(0x220099ff),round(color,radius),null);}

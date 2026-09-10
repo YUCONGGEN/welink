@@ -26,6 +26,7 @@ type meetingPeer struct {
 	Recording  bool   `json:"recording,omitempty"`
 }
 type meetingSignal struct {
+	Started    int64         `json:"started,omitempty"`
 	Type       string        `json:"type"`
 	ID         string        `json:"id,omitempty"`
 	From       string        `json:"from,omitempty"`
@@ -48,6 +49,7 @@ type meetingParticipant struct {
 	joined int64
 }
 type meetingRoom struct {
+	CallID         string                         `json:"-"`
 	Code           string                         `json:"code"`
 	Title          string                         `json:"title"`
 	Owner          string                         `json:"owner"`
@@ -94,6 +96,13 @@ func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.meetings.Lock()
+	var activeCalls int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM calls WHERE state<>'ended' AND (caller=? OR callee=?)", uid(r), uid(r)).Scan(&activeCalls)
+	if activeCalls > 0 {
+		s.meetings.Unlock()
+		fail(w, 409, "请先结束当前通话")
+		return
+	}
 	for _, room := range s.meetings.rooms {
 		if room.Owner == uid(r) {
 			s.meetings.Unlock()
@@ -141,7 +150,7 @@ func (s *Server) listMeetings(w http.ResponseWriter, r *http.Request) {
 	defer s.meetings.Unlock()
 	out := []map[string]any{}
 	for _, room := range s.meetings.rooms {
-		if room.Owner == uid(r) || room.Peers[uid(r)] != nil {
+		if room.CallID == "" && (room.Owner == uid(r) || room.Peers[uid(r)] != nil) {
 			out = append(out, map[string]any{"code": room.Code, "title": room.Title, "owner": room.Owner, "host": room.HostID, "created": room.Created, "expires": room.Expires, "count": len(room.Peers)})
 		}
 	}
@@ -163,7 +172,7 @@ func (s *Server) inviteMeeting(w http.ResponseWriter, r *http.Request) {
 	}
 	s.meetings.Lock()
 	room := s.meetings.rooms[r.PathValue("code")]
-	if room == nil || (room.Owner != uid(r) && room.Peers[uid(r)] == nil) {
+	if room == nil || room.CallID != "" || (room.Owner != uid(r) && room.Peers[uid(r)] == nil) {
 		s.meetings.Unlock()
 		fail(w, 403, "请先加入会议")
 		return
@@ -176,7 +185,7 @@ func (s *Server) inviteMeeting(w http.ResponseWriter, r *http.Request) {
 func (s *Server) endMeeting(w http.ResponseWriter, r *http.Request) {
 	s.meetings.Lock()
 	room := s.meetings.rooms[r.PathValue("code")]
-	allowed := room != nil && room.HostID == uid(r)
+	allowed := room != nil && room.CallID == "" && room.HostID == uid(r)
 	s.meetings.Unlock()
 	if !allowed {
 		fail(w, 403, "只有当前主持人可以结束会议")
@@ -193,6 +202,12 @@ func (s *Server) finishMeeting(code, reason string) {
 func (s *Server) finishMeetingLocked(code, reason string) {
 	room := s.meetings.rooms[code]
 	if room == nil {
+		return
+	}
+	if room.CallID != "" {
+		if c, e := readCall(s.db, room.CallID); e == nil {
+			_, _ = s.finishCallLocked(c, "unavailable")
+		}
 		return
 	}
 	delete(s.meetings.rooms, code)
@@ -245,6 +260,22 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "你已被主持人移出本次会议")
 		return
 	}
+	if room.CallID != "" {
+		c, e := readCall(s.db, room.CallID)
+		if e != nil || c.State == "ended" || !c.assigned(u.ID, sessionHash(r)) || !contactAllowed(s.db, c.Caller, c.Callee) {
+			s.meetings.Unlock()
+			fail(w, 403, "请在已接听或发起通话的设备上加入")
+			return
+		}
+	} else {
+		var n int
+		_ = s.db.QueryRow("SELECT COUNT(*) FROM calls WHERE state<>'ended' AND (caller=? OR callee=?)", u.ID, u.ID).Scan(&n)
+		if n > 0 {
+			s.meetings.Unlock()
+			fail(w, 409, "请先结束当前通话")
+			return
+		}
+	}
 	groupMeeting := s.isGroupMeeting(room)
 	if !groupMeeting && u.ID != room.Owner && contactBlocked(s.db, u.ID, room.Owner) {
 		s.meetings.Unlock()
@@ -261,7 +292,7 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "会议已满或当前账号已入会")
 		return
 	}
-	if len(room.Peers) == 0 && u.ID != room.HostID {
+	if room.CallID == "" && len(room.Peers) == 0 && u.ID != room.HostID {
 		s.meetings.Unlock()
 		fail(w, 409, "请等待主持人进入会议")
 		return
@@ -336,6 +367,22 @@ func (s *Server) applyMeetingSignal(code string, p *meetingParticipant, m meetin
 		return false
 	}
 	switch m.Type {
+	case "call-connected":
+		return room.CallID != "" && s.callMediaReadyLocked(room, p)
+	case "call-end":
+		if room.CallID == "" {
+			return false
+		}
+		c, e := readCall(s.db, room.CallID)
+		if e != nil {
+			return false
+		}
+		reason := "completed"
+		if c.Started == 0 {
+			reason = "cancelled"
+		}
+		_, e = s.finishCallLocked(c, reason)
+		return e == nil
 	case "ping":
 		meetingQueue(p, meetingSignal{Type: "pong"})
 	case "signal":
@@ -350,6 +397,9 @@ func (s *Server) applyMeetingSignal(code string, p *meetingParticipant, m meetin
 		p.Screen, p.Recording = m.Screen && room.HostID == p.ID, m.Recording && room.HostID == p.ID
 		meetingBroadcast(room, meetingSignal{Type: "state", ID: p.ID, Microphone: p.Microphone, Camera: p.Camera, Screen: p.Screen, Recording: p.Recording}, "")
 	case "transfer":
+		if room.CallID != "" {
+			return false
+		}
 		if room.HostID != p.ID || m.To == p.ID || room.Peers[m.To] == nil {
 			return false
 		}
@@ -358,6 +408,9 @@ func (s *Server) applyMeetingSignal(code string, p *meetingParticipant, m meetin
 		room.HostID = m.To
 		meetingBroadcast(room, meetingSignal{Type: "host", Host: m.To}, "")
 	case "mute", "kick":
+		if room.CallID != "" {
+			return false
+		}
 		if room.HostID != p.ID || m.To == p.ID || room.Peers[m.To] == nil {
 			return false
 		}
@@ -370,6 +423,13 @@ func (s *Server) applyMeetingSignal(code string, p *meetingParticipant, m meetin
 			time.AfterFunc(200*time.Millisecond, target.socket.close)
 		}
 	case "end":
+		if room.CallID != "" {
+			c, e := readCall(s.db, room.CallID)
+			if e == nil {
+				_, _ = s.finishCallLocked(c, "completed")
+			}
+			return false
+		}
 		if room.HostID != p.ID {
 			return false
 		}
@@ -389,6 +449,12 @@ func (s *Server) leaveMeeting(code string, p *meetingParticipant) {
 		return
 	}
 	if room.Peers[p.ID] != p {
+		return
+	}
+	if room.CallID != "" {
+		if c, e := readCall(s.db, room.CallID); e == nil {
+			_, _ = s.finishCallLocked(c, "disconnected")
+		}
 		return
 	}
 	delete(room.Peers, p.ID)

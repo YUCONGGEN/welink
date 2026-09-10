@@ -19,6 +19,362 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/calls.js
+  function createCalls({ S: S2, api: api2, action: action2, esc: esc2, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let active = null, scope = "", generation = 0, refreshTimer2, clock, ringTimer, audio, joining = "", dialing = false, history = null;
+    const permitted = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), dismissed = /* @__PURE__ */ new Set();
+    const identity = () => {
+      var _a;
+      return JSON.stringify([S2.config.server, S2.config.fingerprint, (_a = S2.user) == null ? void 0 : _a.id, S2.token]);
+    };
+    const live = (g) => g === generation && scope === identity() && S2.user && !S2.signingOut;
+    const reasons = { busy: "对方忙线", rejected: "已拒绝", cancelled: "已取消", no_answer: "无人接听", failed: "未能接通", completed: "通话结束", offline: "设备已离线", unavailable: "好友关系已变化", interrupted: "通话中断", disconnected: "连接已断开", expired: "通话已到时限" };
+    const duration = (n) => Math.floor(Math.max(0, n) / 60).toString().padStart(2, "0") + ":" + (Math.floor(Math.max(0, n)) % 60).toString().padStart(2, "0");
+    function description(c) {
+      var _a;
+      if (c.state === "ringing") return c.caller === ((_a = S2.user) == null ? void 0 : _a.id) ? "正在等待对方接听…" : "邀请你" + (c.mode === "video" ? "视频" : "语音") + "通话";
+      if (c.state === "connecting") return "正在连接…";
+      if (c.state === "connected") return duration((Date.now() - c.started) / 1e3);
+      return c.started ? duration((c.ended - c.started) / 1e3) : reasons[c.reason] || "通话已结束";
+    }
+    function summary(value) {
+      let c = value;
+      try {
+        if (value.kind) c = JSON.parse(value.text);
+      } catch (e) {
+        return "[通话]";
+      }
+      return "[" + (c.mode === "video" ? "视频" : "语音") + "通话] " + (c.state === "ended" ? c.started ? duration((c.ended - c.started) / 1e3) : reasons[c.reason] || "已结束" : c.state === "ringing" ? "等待接听" : c.state === "connecting" ? "正在连接" : "通话中");
+    }
+    function card(m) {
+      let c;
+      try {
+        c = JSON.parse(m.text);
+      } catch (e) {
+        return esc2("[通话]");
+      }
+      ;
+      return '<button class="call-message-card" data-call-redial="'.concat(esc2(m.conversationId || ""), '" data-call-mode="').concat(c.mode === "video" ? "video" : "audio", '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>").concat(esc2(summary(c)), "</span></button>");
+    }
+    function stopRing() {
+      var _a, _b;
+      clearInterval(ringTimer);
+      ringTimer = null;
+      (_b = (_a = window.WeLinkAndroid) == null ? void 0 : _a.stopCallRinging) == null ? void 0 : _b.call(_a);
+      if (audio) {
+        audio.close().catch(() => {
+        });
+        audio = null;
+      }
+    }
+    function startRing(incoming) {
+      var _a;
+      if (ringTimer) return;
+      if ((_a = window.WeLinkAndroid) == null ? void 0 : _a.callRinging) {
+        window.WeLinkAndroid.callRinging(incoming);
+        ringTimer = setInterval(() => {
+        }, 6e4);
+        return;
+      }
+      try {
+        audio = new (window.AudioContext || window.webkitAudioContext)();
+        const tone = () => {
+          if (!audio) return;
+          for (let i = 0; i < 2; i++) {
+            const oscillator = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + i * 0.32;
+            oscillator.frequency.value = incoming ? 660 : 440;
+            gain.gain.setValueAtTime(0.025, at);
+            gain.gain.exponentialRampToValueAtTime(1e-3, at + 0.22);
+            oscillator.connect(gain);
+            gain.connect(audio.destination);
+            oscillator.start(at);
+            oscillator.stop(at + 0.23);
+          }
+        };
+        audio.resume().catch(() => {
+        });
+        tone();
+        ringTimer = setInterval(tone, incoming ? 2200 : 3200);
+      } catch (e) {
+      }
+    }
+    function layer() {
+      let n = $2("#call-layer");
+      if (!n) {
+        n = document.createElement("div");
+        n.id = "call-layer";
+        document.body.append(n);
+      }
+      return n;
+    }
+    function render() {
+      var _a, _b;
+      if (!active) {
+        (_a = $2("#call-layer")) == null ? void 0 : _a.remove();
+        return;
+      }
+      if (active.state === "ended" || joining === active.id || dismissed.has(active.id)) {
+        (_b = $2("#call-layer")) == null ? void 0 : _b.remove();
+        return;
+      }
+      const c = active, incoming = c.canRespond, other = !incoming && !c.canEnd;
+      layer().innerHTML = '<section class="call-dialog" role="dialog" aria-label="'.concat(incoming ? "来电" : "通话", '"><header><b>WeLink · ').concat(c.mode === "video" ? "视频" : "语音", '通话</b><button data-call-minimize title="收起">').concat(icon2("minus"), '</button></header><div class="call-person">').concat(av2(c.peer, "large"), "<h2>").concat(esc2(c.peer.name), '</h2><p class="call-status" role="status">').concat(other ? "已在其他设备接听" : esc2(description(c)), '</p></div><div class="call-buttons">').concat(incoming ? '<button class="call-decline" data-call-reject>'.concat(icon2("phone"), "<span>拒绝</span></button>").concat(c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : "", '<button class="call-answer" data-call-answer="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>接听</span></button>") : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : "").concat(c.canEnd ? '<button class="call-decline" data-call-end>' + icon2("phone") + "<span>" + (c.state === "ringing" ? "取消" : "挂断") + "</span></button>" : "").concat(other ? '<button class="secondary" data-call-dismiss>知道了</button>' : "", '</div></section><button class="call-mini" data-call-expand>').concat(icon2("phone"), "<span>").concat(esc2(c.peer.name), " · ").concat(esc2(description(c)), "</span></button>");
+    }
+    async function refreshConversation(c, g) {
+      if (S2.active !== c.conversationId || S2.historyMode) return;
+      const messages = await api2("/api/conversations/" + c.conversationId + "/messages");
+      if (live(g) && S2.active === c.conversationId && !S2.historyMode) {
+        S2.messages = messages;
+        renderMessages2(true);
+      }
+    }
+    async function apply(c, g = generation) {
+      if (!live(g) || c.state !== "ended" && seen.has(c.id)) return;
+      if ((active == null ? void 0 : active.id) === c.id && active.revision > c.revision) return;
+      if (c.state === "ended") {
+        if ((active == null ? void 0 : active.id) === c.id) {
+          active = null;
+          joining = "";
+          stopRing();
+          render();
+          Meetings2.closeCall(c.id);
+        }
+        if (!seen.has(c.id) && permitted.has(c.id)) toast2(description(c));
+        permitted.delete(c.id);
+        seen.add(c.id);
+        refreshConversation(c, g).catch(() => {
+        });
+        queueRefresh2();
+        if (history) loadHistory().catch(() => {
+        });
+        return;
+      }
+      if (active && active.id !== c.id) return;
+      const updated = (active == null ? void 0 : active.revision) !== c.revision;
+      active = c;
+      if (updated) {
+        const message = S2.messages.find((m) => m.id === c.messageId && !m.recalled);
+        if (message) {
+          message.text = JSON.stringify({ id: c.id, mode: c.mode, state: c.state, reason: c.reason, started: c.started, ended: c.ended });
+          const span = document.querySelector('[data-message="'.concat(c.messageId, '"] .call-message-card span'));
+          if (span) span.textContent = summary(c);
+        }
+        queueRefresh2();
+      }
+      render();
+      if (c.state === "ringing" && (c.canRespond || c.canEnd)) {
+        startRing(c.canRespond);
+      } else stopRing();
+      if (c.canJoin && permitted.has(c.id) && joining !== c.id) {
+        joining = c.id;
+        render();
+        try {
+          await Meetings2.joinCall(c);
+        } catch (error) {
+          if (live(g)) {
+            joining = "";
+            toast2("无法开启通话：" + error.message);
+            try {
+              await action2("/api/calls/" + c.id + "/end");
+            } catch (e) {
+            }
+            await sync();
+          }
+        }
+      }
+    }
+    async function sync() {
+      const g = generation;
+      if (!S2.user || !scope) return;
+      try {
+        const calls = await api2("/api/calls/active");
+        if (!live(g)) return;
+        for (const c of calls) await apply(c, g);
+        if (active && !calls.some((c) => c.id === active.id)) {
+          const old = active;
+          await changed({ id: old.id });
+        }
+      } catch (e) {
+      } finally {
+        if (live(g)) {
+          clearTimeout(refreshTimer2);
+          refreshTimer2 = setTimeout(sync, active ? 1500 : 5e3);
+        }
+      }
+    }
+    async function changed(event) {
+      const g = generation;
+      if (!scope) return;
+      try {
+        const c = await api2("/api/calls/" + event.id);
+        if (live(g)) await apply(c, g);
+      } catch (e) {
+      }
+    }
+    function start() {
+      stop();
+      scope = identity();
+      clock = setInterval(() => {
+        if (active) {
+          const node = $2(".call-status");
+          if (node && active.state === "connected") node.textContent = description(active);
+          const mini = $2(".call-mini span");
+          if (mini) mini.textContent = active.peer.name + " · " + description(active);
+        }
+      }, 1e3);
+      sync();
+    }
+    function stop() {
+      var _a;
+      generation++;
+      scope = "";
+      clearTimeout(refreshTimer2);
+      clearInterval(clock);
+      stopRing();
+      const closing = active == null ? void 0 : active.id;
+      active = null;
+      if (closing) Meetings2.closeCall(closing);
+      joining = "";
+      dialing = false;
+      permitted.clear();
+      seen.clear();
+      dismissed.clear();
+      history = null;
+      (_a = $2("#call-layer")) == null ? void 0 : _a.remove();
+    }
+    async function dial(cid, mode) {
+      if (dialing) return;
+      if (active || Meetings2.busy()) {
+        toast2("请先结束当前通话或会议");
+        return;
+      }
+      const g = generation;
+      dialing = true;
+      try {
+        const c = await action2("/api/calls", { conversationId: cid, mode, clientId: randomID2() });
+        if (!live(g)) return;
+        permitted.add(c.id);
+        await apply(c, g);
+      } catch (error) {
+        if (live(g)) {
+          toast2(error.message);
+          sync();
+        }
+      } finally {
+        dialing = false;
+      }
+    }
+    async function answer(audioOnly = false) {
+      if (!(active == null ? void 0 : active.canRespond)) return;
+      const c = active, g = generation;
+      permitted.add(c.id);
+      stopRing();
+      try {
+        const result = await action2("/api/calls/" + c.id + "/respond", { accept: true, audioOnly });
+        if (live(g)) await apply(result, g);
+      } catch (error) {
+        permitted.delete(c.id);
+        if (live(g)) {
+          toast2(error.message);
+          await changed(c);
+        }
+      }
+    }
+    async function end(reject = false) {
+      const c = active;
+      if (!c) return;
+      const g = generation;
+      stopRing();
+      try {
+        const result = await action2("/api/calls/" + c.id + (reject ? "/respond" : "/end"), reject ? { accept: false } : {});
+        if (live(g)) await apply(result, g);
+      } catch (error) {
+        if (live(g)) {
+          toast2(error.message);
+          await changed(c);
+        }
+      }
+    }
+    async function mediaClosed(id) {
+      Meetings2.closedNativeCall(id);
+      if (joining === id) joining = "";
+      if ((active == null ? void 0 : active.id) === id) {
+        try {
+          await action2("/api/calls/" + id + "/end");
+        } catch (e) {
+        }
+        await changed({ id });
+      }
+    }
+    function historyRow(c) {
+      return '<article class="call-history-row" data-call-record="'.concat(c.id, '">').concat(av2(c.peer), "<div><b>").concat(esc2(c.peer.name), '</b><p class="').concat(c.started === 0 && c.callee === S2.user.id ? "call-missed" : "", '">').concat(c.caller === S2.user.id ? "呼出" : "呼入", " · ").concat(esc2(summary(c)), "</p><small>").concat(esc2(fullTime2(c.created)), '</small></div><button title="再次呼叫" aria-label="再次呼叫" data-call-redial="').concat(c.conversationId, '" data-call-mode="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), '</button><button title="删除通话记录" aria-label="删除通话记录" data-call-delete="').concat(c.id, '">').concat(icon2("trash"), "</button></article>");
+    }
+    async function loadHistory(older = false) {
+      const h = history, g = generation;
+      if (!h || !$2("#call-history-list")) return;
+      const query = new URLSearchParams();
+      if (h.missed) query.set("missed", "true");
+      if (older && h.items.length) query.set("before", String(h.items[h.items.length - 1].seq));
+      const items = await api2("/api/calls/history?" + query);
+      if (history !== h || !live(g) || !$2("#call-history-list")) return;
+      h.items = older ? [...h.items, ...items] : items;
+      $2("#call-history-list").innerHTML = h.items.map(historyRow).join("") || '<div class="empty-list">暂无通话记录</div>';
+      if (items.length === 50) $2("#call-history-list").insertAdjacentHTML("beforeend", '<button class="secondary" data-call-more>加载更多</button>');
+    }
+    function openHistory() {
+      history = { missed: false, items: [] };
+      modal2("通话记录", '<div class="call-history-tabs"><button class="active" data-call-filter="all">全部</button><button data-call-filter="missed">未接来电</button></div><div id="call-history-list"></div>', "", true);
+      loadHistory().catch((e) => toast2(e.message));
+    }
+    document.addEventListener("click", async (event) => {
+      var _a;
+      const b = event.target.closest("[data-call-mode],[data-call-answer],[data-call-end],[data-call-reject],[data-call-resume],[data-call-minimize],[data-call-expand],[data-call-dismiss],[data-call-history],[data-call-delete],[data-call-filter],[data-call-more]");
+      if (!b) return;
+      try {
+        if (b.dataset.callMode) {
+          closeModal2();
+          await dial(b.dataset.callRedial || S2.active, b.dataset.callMode);
+        } else if (b.dataset.callAnswer) await answer(b.dataset.callAnswer === "audio");
+        else if (b.hasAttribute("data-call-end")) await end();
+        else if (b.hasAttribute("data-call-reject")) await end(true);
+        else if (b.hasAttribute("data-call-resume") && active) {
+          permitted.add(active.id);
+          await apply(active);
+        } else if (b.hasAttribute("data-call-minimize")) layer().classList.add("call-minimized");
+        else if (b.hasAttribute("data-call-expand")) layer().classList.remove("call-minimized");
+        else if (b.hasAttribute("data-call-dismiss")) {
+          if (active) dismissed.add(active.id);
+          (_a = $2("#call-layer")) == null ? void 0 : _a.remove();
+        } else if (b.hasAttribute("data-call-history")) openHistory();
+        else if (b.dataset.callFilter) {
+          history = { missed: b.dataset.callFilter === "missed", items: [] };
+          document.querySelectorAll("[data-call-filter]").forEach((x) => x.classList.toggle("active", x === b));
+          await loadHistory();
+        } else if (b.hasAttribute("data-call-more")) await loadHistory(true);
+        else if (b.dataset.callDelete) {
+          const id = b.dataset.callDelete;
+          modal2("删除通话记录", '<p class="hint">仅删除你的通话列表记录，聊天中的记录卡片保留。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="call-delete-confirm">删除</button>');
+          $2("#call-delete-confirm").onclick = async () => {
+            try {
+              await api2("/api/calls/" + id, { method: "DELETE" });
+              openHistory();
+            } catch (error) {
+              toast2(error.message);
+            }
+          };
+        }
+      } catch (error) {
+        toast2(error.message);
+      }
+    });
+    window.WeLinkCallNativeClosed = (id) => mediaClosed(id);
+    return { start, stop, changed, sync, card, summary, mediaClosed, isCurrent: (id) => (active == null ? void 0 : active.id) === id && active.canJoin, historyChanged: () => {
+      if (history) loadHistory().catch(() => {
+      });
+    }, historyEntry: () => '<button class="call-history-entry" data-call-history>' + icon2("phone") + "<span>通话记录</span>" + icon2("chevron") + "</button>" };
+  }
+
   // internal/ui/src/desktop.js
   function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2 }) {
     const native = typeof window.welinkDesktopSettings === "function";
@@ -2081,6 +2437,7 @@
         else if (item.kind === "file") content = '<button class="file-card" data-download="'.concat(item.attachmentId, '" data-filename="').concat(esc2(item.fileName), '">').concat(icon2("file"), "<span><b>").concat(esc2(item.fileName), "</b><small>").concat(bytes2(item.fileSize), " · 点击下载</small></span></button>");
         else if (item.kind === "voice" || item.kind === "video") content = mediaBubble(item, viewer.id);
         else if (item.record) content = '<button class="forward-card" data-forward-nested="'.concat(index, '">').concat(previewRecord(item.record), "</button>");
+        else if (item.kind === "call") content = esc2(preview2(item));
         else if (item.kind === "meeting") content = esc2("[会议]");
         return '<article class="forward-record-item">'.concat(av2(item), "<div><header><b>").concat(esc2(item.name), "</b><time>").concat(fullTime2(item.created), '</time></header><div class="forward-record-content">').concat(content, "</div>").concat(item.quote ? '<p class="forward-record-quote">'.concat(esc2(item.quote.name + "：" + item.quote.text), "</p>") : "", "</div></article>");
       }).join(""), "</div>"), viewer.stack.length > 1 ? '<button class="secondary" data-fw="record-back">返回上一层</button>' : "", true);
@@ -2212,7 +2569,7 @@
     async function open() {
       var _a;
       const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
-      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div>'.concat(((_a = S2.conversations.find((c) => c.id === state.cid)) == null ? void 0 : _a.kind) === "group" ? '<label class="history-mention-filter"><input type="checkbox" id="history-mentions">只看 @我的消息</label>' : "", '<div id="history-results" class="history-results" aria-live="polite"></div>'), "", true);
+      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="call">通话</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div>'.concat(((_a = S2.conversations.find((c) => c.id === state.cid)) == null ? void 0 : _a.kind) === "group" ? '<label class="history-mention-filter"><input type="checkbox" id="history-mentions">只看 @我的消息</label>' : "", '<div id="history-results" class="history-results" aria-live="polite"></div>'), "", true);
       let timer;
       $2("#history-search").oninput = () => {
         clearTimeout(timer);
@@ -2452,8 +2809,8 @@
   }
 
   // internal/ui/src/meetings.js
-  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2 }) {
-    let room = null, pending = /* @__PURE__ */ new Map();
+  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
+    let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map();
     const el = (id) => document.getElementById(id);
     const root = () => {
       let n = el("meeting-layer");
@@ -2482,7 +2839,7 @@
     }
     function renderHome() {
       const n = document.querySelector("#main-content");
-      n.innerHTML = '<section class="utility meeting-home"><h2>会议</h2><p class="hint">和好友一起面对面交流，也可以分享屏幕。</p><div class="meeting-cards"><button data-action="meeting-create">'.concat(icon2("video"), '<b>发起会议</b><span>邀请好友或群成员</span></button><button data-action="meeting-join">').concat(icon2("plus"), '<b>加入会议</b><span>输入 9 位会议号</span></button></div><h3>正在进行</h3><div id="meeting-list">正在读取…</div></section>');
+      n.innerHTML = '<section class="utility meeting-home"><h2>会议</h2><p class="hint">和好友一起面对面交流，也可以分享屏幕。</p><div class="meeting-cards"><button data-action="meeting-create">'.concat(icon2("video"), '<b>发起会议</b><span>邀请好友或群成员</span></button><button data-action="meeting-join">').concat(icon2("plus"), "<b>加入会议</b><span>输入 9 位会议号</span></button></div>").concat(historyEntry(), '<h3>正在进行</h3><div id="meeting-list">正在读取…</div></section>');
       api2("/api/meetings").then((items) => {
         if (!el("meeting-list")) return;
         el("meeting-list").innerHTML = items.map((m) => '<button class="utility-row meeting-open-row" data-meeting-code="'.concat(m.code, '">').concat(icon2("video"), '<div class="body"><b>').concat(esc2(m.title), "</b><p>").concat(grouped(m.code), " · ").concat(m.count, " 人</p></div><span>进入</span></button>")).join("") || '<div class="empty-list">暂无进行中的会议</div>';
@@ -2537,23 +2894,48 @@
         return new MediaStream();
       }
     }
-    async function join(code, mic = false, cam = false, host = false) {
-      var _a, _b, _c;
+    async function join(code, mic = false, cam = false, host = false, call = null) {
+      var _a, _b, _c, _d, _e;
       if (!/^[1-9]\d{8}$/.test(code)) throw Error("请输入 9 位会议号");
       if (room) {
+        if (call && ((_a = room.call) == null ? void 0 : _a.id) !== call.id) throw Error("请先结束当前会议");
         show();
         return;
       }
-      if ((_a = window.WeLinkAndroid) == null ? void 0 : _a.openMeeting) {
-        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam);
-        (_b = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _b.click();
+      if (call && ((_b = window.WeLinkAndroid) == null ? void 0 : _b.openCall)) {
+        nativeCall = call.id;
+        window.WeLinkAndroid.openCall(code, S2.token, S2.user.name, call.id, call.peer.name, call.mode);
         return;
       }
-      const stream = await initialMedia(mic, cam), ws = new WebSocket("ws://".concat(location.host, "/api/meetings/").concat(code, "/ws"));
-      room = { code, ws, stream, id: "", host: "", states: /* @__PURE__ */ new Map(), peers: /* @__PURE__ */ new Map(), tiles: /* @__PURE__ */ new Map(), screen: null, recording: null, ping: null, started: Date.now(), intentional: false };
+      if ((_c = window.WeLinkAndroid) == null ? void 0 : _c.openMeeting) {
+        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam);
+        (_d = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _d.click();
+        return;
+      }
+      const owner = S2.token, stream = await initialMedia(mic, cam);
+      if (owner !== S2.token || !S2.user || call && !callCurrent(call.id)) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      if (call && !stream.getAudioTracks().length) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw Error("未获得麦克风权限，请检查权限后重试");
+      }
+      const ws = new WebSocket("ws://".concat(location.host, "/api/meetings/").concat(code, "/ws"));
+      room = { code, ws, stream, call, id: "", host: "", states: /* @__PURE__ */ new Map(), peers: /* @__PURE__ */ new Map(), tiles: /* @__PURE__ */ new Map(), screen: null, recording: null, ping: null, started: Date.now(), intentional: false };
       const active = room;
       renderRoom();
-      (_c = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _c.click();
+      if (call) {
+        root().classList.add("call-mode");
+        root().classList.toggle("call-audio", call.mode === "audio");
+        root().querySelector(".meeting-top b").textContent = call.peer.name;
+        el("meeting-leave").textContent = "挂断";
+        tile(call.peer.id, call.peer.name, null);
+        active.callClock = setInterval(() => {
+          if (room === active && call.started) el("meeting-network").textContent = formatDuration((Date.now() - call.started) / 1e3);
+        }, 1e3);
+      }
+      (_e = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _e.click();
       ws.onmessage = (event) => {
         if (room !== active) return;
         let m;
@@ -2610,6 +2992,7 @@
         n.innerHTML = '<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-tile-label"></div>';
         room.tiles.set(id, n);
         el("meeting-grid").append(n);
+        n.classList.toggle("meeting-self", self);
       }
       ;
       const v = n.querySelector("video");
@@ -2682,11 +3065,14 @@
         renderMembers();
       };
       pc.onnegotiationneeded = () => offer(entry).catch((e) => toast2(e.message));
-      pc.onconnectionstatechange = () => {
+      const connectionChanged = () => {
         if (room !== active) return;
+        if (active.call && (pc.connectionState === "connected" || ["connected", "completed"].includes(pc.iceConnectionState))) send({ type: "call-connected" });
         const failed = [...room.peers.values()].some((p) => p.pc.connectionState === "failed");
-        el("meeting-network").textContent = failed ? "部分成员直连失败，请切换网络重试" : "会议进行中";
+        el("meeting-network").textContent = failed ? "网络连接不稳定" : active.call ? "正在连接…" : "会议进行中";
       };
+      pc.onconnectionstatechange = connectionChanged;
+      pc.oniceconnectionstatechange = connectionChanged;
       return entry;
     }
     async function offer(p) {
@@ -2702,6 +3088,10 @@
     async function receive(m) {
       var _a, _b;
       if (!room) return;
+      if (m.type === "call-state" && room.call) {
+        room.call.started = m.started || 0;
+        return;
+      }
       if (m.type === "welcome") {
         room.id = m.id;
         room.host = m.host;
@@ -2927,6 +3317,15 @@
     }
     function leave(end) {
       if (!room) return;
+      if (room.call) {
+        const active = room;
+        send({ type: "call-end" });
+        active.intentional = true;
+        cleanup(active);
+        action2("/api/calls/" + active.call.id + "/end").catch(() => {
+        });
+        return;
+      }
       modal2(end ? "结束会议" : "离开会议", '<p class="hint">'.concat(end ? "结束后所有成员将离开，会议号立即失效。" : "会议中的其他成员可以继续交流。", "</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-confirm-leave">确认</button>');
       el("meeting-confirm-leave").onclick = async () => {
         var _a;
@@ -2948,6 +3347,7 @@
         room = null;
       }
       clearInterval(active.ping);
+      clearInterval(active.callClock);
       active.ws.close();
       for (const p of active.peers.values()) p.pc.close();
       active.stream.getTracks().forEach((t) => t.stop());
@@ -2956,7 +3356,8 @@
         t.stop();
       });
       root().innerHTML = "";
-      root().classList.remove("meeting-minimized");
+      root().classList.remove("meeting-minimized", "call-mode", "call-audio");
+      if (active.call) onCallClosed(active.call.id);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {
       });
     }
@@ -2982,7 +3383,23 @@
       const m = e.target.closest("[data-meeting-code]");
       if (m) openJoin(m.dataset.meetingCode);
     });
-    return { renderHome, openCreate, openJoin, invited, show, close: () => {
+    function formatDuration(value) {
+      const n = Math.max(0, Math.floor(value));
+      return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
+    }
+    return { renderHome, openCreate, openJoin, invited, show, busy: () => !!room || !!nativeCall, joinCall: (c) => join(c.code, true, c.mode === "video", c.caller === S2.user.id, c), closedNativeCall: (id) => {
+      if (nativeCall === id) nativeCall = null;
+    }, closeCall: (id) => {
+      var _a, _b, _c;
+      if (nativeCall === id) {
+        (_b = (_a = window.WeLinkAndroid) == null ? void 0 : _a.closeCall) == null ? void 0 : _b.call(_a, id);
+        nativeCall = null;
+      }
+      if (((_c = room == null ? void 0 : room.call) == null ? void 0 : _c.id) === id) {
+        room.intentional = true;
+        cleanup(room);
+      }
+    }, close: () => {
       if (room) {
         room.intentional = true;
         cleanup(room);
@@ -3132,6 +3549,7 @@
   }
   function preview(m) {
     if (!m) return "开始聊天";
+    if (m.kind === "call" && !m.recalled) return Calls.summary(m);
     if (m.kind === "forward" && !m.recalled) {
       try {
         return "[聊天记录] " + JSON.parse(m.text).title;
@@ -3199,7 +3617,7 @@
       return;
     }
     ;
-    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(btn("phone", "语音通话", "meeting-audio-call")).concat(btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
+    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
     renderMessages();
     const input = $("#composer");
     input.oninput = () => {
@@ -3264,6 +3682,7 @@
     const mine = m.sender === S.user.id;
     const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
     let content = Mentions.text(m);
+    if (m.kind === "call") content = Calls.card(m);
     if (m.kind === "voice" || m.kind === "video") content = Media.bubble(m);
     if (m.kind === "forward") content = Forwarding.card(m);
     if (m.kind === "meeting") {
@@ -3436,6 +3855,7 @@
     await Outbox.start();
     renderShell();
     connectEvents();
+    Calls.start();
   }
   function connectEvents() {
     var _a;
@@ -3470,7 +3890,11 @@
         return;
       }
       const d = event.data;
-      if (event.type === "message") {
+      if (event.type === "call") {
+        Calls.changed(d);
+      } else if (event.type === "call-history") {
+        Calls.historyChanged();
+      } else if (event.type === "message") {
         Outbox.ack(d).catch(() => {
         });
         if (S.active === d.conversationId && !S.historyMode) {
@@ -3536,6 +3960,7 @@
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
+    Calls.stop();
     Outbox.stop();
     Avatars.reset();
     Mentions.reset();
@@ -4401,7 +4826,8 @@
   var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
-  var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });
+  var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
+  var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, renderMessages, queueRefresh, fullTime });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
   async function bootstrap() {

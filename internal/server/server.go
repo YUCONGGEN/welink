@@ -23,17 +23,19 @@ type Config struct {
 	Logger                *log.Logger
 }
 type Server struct {
-	db             *sql.DB
-	dir, downloads string
-	mux            *http.ServeMux
-	mu             sync.Mutex
-	clients        map[string]map[*socket]bool
-	rooms          map[string]map[string]*socket
-	limits         map[string]*bucket
-	logger         *log.Logger
-	meetings       meetingDirectory
-	qrLogins       qrLoginDirectory
-	avatarSlots    chan struct{}
+	db                   *sql.DB
+	dir, downloads       string
+	mux                  *http.ServeMux
+	mu                   sync.Mutex
+	clients              map[string]map[*socket]bool
+	rooms                map[string]map[string]*socket
+	limits               map[string]*bucket
+	logger               *log.Logger
+	meetings             meetingDirectory
+	qrLogins             qrLoginDirectory
+	avatarSlots          chan struct{}
+	callsStop, callsDone chan struct{}
+	callsClose           sync.Once
 }
 type bucket struct {
 	count int
@@ -62,10 +64,17 @@ func New(cfg Config) (*Server, error) {
 	s.meetings.rooms = map[string]*meetingRoom{}
 	s.avatarSlots = make(chan struct{}, 2)
 	s.qrLogins.items = map[string]*qrLogin{}
+	s.startCalls()
 	return s, nil
 }
 func (s *Server) Close() error {
+	s.callsClose.Do(func() { close(s.callsStop); <-s.callsDone })
 	s.meetings.Lock()
+	if records, e := s.activeCallRecords(); e == nil {
+		for _, c := range records {
+			_, _ = s.finishCallLocked(c, "interrupted")
+		}
+	}
 	for _, room := range s.meetings.rooms {
 		for _, p := range room.Peers {
 			p.socket.close()
@@ -131,6 +140,7 @@ func (s *Server) routes() {
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
 		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
 		"GET /api/outbox/{clientId}": s.messageReceipt,
+		"POST /api/calls":            s.createCall, "GET /api/calls/active": s.activeCalls, "GET /api/calls/history": s.callHistory, "GET /api/calls/{id}": s.getCall, "POST /api/calls/{id}/respond": s.respondCall, "POST /api/calls/{id}/end": s.endCall, "DELETE /api/calls/{id}": s.deleteCall,
 		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
 		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,

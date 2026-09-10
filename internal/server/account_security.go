@@ -248,6 +248,13 @@ func (s *Server) disconnectSessions(keys map[string]bool) {
 	}
 	s.mu.Unlock()
 	s.meetings.Lock()
+	if calls, e := s.activeCallRecords(); e == nil {
+		for _, call := range calls {
+			if keys[call.CallerSession] || keys[call.CalleeSession] {
+				_, _ = s.finishCallLocked(call, "offline")
+			}
+		}
+	}
 	for _, room := range s.meetings.rooms {
 		for _, p := range room.Peers {
 			if keys[p.socket.session] {

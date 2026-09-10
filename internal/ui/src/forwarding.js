@@ -79,6 +79,7 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
       else if(item.kind==='file')content=`<button class="file-card" data-download="${item.attachmentId}" data-filename="${esc(item.fileName)}">${icon('file')}<span><b>${esc(item.fileName)}</b><small>${bytes(item.fileSize)} · 点击下载</small></span></button>`;
       else if(item.kind==='voice'||item.kind==='video')content=mediaBubble(item,viewer.id);
       else if(item.record)content=`<button class="forward-card" data-forward-nested="${index}">${previewRecord(item.record)}</button>`;
+      else if(item.kind==='call')content=esc(preview(item));
       else if(item.kind==='meeting')content=esc('[会议]');
       return `<article class="forward-record-item">${av(item)}<div><header><b>${esc(item.name)}</b><time>${fullTime(item.created)}</time></header><div class="forward-record-content">${content}</div>${item.quote?`<p class="forward-record-quote">${esc(item.quote.name+'：'+item.quote.text)}</p>`:''}</div></article>`;
     }).join('')}</div>`,viewer.stack.length>1?'<button class="secondary" data-fw="record-back">返回上一层</button>':'',true);

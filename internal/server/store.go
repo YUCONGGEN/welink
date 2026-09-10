@@ -72,6 +72,10 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(callSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
