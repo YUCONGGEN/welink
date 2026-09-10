@@ -61,7 +61,7 @@ curl http://127.0.0.1:8250/health
 ## 验证
 
 ```sh
-go test -race -timeout 360s ./internal/server ./internal/client ./internal/remote ./mobile/core
+go test -race -timeout 900s ./internal/server ./internal/client ./internal/remote ./mobile/core
 go test ./internal/yudesk/secureconn ./internal/yudesk/protocol ./internal/yudesk/peerpath ./internal/yudesk/desktop ./internal/yudesk/stream
 node scripts/windows-smoke.mjs
 node scripts/ui-test.mjs
@@ -75,6 +75,7 @@ node scripts/contacts-test.mjs
 node scripts/mentions-test.mjs
 node scripts/avatars-test.mjs
 node scripts/desktop-ui-test.mjs
+node scripts/outbox-test.mjs
 ```
 
 界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。

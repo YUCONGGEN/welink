@@ -161,6 +161,56 @@ func TestNativeDesktopChatAndDuplicateProcess(t *testing.T) {
 	if message := <-result; message != "ok" {
 		t.Fatal(message)
 	}
+	// Open the same profile in another real Windows process, as on application
+	// restart. The first document persisted a message while POST was unavailable.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	binary, _ := os.Executable()
+	child := exec.CommandContext(ctx, binary, "-test.run=^TestNativeOutboxReopenHelper$", "-test.v")
+	child.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	child.Env = append(os.Environ(), "WELINK_REOPEN_DIRECTORY="+directory, "WELINK_REOPEN_URL="+c.URL(), "WELINK_REOPEN_CONFIG="+string(config))
+	if output, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("native reopen: %v\n%s", err, output)
+	}
+}
+
+func TestNativeOutboxReopenHelper(t *testing.T) {
+	directory := os.Getenv("WELINK_REOPEN_DIRECTORY")
+	if directory == "" {
+		t.Skip("only run as native outbox subprocess")
+	}
+	w, err := newWindow("about:blank", directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := w.(*windowsHost)
+	reopened := make(chan string, 1)
+	h.view.Bind("nativeTestReport", func(message string) {
+		select {
+		case reopened <- message:
+		default:
+		}
+	})
+	restartScript := strings.Replace(nativeOutboxRestartScript, "__CONFIG__", os.Getenv("WELINK_REOPEN_CONFIG"), 1)
+	h.view.Init(restartScript)
+	h.view.Navigate(os.Getenv("WELINK_REOPEN_URL"))
+	result := make(chan string, 1)
+	go func() {
+		time.Sleep(time.Second)
+		h.view.Dispatch(func() { h.view.Eval(restartScript) })
+		select {
+		case message := <-reopened:
+			result <- message
+		case <-time.After(30 * time.Second):
+			result <- "native outbox restart timed out"
+		}
+		h.Action("quit")
+	}()
+	h.Run()
+	h.Close()
+	if message := <-result; message != "ok" {
+		t.Fatal(message)
+	}
 }
 
 const nativeChatScript = `(async()=>{if(window.nativeChatStarted)return;window.nativeChatStarted=true;
@@ -179,7 +229,23 @@ const nativeChatScript = `(async()=>{if(window.nativeChatStarted)return;window.n
  await nativeTestControl('peer-message');await wait(async()=>((await api('/api/conversations')).find(c=>c.id===cfg.conversation)?.unread)===1,'server unread');await wait(async()=>(await nativeTestControl('state')).unread===1,'native unread count');
  await nativeTestControl('duplicate');await wait(()=>window.welinkNativeHidden===false,'duplicate restores primary');state=await nativeTestControl('state');check(state.visible,'real HWND restored');
  await wait(async()=>((await api('/api/conversations')).find(c=>c.id===cfg.conversation)?.unread)===0,'read on restore');check(document.querySelector('#messages').textContent.includes('native hidden message'),'WebSocket delivered hidden message');
+ const originalFetch=window.fetch;window.fetch=(url,options={})=>String(url).endsWith('/messages')&&options.method==='POST'?Promise.reject(Error('native test offline')):originalFetch(url,options);
+ const local=store=>new Promise((resolve,reject)=>{const r=indexedDB.open('welink-local');r.onsuccess=()=>{const db=r.result,tx=db.transaction(store),q=tx.objectStore(store).getAll();q.onsuccess=()=>resolve(q.result);tx.oncomplete=()=>db.close()};r.onerror=()=>reject(r.error)});
+ const composer=document.querySelector('#composer');composer.value='native persistent message';composer.dispatchEvent(new Event('input'));click('#send-message');await wait(async()=>(await local('queue')).some(r=>r.body.text==='native persistent message'),'queue on disk');await wait(()=>!composer.disabled&&composer.value==='','composer cleared after commit');
+ composer.value='native persistent draft';composer.dispatchEvent(new Event('input'));await wait(async()=>(await local('drafts')).some(r=>r.text==='native persistent draft'),'draft on disk');
  click('.rail [data-action=more-menu]');click('[data-desktop=quit]');await wait(()=>document.querySelector('#desktop-exit'),'explicit exit confirmation');
  await nativeTestReport('ok');
+ }catch(e){await nativeTestReport(String(e.stack||e))}
+})();`
+
+const nativeOutboxRestartScript = `(async()=>{if(window.nativeRestartStarted)return;window.nativeRestartStarted=true;
+ const cfg=__CONFIG__,sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ const wait=async(fn,label)=>{for(let i=0;i<160;i++){if(await fn())return;await sleep(50)}throw Error('timeout: '+label)};
+ try{
+  await wait(()=>document.querySelector('.rail'),'session restored');document.querySelector('[data-conversation="'+cfg.conversation+'"]').click();
+  await wait(()=>document.querySelector('#composer')?.value==='native persistent draft','draft after native recreation');
+  await wait(()=>Array.from(document.querySelectorAll('[data-message]')).some(n=>n.textContent.includes('native persistent message')),'pending message delivered');
+  const response=await fetch('/api/conversations/'+cfg.conversation+'/messages',{headers:{Authorization:'Bearer '+localStorage.getItem('welink_token')}}),messages=await response.json();if(messages.filter(m=>m.text==='native persistent message').length!==1)throw Error('native retry duplicated a message');
+  await nativeTestReport('ok');
  }catch(e){await nativeTestReport(String(e.stack||e))}
 })();`

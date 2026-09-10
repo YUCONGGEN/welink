@@ -41,13 +41,17 @@ func readGroup(q rowQuery, cid, user string) (g groupInfo, err error) {
 }
 func (g groupInfo) manager() bool { return g.Role == "owner" || g.Role == "admin" }
 func (s *Server) canSpeak(cid, user string) bool {
-	if !s.member(cid, user) {
+	return canSpeak(s.db, cid, user)
+}
+func canSpeak(q rowQuery, cid, user string) bool {
+	var member int
+	if q.QueryRow("SELECT 1 FROM members WHERE conversation_id=? AND user_id=?", cid, user).Scan(&member) != nil {
 		return false
 	}
-	g, err := readGroup(s.db, cid, user)
+	g, err := readGroup(q, cid, user)
 	if err == sql.ErrNoRows {
 		var peer string
-		return s.db.QueryRow("SELECT m.user_id FROM members m JOIN conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.kind='direct' AND m.user_id<>?", cid, user).Scan(&peer) == nil && contactAllowed(s.db, user, peer)
+		return q.QueryRow("SELECT m.user_id FROM members m JOIN conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.kind='direct' AND m.user_id<>?", cid, user).Scan(&peer) == nil && contactAllowed(q, user, peer)
 	}
 	return err == nil && (g.manager() || (!g.AllMuted && g.MuteUntil <= now()))
 }

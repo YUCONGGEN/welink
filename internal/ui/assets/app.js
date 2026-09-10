@@ -311,6 +311,375 @@
     return { changed, reset: release };
   }
 
+  // internal/ui/src/local-store.js
+  var database;
+  function openLocalStore() {
+    if (database) return database;
+    database = new Promise((resolve, reject) => {
+      const request = indexedDB.open("welink-local", 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        for (const name of ["queue", "drafts", "cache"]) {
+          const store = db.createObjectStore(name, { keyPath: "id" });
+          store.createIndex("scope", "scope");
+        }
+        db.createObjectStore("blobs");
+      };
+      request.onsuccess = () => {
+        request.result.onversionchange = () => request.result.close();
+        resolve(request.result);
+      };
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(Error("请关闭其他 WeLink 窗口后重试"));
+    }).catch((error) => {
+      database = null;
+      throw error;
+    });
+    return database;
+  }
+  async function transaction(names, mode, work) {
+    const db = await openLocalStore();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(names, mode), stores = {};
+      for (const name of names) stores[name] = tx.objectStore(name);
+      let result, error;
+      tx.oncomplete = () => resolve(result);
+      tx.onabort = () => reject(error || tx.error || Error("本地保存失败"));
+      tx.onerror = () => {
+      };
+      try {
+        work(stores, (value) => {
+          result = value;
+        }, (reason) => {
+          error = reason;
+          tx.abort();
+        });
+      } catch (reason) {
+        error = reason;
+        tx.abort();
+      }
+    });
+  }
+  var scopedRows = (name, scope) => transaction([name], "readonly", (stores, done) => {
+    const r = stores[name].index("scope").getAll(scope);
+    r.onsuccess = () => done(r.result);
+  });
+  var localGet = (name, id) => transaction([name], "readonly", (stores, done) => {
+    const r = stores[name].get(id);
+    r.onsuccess = () => done(r.result);
+  });
+  var localPut = (name, value) => transaction([name], "readwrite", (stores) => stores[name].put(value));
+
+  // internal/ui/src/outbox.js
+  function createOutbox({ S: S2, api: api2, toast: toast2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
+    const $2 = (selector) => document.querySelector(selector);
+    let scope = "", generation = 0, rows = [], drafts = /* @__PURE__ */ new Map(), timer, working = false, controller, saveChain = Promise.resolve(), storageWarning = false;
+    const scopeFor = () => {
+      var _a;
+      return JSON.stringify([new URL(S2.config.server).href.replace(/\/$/, ""), (S2.config.fingerprint || "").toLowerCase(), (_a = S2.user) == null ? void 0 : _a.id]);
+    };
+    const alive = (g, key) => g === generation && key === scope && S2.user && !S2.signingOut;
+    const draftID = (cid) => JSON.stringify([scope, cid]);
+    function storageError(error) {
+      if (!storageWarning) {
+        storageWarning = true;
+        toast2("无法保存到本机：" + (error.name === "QuotaExceededError" ? "存储空间不足，请清理待发送文件" : error.message));
+      }
+    }
+    async function refreshRows(g = generation, key = scope) {
+      if (!key) return;
+      const result = await scopedRows("queue", key);
+      if (alive(g, key)) {
+        const next = result.sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
+        if (JSON.stringify(rows) !== JSON.stringify(next)) {
+          rows = next;
+          renderMessages2(true);
+          updatePanel();
+        }
+      }
+    }
+    function stop() {
+      generation++;
+      scope = "";
+      clearTimeout(timer);
+      controller == null ? void 0 : controller.abort();
+      controller = null;
+      rows = [];
+      drafts.clear();
+      working = false;
+    }
+    async function start() {
+      stop();
+      const g = generation, key = scope = scopeFor();
+      try {
+        await openLocalStore();
+        const saved = await scopedRows("drafts", key);
+        if (!alive(g, key)) return;
+        for (const d of saved) {
+          drafts.set(d.cid, d);
+          S2.drafts[d.cid] = d.text;
+          Mentions2.restore(d.cid, d.text, d.mentions);
+        }
+        await refreshRows(g, key);
+        storageWarning = false;
+        kick();
+      } catch (error) {
+        storageError(error);
+      }
+    }
+    function saveDraft() {
+      var _a;
+      if (!scope || !S2.active || S2.signingOut) return Promise.resolve();
+      const cid = S2.active, el = $2("#composer");
+      if (!el) return Promise.resolve();
+      const d = { id: draftID(cid), scope, cid, text: el.value, mentions: Mentions2.payload().map((m) => __spreadValues({}, m)), replyId: ((_a = S2.reply) == null ? void 0 : _a.id) || "", updated: Date.now(), revision: randomID2() };
+      drafts.set(cid, d);
+      const task = saveChain.then(() => localPut("drafts", d));
+      saveChain = task.catch(storageError);
+      return task;
+    }
+    async function restoreReply(cid) {
+      const d = drafts.get(cid), g = generation, key = scope;
+      if (!(d == null ? void 0 : d.replyId)) return;
+      try {
+        let m = S2.messages.find((m2) => m2.id === d.replyId);
+        if (!m) {
+          const messages = await api2("/api/conversations/" + cid + "/messages?around=" + encodeURIComponent(d.replyId));
+          m = messages.find((m2) => m2.id === d.replyId);
+        }
+        if (!alive(g, key) || S2.active !== cid || drafts.get(cid) !== d) return;
+        if (m && !m.recalled) {
+          S2.reply = m;
+          renderReply2();
+        } else {
+          d.replyId = "";
+          S2.reply = null;
+          renderReply2();
+          await localPut("drafts", d);
+          toast2("草稿引用的消息已撤回或不可访问");
+        }
+      } catch (error) {
+        if (!alive(g, key) || S2.active !== cid || drafts.get(cid) !== d) return;
+        if (error.status === 400 || error.status === 403 || error.status === 404) {
+          d.replyId = "";
+          S2.reply = null;
+          renderReply2();
+          await localPut("drafts", d);
+        } else toast2("引用暂未恢复，请联网后重试");
+      }
+    }
+    async function enqueue(cid, body, file, metadata = {}, clearDraft = false) {
+      var _a, _b;
+      if (!scope || !S2.user || S2.signingOut) throw Error("请先登录再发送");
+      if ((file == null ? void 0 : file.size) > 50 * 1024 * 1024) throw Error("文件不能超过 50 MB");
+      const g = generation, key = scope, id = randomID2(), draftRevision = (_a = drafts.get(cid)) == null ? void 0 : _a.revision, record = { id, scope: key, cid, body: __spreadProps(__spreadValues({}, body), { clientId: id }), created: Date.now(), state: "waiting", attempts: 0, next: 0, file: file ? { name: file.name, type: file.type, size: file.size } : null, metadata };
+      await saveChain;
+      if (!alive(g, key)) throw Error("登录账号已变化，请重新选择内容");
+      await transaction(["queue", "blobs", "drafts"], "readwrite", (stores, done, abort) => {
+        const request2 = stores.queue.index("scope").getAll(key);
+        request2.onsuccess = () => {
+          if (request2.result.length >= 100 || request2.result.reduce((n, r) => {
+            var _a2;
+            return n + (((_a2 = r.file) == null ? void 0 : _a2.size) || 0);
+          }, 0) + ((file == null ? void 0 : file.size) || 0) > 250 * 1024 * 1024) {
+            abort(Error("待发送内容已达上限（100 条 / 250 MB），请先处理发送队列"));
+            return;
+          }
+          stores.queue.add(record);
+          if (file) stores.blobs.put(file, id);
+          if (clearDraft) {
+            const draft = stores.drafts.get(JSON.stringify([key, cid]));
+            draft.onsuccess = () => {
+              var _a2;
+              if (((_a2 = draft.result) == null ? void 0 : _a2.revision) === draftRevision) stores.drafts.delete(JSON.stringify([key, cid]));
+            };
+          }
+        };
+      });
+      if (!alive(g, key)) return;
+      storageWarning = false;
+      if (clearDraft && ((_b = drafts.get(cid)) == null ? void 0 : _b.revision) === draftRevision) {
+        drafts.delete(cid);
+        S2.drafts[cid] = "";
+        Mentions2.clear(cid);
+      }
+      await refreshRows(g, key).catch(storageError);
+      kick();
+    }
+    async function update(id, changes) {
+      await transaction(["queue"], "readwrite", (stores) => {
+        const r = stores.queue.get(id);
+        r.onsuccess = () => {
+          if (r.result) stores.queue.put(__spreadValues(__spreadValues({}, r.result), changes));
+        };
+      });
+    }
+    async function remove(id) {
+      await transaction(["queue", "blobs"], "readwrite", (stores) => {
+        stores.queue.delete(id);
+        stores.blobs.delete(id);
+      });
+    }
+    async function ack(message) {
+      var _a;
+      if (!scope || message.sender !== ((_a = S2.user) == null ? void 0 : _a.id) || !message.clientId) return;
+      const g = generation, key = scope;
+      const row = await localGet("queue", message.clientId);
+      if ((row == null ? void 0 : row.scope) !== key || row.cid !== message.conversationId) return;
+      await remove(row.id);
+      await refreshRows(g, key);
+    }
+    function kick() {
+      clearTimeout(timer);
+      if (scope && !working) timer = setTimeout(() => work().catch(storageError), 100);
+    }
+    async function request(path, options, g, key) {
+      if (!alive(g, key)) throw Error("账号已切换");
+      const native = typeof AbortController === "function" ? new AbortController() : null;
+      let rejectAbort;
+      const cancelled = new Promise((resolve, reject) => {
+        rejectAbort = reject;
+      }), pending = { abort() {
+        native == null ? void 0 : native.abort();
+        rejectAbort(Object.assign(Error("请求已中断"), { name: "AbortError" }));
+      } };
+      controller = pending;
+      const timeout = setTimeout(() => pending.abort(), 65e3);
+      try {
+        return await Promise.race([api2(path, __spreadValues(__spreadValues({}, options), native ? { signal: native.signal } : {})), cancelled]);
+      } finally {
+        clearTimeout(timeout);
+        if (controller === pending) controller = null;
+      }
+    }
+    async function work() {
+      if (working || !scope || !S2.user || S2.signingOut) return;
+      working = true;
+      const g = generation, key = scope;
+      try {
+        const pending = (await scopedRows("queue", key)).sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
+        if (!alive(g, key)) return;
+        const seen = /* @__PURE__ */ new Set(), candidate = pending.find((r) => {
+          if (seen.has(r.cid)) return false;
+          seen.add(r.cid);
+          return r.state !== "failed" && r.next <= Date.now();
+        });
+        if (!candidate) return;
+        const row = candidate;
+        await update(row.id, { state: "sending", attempts: row.attempts + 1 });
+        await refreshRows(g, key);
+        try {
+          if (row.attempts) {
+            const receipt = await request("/api/outbox/" + row.id, {}, g, key);
+            if (receipt.delivered) {
+              if (receipt.conversationId !== row.cid) throw Object.assign(Error("消息标识与会话不一致"), { status: 409 });
+              await remove(row.id);
+              if (alive(g, key)) {
+                if (S2.active === row.cid && !S2.historyMode) {
+                  const messages = await request("/api/conversations/" + row.cid + "/messages", {}, g, key);
+                  if (alive(g, key) && S2.active === row.cid && !S2.historyMode) S2.messages = messages;
+                }
+                queueRefresh2();
+              }
+              return;
+            }
+          }
+          let body = __spreadValues({}, row.body);
+          if (row.file && !row.attachment) {
+            const file = await localGet("blobs", row.id);
+            if (!file) throw Object.assign(Error("本机附件已丢失，请重新选择文件"), { status: 400 });
+            const form = new FormData();
+            form.append("conversationId", row.cid);
+            form.append("clientId", row.id);
+            form.append("file", file, row.file.name);
+            if (body.kind === "voice" || body.kind === "video") form.append("mediaKind", body.kind);
+            for (const [k, v] of Object.entries(row.metadata)) form.append(k, String(v));
+            row.attachment = await request("/api/files", { method: "POST", body: form }, g, key);
+            if (!alive(g, key)) return;
+            await update(row.id, { attachment: row.attachment });
+          }
+          if (row.attachment) {
+            body.attachmentId = row.attachment.id;
+            if (body.kind === "auto") body.kind = /^image\/(png|jpeg|gif|webp)$/.test(row.attachment.mime) ? "image" : "file";
+          }
+          if (!await localGet("queue", row.id)) return;
+          const message = await request("/api/conversations/" + row.cid + "/messages", { method: "POST", body }, g, key);
+          if (!alive(g, key)) return;
+          await remove(row.id);
+          if (S2.active === row.cid && !S2.historyMode && !S2.messages.some((m) => m.id === message.id)) {
+            S2.messages.push(message);
+            S2.messages.sort((a, b) => a.seq - b.seq);
+          }
+          queueRefresh2();
+        } catch (error) {
+          if (!alive(g, key)) return;
+          const permanent = error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+          await update(row.id, { state: permanent ? "failed" : "waiting", error: permanent ? error.message : "网络异常，等待重试", next: Date.now() + (error.status === 429 ? 6e4 : Math.min(3e4, 2e3 * 2 ** Math.min(row.attempts, 4))) });
+        }
+      } finally {
+        if (alive(g, key)) {
+          working = false;
+          await refreshRows(g, key);
+          timer = setTimeout(() => work().catch(storageError), 1e3);
+        }
+      }
+    }
+    const status = (row) => row.state === "sending" ? "正在发送…" : row.state === "failed" ? row.error : row.error || "已保存，等待发送";
+    function item(row, panel = false) {
+      var _a;
+      const content = row.file ? "<b>".concat(esc2(row.body.kind === "voice" ? "语音" : row.file.name), "</b><small>").concat(bytes2(row.file.size), "</small>") : esc2(row.body.text);
+      return '<article class="'.concat(panel ? "outbox-row" : "message mine pending-message", '" data-outbox="').concat(row.id, '">').concat(panel ? "" : av2(S2.user), '<div class="message-body">').concat(panel ? "<b>" + esc2(((_a = S2.conversations.find((c) => c.id === row.cid)) == null ? void 0 : _a.name) || "原会话已不可访问") + "</b>" : "", '<div class="bubble">').concat(content, '</div><div class="outbox-status ').concat(row.state === "failed" ? "failed" : "", '" role="status">').concat(esc2(status(row)), '</div><div class="outbox-actions">').concat(row.state !== "sending" ? '<button data-outbox-retry="' + row.id + '">重试</button>' : "", '<button data-outbox-remove="').concat(row.id, '">移除待发送</button></div></div></article>');
+    }
+    function html(cid) {
+      return S2.historyMode ? "" : rows.filter((r) => r.cid === cid && !S2.messages.some((m) => {
+        var _a;
+        return m.clientId === r.id && m.sender === ((_a = S2.user) == null ? void 0 : _a.id);
+      })).map((r) => item(r)).join("");
+    }
+    function updatePanel() {
+      const panel = $2("#outbox-list");
+      if (panel) panel.innerHTML = rows.map((r) => item(r, true)).join("") || '<p class="empty-list">没有待发送消息</p>';
+    }
+    function show() {
+      modal2("待发送消息", '<p class="hint">保存在此设备，登录同一服务器和账号后继续发送。每个会话依次发送；失败消息需重试或移除。</p><div id="outbox-list"></div>', "", true);
+      updatePanel();
+    }
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-outbox-open],[data-outbox-retry],[data-outbox-remove]");
+      if (!button || !scope) return;
+      const g = generation, key = scope;
+      try {
+        if (button.hasAttribute("data-outbox-open")) {
+          show();
+          return;
+        }
+        const id = button.dataset.outboxRetry || button.dataset.outboxRemove, row = rows.find((r) => r.id === id);
+        if (!row) return;
+        if (button.dataset.outboxRetry) {
+          await update(id, { state: "waiting", next: 0, error: "" });
+          await refreshRows(g, key);
+          kick();
+          return;
+        }
+        modal2("移除待发送消息", '<p class="hint">只移除此设备的待发送副本。如果服务器已经收到，这条消息仍会保留在聊天记录中，可在聊天里撤回。</p>', '<button class="secondary" data-action="close-modal">保留</button><button class="primary" id="outbox-confirm-remove">移除</button>');
+        $2("#outbox-confirm-remove").onclick = async () => {
+          if (!alive(g, key)) return;
+          await remove(id);
+          closeModal2();
+          await refreshRows(g, key);
+          kick();
+        };
+      } catch (error) {
+        toast2(error.message);
+      }
+    });
+    window.addEventListener("online", kick);
+    return { start, stop, kick, ack, html, saveDraft, restoreReply, enqueue, replyPlaceholder: (cid) => {
+      var _a;
+      return ((_a = drafts.get(cid)) == null ? void 0 : _a.replyId) ? { id: drafts.get(cid).replyId, name: "原消息", text: "正在恢复引用…", kind: "text" } : null;
+    }, scope: () => scope, settingsRow: () => '<div class="prefs-row"><span>本机待发送消息</span><button class="secondary" data-outbox-open>管理</button></div>' };
+  }
+
   // internal/ui/src/mentions.js
   function createMentions({ S: S2, api: api2, esc: esc2, av: av2, toast: toast2, jump }) {
     const $2 = (s) => document.querySelector(s), drafts = /* @__PURE__ */ new Map();
@@ -338,7 +707,11 @@
         newEnd--;
       }
       const delta = newEnd - oldEnd;
-      d.spans = d.spans.flatMap((m) => m.end <= left ? [m] : m.start >= oldEnd ? [__spreadProps(__spreadValues({}, m), { start: m.start + delta, end: m.end + delta })] : []);
+      d.spans = d.spans.reduce((kept, m) => {
+        if (m.end <= left) kept.push(m);
+        else if (m.start >= oldEnd) kept.push(__spreadProps(__spreadValues({}, m), { start: m.start + delta, end: m.end + delta }));
+        return kept;
+      }, []);
       d.text = text2;
       return d;
     }
@@ -536,7 +909,7 @@
         }
       } else if (!e.target.closest("#mention-picker,#composer")) hide();
     });
-    return { changed, key, mount, select, clear, reset, invalidated, text, applies, failed: () => {
+    return { restore: (cid, text2, spans = []) => drafts.set(cid, { text: text2, spans: spans.map((m) => __spreadValues({}, m)) }), changed, key, mount, select, clear, reset, invalidated, text, applies, failed: () => {
       cache = null;
     }, payload: () => reconcile().spans, tool: () => group() ? '<button type="button" class="icon-btn mention-tool" title="@成员" aria-label="@成员" data-mention="open">@</button>' : "", menu: (m) => group() && m.sender !== S2.user.id ? '<button data-mention-user="'.concat(m.sender, '">@TA</button>') : "" };
   }
@@ -1050,7 +1423,7 @@
   }
 
   // internal/ui/src/media.js
-  function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2 }) {
+  function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2, enqueue }) {
     const $2 = (s, r = document) => r.querySelector(s);
     const mic = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0ZM5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>';
     const sound = '<svg class="voice-sound" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 4-4v12l-4-4H3v-4Z"/><path d="M13 8a6 6 0 0 1 0 8"/><path d="M17 4a11 11 0 0 1 0 16"/></svg>';
@@ -1254,55 +1627,35 @@
       if (!S2.user || S2.user.id !== state.userId) return;
       sendMedia(wav(state), "voice", {}, state.cid).catch(showRetry);
     }
+    const accountScope = () => {
+      var _a;
+      return JSON.stringify([S2.config.server, S2.config.fingerprint, (_a = S2.user) == null ? void 0 : _a.id, S2.token]);
+    };
     async function sendMedia(file, kind, metadata = {}, cid = S2.active) {
-      if (!cid || !S2.user) return;
-      if (file.size > 50 * 1024 * 1024) throw Error("文件不能超过 50 MB");
-      const owner = S2.user.id, clientId = randomID2();
-      let attachment;
-      const deliver = async () => {
-        var _a, _b;
-        try {
-          if (((_a = S2.user) == null ? void 0 : _a.id) !== owner) throw Error("登录账号已变化，请重新选择要发送的内容");
-          if (!attachment) {
-            const form = new FormData();
-            form.append("conversationId", cid);
-            form.append("file", file);
-            form.append("mediaKind", kind);
-            for (const [key, value] of Object.entries(metadata)) form.append(key, String(value));
-            toast2(kind === "voice" ? "正在发送语音…" : "正在发送视频…");
-            attachment = await api2("/api/files", { method: "POST", body: form });
-          }
-          if (((_b = S2.user) == null ? void 0 : _b.id) !== owner) throw Error("登录账号已变化，请重新选择要发送的内容");
-          const m = await action2("/api/conversations/".concat(cid, "/messages"), { kind, attachmentId: attachment.id, text: "", clientId });
-          if (S2.active === cid) {
-            if (S2.historyMode) {
-              S2.messages = await api2("/api/conversations/".concat(cid, "/messages"));
-              S2.historyMode = false;
-            } else if (!S2.messages.some((x) => x.id === m.id)) S2.messages.push(m);
-            renderMessages2();
-          }
-          queueRefresh2();
-          toast2("发送成功");
-          return m;
-        } catch (error) {
-          error.retry = deliver;
-          throw error;
-        }
+      const owner = accountScope(), retry = () => {
+        if (accountScope() !== owner) throw Error("登录账号已变化");
+        return enqueue(cid, { kind, text: "" }, file, metadata);
       };
-      return deliver();
+      try {
+        return await retry();
+      } catch (error) {
+        error.retry = retry;
+        throw error;
+      }
     }
     function showRetry(error) {
-      if (!S2.user) {
+      if (!error.retry) {
         toast2(error.message);
         return;
       }
-      modal2("发送未完成", '<p class="hint">'.concat(esc2(error.message), "。录音或视频暂时保留在本窗口，可以重试发送。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="media-retry">重试发送</button>');
+      modal2("未能保存待发送内容", '<p class="hint">'.concat(esc2(error.message), "。录音或视频暂时保留在当前窗口，关闭窗口前请重试保存。</p>"), '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="media-retry">重试保存</button>');
       $2("#media-retry").onclick = async (e) => {
         e.target.disabled = true;
         try {
           await error.retry();
           closeModal2();
         } catch (next) {
+          next.retry = error.retry;
           showRetry(next);
         }
       };
@@ -1341,17 +1694,18 @@
       });
     }
     async function sendVideo(file) {
-      const cid = S2.active;
+      const cid = S2.active, owner = accountScope();
       if (!cid) return;
       if (file.size > 50 * 1024 * 1024) {
         toast2("视频不能超过 50 MB");
         return;
       }
       const fallback = (error) => {
+        if (accountScope() !== owner) return;
         modal2("无法直接发送视频", '<p class="hint">'.concat(esc2(error.message), "，可以作为普通文件发送给对方。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');
         $2("#video-send-file").onclick = () => {
           closeModal2();
-          if (S2.active === cid) upload2(file, true);
+          if (S2.active === cid && accountScope() === owner) upload2(file, true);
           else toast2("聊天已切换，请重新选择文件");
         };
       };
@@ -1362,6 +1716,7 @@
         fallback(error);
         return;
       }
+      if (accountScope() !== owner) return;
       try {
         await sendMedia(file, "video", metadata, cid);
       } catch (error) {
@@ -2662,17 +3017,17 @@
     setTimeout(() => n.remove(), 3800);
   }
   async function api(path, options = {}) {
-    const headers = __spreadValues({}, options.headers);
-    if (S.token) headers.Authorization = "Bearer " + S.token;
+    const requestToken = S.token, headers = __spreadValues({}, options.headers);
+    if (requestToken) headers.Authorization = "Bearer " + requestToken;
     if (options.body && !(options.body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(options.body);
     }
     ;
     const r = await fetch(path, __spreadProps(__spreadValues({}, options), { headers }));
-    if (r.status === 401 && S.user && !path.startsWith("/local")) {
+    if (r.status === 401 && S.user && requestToken === S.token && !path.startsWith("/local")) {
       logout(false);
-      throw Error("登录已过期，请重新登录");
+      throw Object.assign(Error("登录已过期，请重新登录"), { status: 401 });
     }
     ;
     if (!r.ok) {
@@ -2851,6 +3206,8 @@
       var _a2;
       Mentions.changed();
       S.drafts[S.active] = input.value;
+      Outbox.saveDraft().catch(() => {
+      });
       $("#send-message").disabled = !input.value.trim();
       if (Date.now() - typingAt > 2500 && ((_a2 = S.ws) == null ? void 0 : _a2.readyState) === 1) {
         typingAt = Date.now();
@@ -2934,7 +3291,9 @@
       return date + messageHTML(m);
     }).join("");
     if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
-    if (!S.messages.length) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
+    const pending = Outbox.html(S.active);
+    if (!S.messages.length && !pending) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
+    area.insertAdjacentHTML("beforeend", pending);
     Forwarding.sync();
     Media.sync();
     if (!keep || near) area.scrollTop = area.scrollHeight;
@@ -2951,7 +3310,7 @@
     S.active = id;
     S.historyMode = false;
     S.tab = "messages";
-    S.reply = null;
+    S.reply = Outbox.replyPlaceholder(id);
     S.messages = [];
     S.profile = null;
     S.search = "";
@@ -2961,6 +3320,7 @@
       if (S.active !== id) return;
       S.messages = m;
       renderMessages();
+      await Outbox.restoreReply(id);
       await markRead();
       if (innerWidth > 700) (_a = $("#composer")) == null ? void 0 : _a.focus();
     } catch (e) {
@@ -2986,36 +3346,31 @@
     Desktop.unread();
   }
   async function sendMessage() {
+    var _a;
     const input = $("#composer");
     if (!(input == null ? void 0 : input.value.trim()) || input.disabled) return;
-    const text = input.value, cid = S.active, reply = S.reply;
-    const clientId = randomID();
+    const text = input.value, cid = S.active, owner = Outbox.scope();
     input.disabled = true;
     try {
-      const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: "text", text, mentions: Mentions.payload(), replyId: (reply == null ? void 0 : reply.id) || "", clientId });
-      S.drafts[cid] = "";
-      Mentions.clear(cid);
-      if (S.active === cid) {
-        if (S.historyMode) {
-          S.messages = await api("/api/conversations/".concat(cid, "/messages"));
-          S.historyMode = false;
-        }
+      await Outbox.enqueue(cid, { kind: "text", text, mentions: Mentions.payload(), replyId: ((_a = S.reply) == null ? void 0 : _a.id) || "" }, null, {}, true);
+      if (Outbox.scope() !== owner) return;
+      if (S.active === cid && input === $("#composer")) {
         input.value = "";
         $("#send-message").disabled = true;
         S.reply = null;
         renderReply();
-        if (!S.messages.some((x) => x.id === m.id)) S.messages.push(m);
         renderMessages();
-        markRead().catch(() => {
-        });
       }
-      queueRefresh();
     } catch (e) {
       Mentions.failed();
       toast(e.message);
     } finally {
-      input.disabled = false;
-      input.focus();
+      if (input.isConnected) {
+        input.disabled = false;
+        input.focus();
+        Groups.syncComposer();
+        Contacts.syncComposer();
+      }
     }
   }
   function renderReply() {
@@ -3030,28 +3385,9 @@
       await Media.sendVideo(file);
       return;
     }
-    if (file.size > 50 * 1024 * 1024) {
-      toast("文件不能超过 50 MB");
-      return;
-    }
-    const cid = S.active;
-    if (!cid) return;
-    const form = new FormData();
-    form.append("conversationId", cid);
-    form.append("file", file);
-    toast("正在上传 " + file.name);
+    if (!S.active) return;
     try {
-      const f = await api("/api/files", { method: "POST", body: form });
-      const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: /^image\/(png|jpeg|gif|webp)$/.test(f.mime) ? "image" : "file", attachmentId: f.id, text: "", clientId: randomID() });
-      if (S.active === cid) {
-        if (S.historyMode) {
-          S.messages = await api("/api/conversations/".concat(cid, "/messages"));
-          S.historyMode = false;
-        } else if (!S.messages.some((x) => x.id === m.id)) S.messages.push(m);
-        renderMessages();
-      }
-      queueRefresh();
-      toast("发送成功");
+      await Outbox.enqueue(S.active, { kind: forceFile ? "file" : "auto", text: "" }, file);
     } catch (e) {
       toast(e.message);
     }
@@ -3097,6 +3433,7 @@
   }
   async function enter() {
     await refresh();
+    await Outbox.start();
     renderShell();
     connectEvents();
   }
@@ -3107,6 +3444,7 @@
     const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/api/ws");
     S.ws = ws;
     ws.onopen = () => {
+      Outbox.kick();
       S.offline = false;
       connectionState();
       refresh().catch(() => {
@@ -3133,6 +3471,8 @@
       }
       const d = event.data;
       if (event.type === "message") {
+        Outbox.ack(d).catch(() => {
+        });
         if (S.active === d.conversationId && !S.historyMode) {
           if (!S.messages.some((m) => m.id === d.id)) S.messages.push(d);
           renderMessages(true);
@@ -3196,6 +3536,7 @@
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
+    Outbox.stop();
     Avatars.reset();
     Mentions.reset();
     S.drafts = {};
@@ -3339,7 +3680,7 @@
     $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -3450,8 +3791,10 @@
       S.historyMode = true;
       S.tab = "messages";
       S.profile = null;
-      S.reply = null;
+      S.reply = Outbox.replyPlaceholder(cid);
       renderShell();
+      Outbox.restoreReply(cid).catch(() => {
+      });
     }
     closeModal();
     const target = document.querySelector('[data-message="' + id + '"]');
@@ -3896,11 +4239,15 @@
           break;
         case "quote":
           S.reply = S.messages.find((m) => m.id === b.dataset.mid);
+          Outbox.saveDraft().catch(() => {
+          });
           renderReply();
           (_c = $("#composer")) == null ? void 0 : _c.focus();
           break;
         case "cancel-reply":
           S.reply = null;
+          Outbox.saveDraft().catch(() => {
+          });
           renderReply();
           break;
         case "favorite":
@@ -4045,10 +4392,11 @@
     }
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
-  var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
   var Desktop = createDesktop({ S, modal, closeModal, toast, markRead });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
+  var Outbox = createOutbox({ S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
@@ -4056,22 +4404,30 @@
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
-  (async () => {
+  async function bootstrap() {
     try {
       S.config = await api("/local/config");
       if (S.token) {
         try {
           S.user = await api("/api/me");
           await enter();
-        } catch (e) {
-          S.token = "";
-          localStorage.removeItem("welink_token");
-          renderAuth();
+        } catch (error) {
+          if (error.status === 401) {
+            S.token = "";
+            localStorage.removeItem("welink_token");
+            renderAuth();
+          } else throw error;
         }
       } else renderAuth();
-    } catch (e) {
-      renderAuth();
-      $("#auth-error").textContent = "连接服务失败：" + e.message;
+    } catch (error) {
+      Outbox.stop();
+      S.user = null;
+      $("#app").innerHTML = '<main class="auth-shell">' + windows() + '<section class="auth-card">' + logo() + '<h2>正在重新连接</h2><p class="subtitle">登录状态与本机草稿已保留</p><p class="auth-error">' + esc(error.message) + '</p><button class="primary" id="retry-connect">立即重试</button><div class="auth-links"><button data-action="logout">返回登录</button><button data-action="connection">连接设置</button></div></section></main>';
+      $("#retry-connect").onclick = bootstrap;
+      setTimeout(() => {
+        if ($("#retry-connect")) bootstrap();
+      }, 1e4);
     }
-  })();
+  }
+  bootstrap();
 })();

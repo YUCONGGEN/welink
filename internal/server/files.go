@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -25,6 +28,11 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 	cid := r.FormValue("conversationId")
+	clientID := r.FormValue("clientId")
+	if clientID != "" && (len(clientID) < 8 || len(clientID) > 100) {
+		fail(w, 400, "上传标识无效")
+		return
+	}
 	if !s.canSpeak(cid, uid(r)) {
 		fail(w, 403, "无法向该会话发送文件")
 		return
@@ -61,11 +69,13 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	typ := http.DetectContentType(header[:n])
-	if _, e = out.Write(header[:n]); e != nil {
+	digest := sha256.New()
+	destination := io.MultiWriter(out, digest)
+	if _, e = destination.Write(header[:n]); e != nil {
 		s.dbError(w, e)
 		return
 	}
-	rest, e := io.Copy(out, io.LimitReader(f, maxUpload+1))
+	rest, e := io.Copy(destination, io.LimitReader(f, maxUpload+1))
 	size := int64(n) + rest
 	if e != nil || size > maxUpload {
 		fail(w, 400, "文件上传失败或超过 50 MB")
@@ -86,12 +96,41 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	// Recheck after reading the body: membership or contact permissions may have changed.
+	if !canSpeak(tx, cid, uid(r)) {
+		fail(w, 403, "无法向该会话发送文件")
+		return
+	}
+	identity, _ := json.Marshal([]any{cid, name, typ, size, media, fmt.Sprintf("%x", digest.Sum(nil))})
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(identity))
+	if clientID != "" {
+		var previousID, previousFingerprint string
+		e = tx.QueryRow("SELECT attachment_id,fingerprint FROM upload_requests WHERE user_id=? AND client_id=?", uid(r), clientID).Scan(&previousID, &previousFingerprint)
+		if e == nil {
+			if previousFingerprint != fingerprint {
+				fail(w, 409, "该上传标识已用于其他内容")
+				return
+			}
+			ok(w, map[string]any{"id": previousID, "name": name, "mime": typ, "size": size, "media": media})
+			return
+		}
+		if e != sql.ErrNoRows {
+			s.dbError(w, e)
+			return
+		}
+	}
 	if _, e = tx.Exec("INSERT INTO attachments VALUES(?,?,?,?,?,?,?)", id, uid(r), cid, name, typ, size, now()); e != nil {
 		s.dbError(w, e)
 		return
 	}
 	if media != nil {
 		if _, e = tx.Exec("INSERT INTO attachment_media VALUES(?,?,?,?,?)", id, media.Kind, media.DurationMS, media.Width, media.Height); e != nil {
+			s.dbError(w, e)
+			return
+		}
+	}
+	if clientID != "" {
+		if _, e = tx.Exec("INSERT INTO upload_requests VALUES(?,?,?,?)", uid(r), clientID, id, fingerprint); e != nil {
 			s.dbError(w, e)
 			return
 		}

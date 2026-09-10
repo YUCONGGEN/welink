@@ -1,4 +1,4 @@
-export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileURL,randomID,renderMessages,queueRefresh,upload}) {
+export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileURL,randomID,renderMessages,queueRefresh,upload,enqueue}) {
   const $=(s,r=document)=>r.querySelector(s);
   const mic='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0ZM5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>';
   const sound='<svg class="voice-sound" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 4-4v12l-4-4H3v-4Z"/><path d="M13 8a6 6 0 0 1 0 8"/><path d="M17 4a11 11 0 0 1 0 16"/></svg>';
@@ -58,19 +58,9 @@ export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileUR
     if(!S.user||S.user.id!==state.userId)return;
     sendMedia(wav(state),'voice',{},state.cid).catch(showRetry);
   }
-  async function sendMedia(file,kind,metadata={},cid=S.active){
-    if(!cid||!S.user)return;if(file.size>50*1024*1024)throw Error('文件不能超过 50 MB');
-    const owner=S.user.id,clientId=randomID();let attachment;
-    const deliver=async()=>{try{
-      if(S.user?.id!==owner)throw Error('登录账号已变化，请重新选择要发送的内容');
-      if(!attachment){const form=new FormData();form.append('conversationId',cid);form.append('file',file);form.append('mediaKind',kind);for(const [key,value]of Object.entries(metadata))form.append(key,String(value));toast(kind==='voice'?'正在发送语音…':'正在发送视频…');attachment=await api('/api/files',{method:'POST',body:form})}
-      if(S.user?.id!==owner)throw Error('登录账号已变化，请重新选择要发送的内容');
-      const m=await action(`/api/conversations/${cid}/messages`,{kind,attachmentId:attachment.id,text:'',clientId});
-      if(S.active===cid){if(S.historyMode){S.messages=await api(`/api/conversations/${cid}/messages`);S.historyMode=false}else if(!S.messages.some(x=>x.id===m.id))S.messages.push(m);renderMessages()}queueRefresh();toast('发送成功');return m;
-    }catch(error){error.retry=deliver;throw error}};
-    return deliver();
-  }
-  function showRetry(error){if(!S.user){toast(error.message);return}modal('发送未完成',`<p class="hint">${esc(error.message)}。录音或视频暂时保留在本窗口，可以重试发送。</p>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="media-retry">重试发送</button>');$('#media-retry').onclick=async e=>{e.target.disabled=true;try{await error.retry();closeModal()}catch(next){showRetry(next)}}}
+  const accountScope=()=>JSON.stringify([S.config.server,S.config.fingerprint,S.user?.id,S.token]);
+  async function sendMedia(file,kind,metadata={},cid=S.active){const owner=accountScope(),retry=()=>{if(accountScope()!==owner)throw Error('登录账号已变化');return enqueue(cid,{kind,text:''},file,metadata)};try{return await retry()}catch(error){error.retry=retry;throw error}}
+  function showRetry(error){if(!error.retry){toast(error.message);return}modal('未能保存待发送内容',`<p class="hint">${esc(error.message)}。录音或视频暂时保留在当前窗口，关闭窗口前请重试保存。</p>`,'<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="media-retry">重试保存</button>');$('#media-retry').onclick=async e=>{e.target.disabled=true;try{await error.retry();closeModal()}catch(next){next.retry=error.retry;showRetry(next)}}}
   function videoMetadata(file){return new Promise((resolve,reject)=>{
     const v=document.createElement('video'),url=URL.createObjectURL(file);v.preload='metadata';v.muted=true;let timer,done=false;
     const finish=(error,result)=>{if(done)return;done=true;clearTimeout(timer);v.onloadedmetadata=v.ondurationchange=v.ontimeupdate=v.onerror=null;v.removeAttribute('src');v.load();URL.revokeObjectURL(url);error?reject(error):resolve(result)};
@@ -78,10 +68,10 @@ export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileUR
     v.onloadedmetadata=()=>{check();if(!done&&!Number.isFinite(v.duration))try{v.currentTime=1e10}catch{}};v.ondurationchange=v.ontimeupdate=check;v.onerror=()=>finish(Error('当前设备无法播放这段视频'));timer=setTimeout(()=>finish(Error('无法读取视频信息')),15000);v.src=url;
   })}
   async function sendVideo(file){
-    const cid=S.active;if(!cid)return;if(file.size>50*1024*1024){toast('视频不能超过 50 MB');return}
-    const fallback=error=>{modal('无法直接发送视频',`<p class="hint">${esc(error.message)}，可以作为普通文件发送给对方。</p>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');$('#video-send-file').onclick=()=>{closeModal();if(S.active===cid)upload(file,true);else toast('聊天已切换，请重新选择文件')}};
+    const cid=S.active,owner=accountScope();if(!cid)return;if(file.size>50*1024*1024){toast('视频不能超过 50 MB');return}
+    const fallback=error=>{if(accountScope()!==owner)return;modal('无法直接发送视频',`<p class="hint">${esc(error.message)}，可以作为普通文件发送给对方。</p>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');$('#video-send-file').onclick=()=>{closeModal();if(S.active===cid&&accountScope()===owner)upload(file,true);else toast('聊天已切换，请重新选择文件')}};
     let metadata;try{metadata=await videoMetadata(file)}catch(error){fallback(error);return}
-    try{await sendMedia(file,'video',metadata,cid)}catch(error){if(error.status===400)fallback(error);else showRetry(error)}
+    if(accountScope()!==owner)return;try{await sendMedia(file,'video',metadata,cid)}catch(error){if(error.status===400)fallback(error);else showRetry(error)}
   }
   function sync(){
     document.querySelectorAll('[data-play-voice]').forEach(button=>{const active=playing?.id===button.dataset.playVoice&&!audio.paused;button.classList.toggle('is-playing',active);button.setAttribute('aria-label',(active?'暂停语音':'播放语音')+' '+seconds(button.dataset.duration)+' 秒');if(played().has(button.dataset.playVoice))$('.voice-unplayed',button)?.remove()});

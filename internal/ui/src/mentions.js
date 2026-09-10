@@ -8,7 +8,7 @@ export function createMentions({S,api,esc,av,toast,jump}) {
   let left=0;while(left<text.length&&left<d.text.length&&text[left]===d.text[left])left++;
   let oldEnd=d.text.length,newEnd=text.length;while(oldEnd>left&&newEnd>left&&d.text[oldEnd-1]===text[newEnd-1]){oldEnd--;newEnd--}
   const delta=newEnd-oldEnd;
-  d.spans=d.spans.flatMap(m=>m.end<=left?[m]:m.start>=oldEnd?[{...m,start:m.start+delta,end:m.end+delta}]:[]);d.text=text;return d;
+  d.spans=d.spans.reduce((kept,m)=>{if(m.end<=left)kept.push(m);else if(m.start>=oldEnd)kept.push({...m,start:m.start+delta,end:m.end+delta});return kept},[]);d.text=text;return d;
  }
  function hide(){revision++;popup=null;$('#mention-picker')?.remove();input()?.setAttribute('aria-expanded','false');input()?.removeAttribute('aria-activedescendant')}
  async function members(){if(cache?.cid===S.active&&Date.now()-cache.at<10000)return cache.value;const cid=S.active,value=await api('/api/conversations/'+cid);if(cid===S.active)cache={cid,at:Date.now(),value};return value}
@@ -32,5 +32,5 @@ export function createMentions({S,api,esc,av,toast,jump}) {
  function reset(){drafts.clear();pending=null;cache=null;hide()}
  function invalidated(id){if(pending?.id===id){pending=null;$('#mention-jump')?.replaceChildren()}}
  document.addEventListener('click',e=>{const b=e.target.closest('[data-mention],[data-mention-user]');if(b){if(b.dataset.mention==='open')open();if(b.dataset.mentionUser)mentionUser(b.dataset.mentionUser);if(b.dataset.mention==='jump'&&pending){const p=pending;pending=null;$('#mention-jump')?.replaceChildren();jump(p.cid,p.id).catch(e=>toast(e.message))}}else if(!e.target.closest('#mention-picker,#composer'))hide()});
- return {changed,key,mount,select,clear,reset,invalidated,text,applies,failed:()=>{cache=null},payload:()=>reconcile().spans,tool:()=>group()?'<button type="button" class="icon-btn mention-tool" title="@成员" aria-label="@成员" data-mention="open">@</button>':'',menu:m=>group()&&m.sender!==S.user.id?`<button data-mention-user="${m.sender}">@TA</button>`:''};
+ return {restore:(cid,text,spans=[])=>drafts.set(cid,{text,spans:spans.map(m=>({...m}))}),changed,key,mount,select,clear,reset,invalidated,text,applies,failed:()=>{cache=null},payload:()=>reconcile().spans,tool:()=>group()?'<button type="button" class="icon-btn mention-tool" title="@成员" aria-label="@成员" data-mention="open">@</button>':'',menu:m=>group()&&m.sender!==S.user.id?`<button data-mention-user="${m.sender}">@TA</button>`:''};
 }
