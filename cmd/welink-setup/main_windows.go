@@ -129,6 +129,25 @@ func install(directory string) error {
 			return err
 		}
 	}
+	protocol, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\welink`, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer protocol.Close()
+	if err = protocol.SetStringValue("", "URL:WeLink meeting"); err != nil {
+		return err
+	}
+	if err = protocol.SetStringValue("URL Protocol", ""); err != nil {
+		return err
+	}
+	command, _, err := registry.CreateKey(protocol, `shell\open\command`, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer command.Close()
+	if err = command.SetStringValue("", `"`+target+`" -- "%1"`); err != nil {
+		return err
+	}
 	key.SetDWordValue("NoModify", 1)
 	key.SetDWordValue("NoRepair", 1)
 	return nil
@@ -148,6 +167,8 @@ $startLink=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\WeLink.
 $desktopLink=Join-Path ([Environment]::GetFolderPath('Desktop')) 'WeLink.lnk'
 $shell=New-Object -ComObject WScript.Shell
 foreach($link in @($startLink,$desktopLink)){if((Test-Path -LiteralPath $link) -and $shell.CreateShortcut($link).TargetPath -eq $targetExecutable){Remove-Item -LiteralPath $link}}
+$protocolKey=Get-Item -LiteralPath 'HKCU:\Software\Classes\welink\shell\open\command' -ErrorAction SilentlyContinue
+if($protocolKey -and $protocolKey.GetValue('') -eq ('"'+$targetExecutable+'" -- "%1"')){Remove-Item -LiteralPath 'HKCU:\Software\Classes\welink' -Recurse}
 Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WeLink'
 Remove-Item -LiteralPath $PSCommandPath
 if(@(Get-ChildItem -LiteralPath $installDirectory -Force).Count -eq 0){Remove-Item -LiteralPath $installDirectory}

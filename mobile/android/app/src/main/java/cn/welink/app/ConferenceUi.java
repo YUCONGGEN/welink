@@ -29,6 +29,8 @@ import java.util.Locale;
 /** Native light meeting UI matching the WeLink / QQ white, gray and blue palette. */
 final class ConferenceUi {
     interface Actions {
+        void invite();
+        void copyInvitation();
         void microphone();
         void camera();
         void switchCamera();
@@ -54,7 +56,7 @@ final class ConferenceUi {
     private final LinearLayout memberList, memberPanel;
     private final TextView connection, count, recordingBadge;
     private final Map<String, Tile> tiles = new LinkedHashMap<>();
-    private final Tool mic, camera, switchCamera, share, members, record, leave;
+    private final Tool mic, camera, switchCamera, share, members, record, leave, invite;
     private boolean memberPanelOpen;
     private final String callMode;
 
@@ -66,15 +68,15 @@ final class ConferenceUi {
         root.addView(grid,new FrameLayout.LayoutParams(-1,-1));
 
         LinearLayout top=row();top.setPadding(dp(18),dp(8),dp(12),dp(8));top.setBackground(fade(0xffffffff,0xffffffff));
-        LinearLayout heading=column();TextView title=text(callMode.isEmpty()?"WeLink 会议":peerName,15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(callMode.isEmpty()?code.replaceAll("(\\d{3})(?=\\d)","$1 "):"video".equals(callMode)?"WeLink 视频通话":"WeLink 语音通话",12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
+        LinearLayout heading=column();TextView title=text(callMode.isEmpty()?"WeLink 会议":peerName,15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(callMode.isEmpty()?code.replaceAll("(\\d{3})(?=\\d)","$1 "):"video".equals(callMode)?"WeLink 视频通话":"WeLink 语音通话",12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));if(callMode.isEmpty()){roomNumber.setTextColor(0xff0099ff);roomNumber.setContentDescription("复制邀请链接和会议号");roomNumber.setOnClickListener(v->actions.copyInvitation());}top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
         recordingBadge=text("● 录制中",12,0xffff7272);recordingBadge.setVisibility(View.GONE);recordingBadge.setPadding(dp(10),0,dp(10),0);top.addView(recordingBadge,new LinearLayout.LayoutParams(-2,dp(42)));
         connection=text("正在连接…",12,0xff8995a4);connection.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);top.addView(connection,new LinearLayout.LayoutParams(-2,dp(42)));
         FrameLayout.LayoutParams topParams=new FrameLayout.LayoutParams(-1,dp(58),Gravity.TOP);root.addView(top,topParams);
 
         HorizontalScrollView toolbarScroll=new HorizontalScrollView(activity);toolbarScroll.setHorizontalScrollBarEnabled(false);toolbarScroll.setFillViewport(true);toolbarScroll.setBackgroundColor(0xffffffff);
         LinearLayout toolbar=row();toolbar.setGravity(Gravity.CENTER);toolbar.setPadding(dp(8),dp(4),dp(8),dp(4));
-        mic=tool("麦克风",this.actions::microphone);camera=tool("摄像头",this.actions::camera);switchCamera=tool("切换镜头",this.actions::switchCamera);share=tool("共享屏幕",this.actions::share);members=tool("成员",()->setMembersOpen(!memberPanelOpen));record=tool("录制",this.actions::record);leave=tool(callMode.isEmpty()?"离开":"挂断",this.actions::leave);leave.label.setTextColor(0xffff7272);
-        for(Tool tool:new Tool[]{mic,camera,switchCamera,share,members,record,leave})toolbar.addView(tool.root,new LinearLayout.LayoutParams(dp(72),dp(70)));
+        invite=tool("邀请",this.actions::invite);mic=tool("麦克风",this.actions::microphone);camera=tool("摄像头",this.actions::camera);switchCamera=tool("切换镜头",this.actions::switchCamera);share=tool("共享屏幕",this.actions::share);members=tool("成员",()->setMembersOpen(!memberPanelOpen));record=tool("录制",this.actions::record);leave=tool(callMode.isEmpty()?"离开":"挂断",this.actions::leave);leave.label.setTextColor(0xffff7272);
+        for(Tool tool:new Tool[]{mic,camera,switchCamera,invite,share,members,record,leave})toolbar.addView(tool.root,new LinearLayout.LayoutParams(dp(72),dp(70)));
         toolbarScroll.addView(toolbar,new HorizontalScrollView.LayoutParams(-1,-1));
         FrameLayout.LayoutParams toolbarParams=new FrameLayout.LayoutParams(-1,dp(78),Gravity.BOTTOM);root.addView(toolbarScroll,toolbarParams);
 
@@ -123,7 +125,7 @@ final class ConferenceUi {
 
     void setControls(boolean microphone,boolean cameraEnabled,boolean screen,boolean recording,boolean host) {
         mic.setActive(microphone,microphone?"静音":"解除静音");camera.setActive(cameraEnabled,cameraEnabled?"关闭视频":"开启视频");switchCamera.root.setVisibility(cameraEnabled?View.VISIBLE:View.GONE);share.root.setVisibility(host?View.VISIBLE:View.GONE);record.root.setVisibility(host?View.VISIBLE:View.GONE);share.setActive(screen,screen?"停止共享":"共享屏幕");record.setActive(recording,recording?"停止录制":"录制");leave.label.setText(host?"结束会议":"离开会议");
-        if(!callMode.isEmpty()){share.root.setVisibility(View.GONE);record.root.setVisibility(View.GONE);members.root.setVisibility(View.GONE);camera.root.setVisibility("audio".equals(callMode)?View.GONE:View.VISIBLE);leave.label.setText("挂断");}
+        if(!callMode.isEmpty()){invite.root.setVisibility(View.GONE);share.root.setVisibility(View.GONE);record.root.setVisibility(View.GONE);members.root.setVisibility(View.GONE);camera.root.setVisibility("audio".equals(callMode)?View.GONE:View.VISIBLE);leave.label.setText("挂断");}
     }
 
     void setMembersOpen(boolean open){memberPanelOpen=open;memberPanel.setVisibility(open?View.VISIBLE:View.GONE);members.setActive(open,"成员");}
@@ -156,6 +158,7 @@ final class ConferenceUi {
                 case "摄像头":canvas.drawRoundRect(2,5,16,19,2,2,pen);path(canvas,new float[]{16,9,22,6,22,18,16,15},true);break;
                 case "切换镜头":canvas.drawRoundRect(2,6,22,20,2,2,pen);path(canvas,new float[]{7,6,9,3,15,3,17,6},false);canvas.drawArc(8,9,16,17,35,260,false,pen);path(canvas,new float[]{15,9,16,12,13,12},false);break;
                 case "共享屏幕":canvas.drawRoundRect(2,3,22,18,2,2,pen);canvas.drawLine(8,22,16,22,pen);canvas.drawLine(12,18,12,22,pen);path(canvas,new float[]{8,10,12,6,16,10},false);canvas.drawLine(12,6,12,14,pen);break;
+                case "邀请":canvas.drawCircle(8,7,3,pen);canvas.drawArc(1,13,15,25,180,180,false,pen);canvas.drawLine(18,8,18,18,pen);canvas.drawLine(13,13,23,13,pen);break;
                 case "成员":canvas.drawCircle(9,7,3,pen);canvas.drawArc(2,13,16,25,180,180,false,pen);canvas.drawArc(14,4,21,11,260,170,false,pen);canvas.drawArc(14,13,24,25,260,100,false,pen);break;
                 case "录制":canvas.drawCircle(12,12,9,pen);pen.setStyle(Paint.Style.FILL);canvas.drawCircle(12,12,4,pen);break;
                 case "挂断":canvas.drawArc(2,6,22,24,210,120,false,pen);path(canvas,new float[]{3,10,3,16,7,16,7,10},false);path(canvas,new float[]{17,10,17,16,21,16,21,10},false);break;

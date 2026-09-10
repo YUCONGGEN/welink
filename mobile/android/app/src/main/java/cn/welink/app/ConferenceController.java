@@ -107,6 +107,8 @@ final class ConferenceController {
                 .createPeerConnectionFactory();
         audioManager=(AudioManager)activity.getSystemService(Context.AUDIO_SERVICE);oldAudioMode=audioManager.getMode();oldSpeaker=audioManager.isSpeakerphoneOn();audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);audioManager.setSpeakerphoneOn(true);
         presentation=new ConferenceUi(activity,code,callMode,peerName,egl.getEglBaseContext(),new ConferenceUi.Actions(){
+            @Override public void invite(){activity.requestConferenceInvite();}
+            @Override public void copyInvitation(){activity.copyMeetingInvitation();}
             @Override public void microphone(){toggleMicrophone();}
             @Override public void camera(){toggleCamera();}
             @Override public void switchCamera(){ConferenceController.this.switchCamera();}

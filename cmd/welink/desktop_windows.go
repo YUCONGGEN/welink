@@ -140,6 +140,9 @@ func (h *windowsHost) installDesktop(directory string) error {
 	})
 	h.view.Bind("welinkDesktopUnread", func(count int) { h.setUnread(count) })
 	h.view.Bind("welinkDesktopExit", func() { h.Action("quit") })
+	h.view.Bind("welinkMeetingInvitation", func() string { return takeMeetingInvite(directory) })
+	h.view.Bind("welinkMeetingNotify", func(code, title string, expires int64) bool { return h.showMeetingNotice(code, title, expires) })
+	h.view.Bind("welinkMeetingClear", func() { h.closeMeetingNotices() })
 	h.view.Init(`window.welinkNativeHidden=false;`)
 	return nil
 }
@@ -264,6 +267,7 @@ func (h *windowsHost) exitDesktop() {
 		return
 	}
 	h.desktop.closing = true
+	h.closeMeetingNotices()
 	if h.desktop.trayAvailable {
 		shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))
 		h.desktop.trayAvailable = false
@@ -272,6 +276,7 @@ func (h *windowsHost) exitDesktop() {
 }
 
 func (h *windowsHost) removeDesktop() {
+	h.closeMeetingNotices()
 	if h.desktop.trayAvailable {
 		shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))
 	}

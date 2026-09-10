@@ -111,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /join/{code}", s.meetingLink)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.PingContext(r.Context()); err != nil {
 			fail(w, 503, "数据库不可用")
@@ -124,7 +125,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
-		"POST /api/me/avatar": s.uploadAvatar, "DELETE /api/me/avatar": s.resetAvatar,
+		"GET /api/meetings/{code}": s.meetingInfo,
+		"PATCH /api/me/avatar":     s.selectCartoonAvatar,
+		"POST /api/me/avatar":      s.uploadAvatar, "DELETE /api/me/avatar": s.resetAvatar,
 		"POST /api/groups/{id}/avatar": s.uploadAvatar, "DELETE /api/groups/{id}/avatar": s.resetAvatar, "GET /api/avatars/{image}": s.avatar,
 		"POST /api/contact-groups/order": s.orderContactGroups,
 		"GET /api/contact-groups":        s.listContactGroups, "POST /api/contact-groups": s.saveContactGroup, "PATCH /api/contact-groups/{id}": s.saveContactGroup, "DELETE /api/contact-groups/{id}": s.deleteContactGroup,

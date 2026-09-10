@@ -76,6 +76,10 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err = migrateCartoonAvatars(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 

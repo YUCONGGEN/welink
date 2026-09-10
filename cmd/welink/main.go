@@ -26,6 +26,17 @@ func main() {
 		*dir = filepath.Join(root, "WeLink")
 	}
 	_ = os.MkdirAll(*dir, 0700)
+	if flag.NArg() > 0 {
+		code := meetingCodeFromURI(flag.Arg(0))
+		if code == "" {
+			showError("会议链接无效")
+			return
+		}
+		if err := saveMeetingInvite(*dir, code); err != nil {
+			showError("无法打开会议邀请")
+			return
+		}
+	}
 	var instance instanceGuard
 	if !*headless {
 		var existing bool

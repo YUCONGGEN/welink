@@ -1,3 +1,4 @@
+import './local-test-ready.mjs';
 import {chromium} from 'playwright';
 import fs from 'node:fs/promises';
 import assert from 'node:assert/strict';

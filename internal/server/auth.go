@@ -19,7 +19,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "注册过于频繁，请稍后再试")
 		return
 	}
-	var p struct{ Account, Name, Password string }
+	var p struct{ Account, Name, Password, Avatar string }
 	if !decode(w, r, &p) {
 		return
 	}
@@ -37,19 +37,26 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "账号为 5–24 位字母数字或下划线，昵称 1–32 字，密码 8–72 字节")
 		return
 	}
+	if p.Avatar != "" && !validCartoonAvatar(p.Avatar) {
+		fail(w, 400, "请选择头像库中的卡通头像")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(p.Password), 12)
 	if err != nil {
 		s.dbError(w, err)
 		return
 	}
 	id := newID()
+	if p.Avatar == "" {
+		p.Avatar = defaultCartoonAvatar(id)
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		s.dbError(w, err)
 		return
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec("INSERT INTO users(id,account,name,password,created) VALUES(?,?,?,?,?)", id, p.Account, p.Name, hash, now()); err != nil {
+	if _, err = tx.Exec("INSERT INTO users(id,account,name,password,avatar,created) VALUES(?,?,?,?,?,?)", id, p.Account, p.Name, hash, p.Avatar, now()); err != nil {
 		fail(w, 409, "账号已被使用")
 		return
 	}

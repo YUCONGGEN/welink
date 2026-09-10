@@ -19,6 +19,22 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/cartoon-catalog.js
+  var cartoonAvatars = [{ "id": "cartoon:001", "name": "元气小猫", "animal": "小猫", "style": "元气" }, { "id": "cartoon:002", "name": "元气小狗", "animal": "小狗", "style": "元气" }, { "id": "cartoon:003", "name": "元气小熊", "animal": "小熊", "style": "元气" }, { "id": "cartoon:004", "name": "元气兔兔", "animal": "兔兔", "style": "元气" }, { "id": "cartoon:005", "name": "元气狐狸", "animal": "狐狸", "style": "元气" }, { "id": "cartoon:006", "name": "元气熊猫", "animal": "熊猫", "style": "元气" }, { "id": "cartoon:007", "name": "元气考拉", "animal": "考拉", "style": "元气" }, { "id": "cartoon:008", "name": "元气老虎", "animal": "老虎", "style": "元气" }, { "id": "cartoon:009", "name": "元气狮子", "animal": "狮子", "style": "元气" }, { "id": "cartoon:010", "name": "元气小猴", "animal": "小猴", "style": "元气" }, { "id": "cartoon:011", "name": "元气小猪", "animal": "小猪", "style": "元气" }, { "id": "cartoon:012", "name": "元气绵羊", "animal": "绵羊", "style": "元气" }, { "id": "cartoon:013", "name": "元气奶牛", "animal": "奶牛", "style": "元气" }, { "id": "cartoon:014", "name": "元气企鹅", "animal": "企鹅", "style": "元气" }, { "id": "cartoon:015", "name": "元气猫头鹰", "animal": "猫头鹰", "style": "元气" }, { "id": "cartoon:016", "name": "元气青蛙", "animal": "青蛙", "style": "元气" }, { "id": "cartoon:017", "name": "元气小鸡", "animal": "小鸡", "style": "元气" }, { "id": "cartoon:018", "name": "元气浣熊", "animal": "浣熊", "style": "元气" }, { "id": "cartoon:019", "name": "元气海豹", "animal": "海豹", "style": "元气" }, { "id": "cartoon:020", "name": "元气仓鼠", "animal": "仓鼠", "style": "元气" }, { "id": "cartoon:021", "name": "甜梦小猫", "animal": "小猫", "style": "甜梦" }, { "id": "cartoon:022", "name": "甜梦小狗", "animal": "小狗", "style": "甜梦" }, { "id": "cartoon:023", "name": "甜梦小熊", "animal": "小熊", "style": "甜梦" }, { "id": "cartoon:024", "name": "甜梦兔兔", "animal": "兔兔", "style": "甜梦" }, { "id": "cartoon:025", "name": "甜梦狐狸", "animal": "狐狸", "style": "甜梦" }, { "id": "cartoon:026", "name": "甜梦熊猫", "animal": "熊猫", "style": "甜梦" }, { "id": "cartoon:027", "name": "甜梦考拉", "animal": "考拉", "style": "甜梦" }, { "id": "cartoon:028", "name": "甜梦老虎", "animal": "老虎", "style": "甜梦" }, { "id": "cartoon:029", "name": "甜梦狮子", "animal": "狮子", "style": "甜梦" }, { "id": "cartoon:030", "name": "甜梦小猴", "animal": "小猴", "style": "甜梦" }, { "id": "cartoon:031", "name": "甜梦小猪", "animal": "小猪", "style": "甜梦" }, { "id": "cartoon:032", "name": "甜梦绵羊", "animal": "绵羊", "style": "甜梦" }, { "id": "cartoon:033", "name": "甜梦奶牛", "animal": "奶牛", "style": "甜梦" }, { "id": "cartoon:034", "name": "甜梦企鹅", "animal": "企鹅", "style": "甜梦" }, { "id": "cartoon:035", "name": "甜梦猫头鹰", "animal": "猫头鹰", "style": "甜梦" }, { "id": "cartoon:036", "name": "甜梦青蛙", "animal": "青蛙", "style": "甜梦" }, { "id": "cartoon:037", "name": "甜梦小鸡", "animal": "小鸡", "style": "甜梦" }, { "id": "cartoon:038", "name": "甜梦浣熊", "animal": "浣熊", "style": "甜梦" }, { "id": "cartoon:039", "name": "甜梦海豹", "animal": "海豹", "style": "甜梦" }, { "id": "cartoon:040", "name": "甜梦仓鼠", "animal": "仓鼠", "style": "甜梦" }, { "id": "cartoon:041", "name": "花园小猫", "animal": "小猫", "style": "花园" }, { "id": "cartoon:042", "name": "花园小狗", "animal": "小狗", "style": "花园" }, { "id": "cartoon:043", "name": "花园小熊", "animal": "小熊", "style": "花园" }, { "id": "cartoon:044", "name": "花园兔兔", "animal": "兔兔", "style": "花园" }, { "id": "cartoon:045", "name": "花园狐狸", "animal": "狐狸", "style": "花园" }, { "id": "cartoon:046", "name": "花园熊猫", "animal": "熊猫", "style": "花园" }, { "id": "cartoon:047", "name": "花园考拉", "animal": "考拉", "style": "花园" }, { "id": "cartoon:048", "name": "花园老虎", "animal": "老虎", "style": "花园" }, { "id": "cartoon:049", "name": "花园狮子", "animal": "狮子", "style": "花园" }, { "id": "cartoon:050", "name": "花园小猴", "animal": "小猴", "style": "花园" }, { "id": "cartoon:051", "name": "花园小猪", "animal": "小猪", "style": "花园" }, { "id": "cartoon:052", "name": "花园绵羊", "animal": "绵羊", "style": "花园" }, { "id": "cartoon:053", "name": "花园奶牛", "animal": "奶牛", "style": "花园" }, { "id": "cartoon:054", "name": "花园企鹅", "animal": "企鹅", "style": "花园" }, { "id": "cartoon:055", "name": "花园猫头鹰", "animal": "猫头鹰", "style": "花园" }, { "id": "cartoon:056", "name": "花园青蛙", "animal": "青蛙", "style": "花园" }, { "id": "cartoon:057", "name": "花园小鸡", "animal": "小鸡", "style": "花园" }, { "id": "cartoon:058", "name": "花园浣熊", "animal": "浣熊", "style": "花园" }, { "id": "cartoon:059", "name": "花园海豹", "animal": "海豹", "style": "花园" }, { "id": "cartoon:060", "name": "花园仓鼠", "animal": "仓鼠", "style": "花园" }, { "id": "cartoon:061", "name": "眼镜小猫", "animal": "小猫", "style": "眼镜" }, { "id": "cartoon:062", "name": "眼镜小狗", "animal": "小狗", "style": "眼镜" }, { "id": "cartoon:063", "name": "眼镜小熊", "animal": "小熊", "style": "眼镜" }, { "id": "cartoon:064", "name": "眼镜兔兔", "animal": "兔兔", "style": "眼镜" }, { "id": "cartoon:065", "name": "眼镜狐狸", "animal": "狐狸", "style": "眼镜" }, { "id": "cartoon:066", "name": "眼镜熊猫", "animal": "熊猫", "style": "眼镜" }, { "id": "cartoon:067", "name": "眼镜考拉", "animal": "考拉", "style": "眼镜" }, { "id": "cartoon:068", "name": "眼镜老虎", "animal": "老虎", "style": "眼镜" }, { "id": "cartoon:069", "name": "眼镜狮子", "animal": "狮子", "style": "眼镜" }, { "id": "cartoon:070", "name": "眼镜小猴", "animal": "小猴", "style": "眼镜" }, { "id": "cartoon:071", "name": "眼镜小猪", "animal": "小猪", "style": "眼镜" }, { "id": "cartoon:072", "name": "眼镜绵羊", "animal": "绵羊", "style": "眼镜" }, { "id": "cartoon:073", "name": "眼镜奶牛", "animal": "奶牛", "style": "眼镜" }, { "id": "cartoon:074", "name": "眼镜企鹅", "animal": "企鹅", "style": "眼镜" }, { "id": "cartoon:075", "name": "眼镜猫头鹰", "animal": "猫头鹰", "style": "眼镜" }, { "id": "cartoon:076", "name": "眼镜青蛙", "animal": "青蛙", "style": "眼镜" }, { "id": "cartoon:077", "name": "眼镜小鸡", "animal": "小鸡", "style": "眼镜" }, { "id": "cartoon:078", "name": "眼镜浣熊", "animal": "浣熊", "style": "眼镜" }, { "id": "cartoon:079", "name": "眼镜海豹", "animal": "海豹", "style": "眼镜" }, { "id": "cartoon:080", "name": "眼镜仓鼠", "animal": "仓鼠", "style": "眼镜" }, { "id": "cartoon:081", "name": "星光小猫", "animal": "小猫", "style": "星光" }, { "id": "cartoon:082", "name": "星光小狗", "animal": "小狗", "style": "星光" }, { "id": "cartoon:083", "name": "星光小熊", "animal": "小熊", "style": "星光" }, { "id": "cartoon:084", "name": "星光兔兔", "animal": "兔兔", "style": "星光" }, { "id": "cartoon:085", "name": "星光狐狸", "animal": "狐狸", "style": "星光" }, { "id": "cartoon:086", "name": "星光熊猫", "animal": "熊猫", "style": "星光" }, { "id": "cartoon:087", "name": "星光考拉", "animal": "考拉", "style": "星光" }, { "id": "cartoon:088", "name": "星光老虎", "animal": "老虎", "style": "星光" }, { "id": "cartoon:089", "name": "星光狮子", "animal": "狮子", "style": "星光" }, { "id": "cartoon:090", "name": "星光小猴", "animal": "小猴", "style": "星光" }, { "id": "cartoon:091", "name": "星光小猪", "animal": "小猪", "style": "星光" }, { "id": "cartoon:092", "name": "星光绵羊", "animal": "绵羊", "style": "星光" }, { "id": "cartoon:093", "name": "星光奶牛", "animal": "奶牛", "style": "星光" }, { "id": "cartoon:094", "name": "星光企鹅", "animal": "企鹅", "style": "星光" }, { "id": "cartoon:095", "name": "星光猫头鹰", "animal": "猫头鹰", "style": "星光" }, { "id": "cartoon:096", "name": "星光青蛙", "animal": "青蛙", "style": "星光" }, { "id": "cartoon:097", "name": "星光小鸡", "animal": "小鸡", "style": "星光" }, { "id": "cartoon:098", "name": "星光浣熊", "animal": "浣熊", "style": "星光" }, { "id": "cartoon:099", "name": "星光海豹", "animal": "海豹", "style": "星光" }, { "id": "cartoon:100", "name": "星光仓鼠", "animal": "仓鼠", "style": "星光" }];
+  var cartoonURL = (value) => /^cartoon:(00[1-9]|0[1-9][0-9]|100)$/.test(value || "") ? "/assets/avatars/" + value.slice(8) + ".svg" : "";
+  function cartoonChoices(count = 8, exclude = []) {
+    const pool = cartoonAvatars.filter((a) => !exclude.includes(a.id)), random = new Uint32Array(pool.length);
+    crypto.getRandomValues(random);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = random[i] % (i + 1);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+  function cartoonOptions(items, selected) {
+    return items.map((a) => '<button type="button" class="cartoon-option ' + (a.id === selected ? "selected" : "") + '" data-cartoon="' + a.id + '" role="radio" aria-checked="' + (a.id === selected) + '" aria-label="' + a.name + '" title="' + a.name + '"><img loading="lazy" src="' + cartoonURL(a.id) + '" alt=""><span>' + a.name + "</span></button>").join("");
+  }
+
   // internal/ui/src/calls.js
   function createCalls({ S: S2, api: api2, action: action2, esc: esc2, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
     const $2 = (s) => document.querySelector(s);
@@ -455,7 +471,24 @@
       var _a;
       const s = current;
       if (!s) return;
+      if (s.scope === "user") {
+        chooseCartoon();
+        return;
+      }
       modal2(s.scope === "user" ? "个人头像" : "群头像", '<div class="avatar-selection"><div>'.concat(av2(s.info, "large"), "</div><h4>").concat(esc2(s.info.name || "更换头像"), '</h4><p>选择照片后可移动、缩放和旋转裁剪。</p><button class="primary" data-avatar="pick">选择图片</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden><small>最多 8 MB，4096 × 4096 像素；保存为静态头像</small>').concat(((_a = s.info.avatar) == null ? void 0 : _a.startsWith("image:")) ? '<button class="avatar-reset" data-avatar="reset">恢复默认头像</button>' : "", "</div>"), '<button class="secondary" data-avatar="cancel">返回</button>');
+      $2("#avatar-file").onchange = (e) => {
+        if (e.target.files[0]) load(e.target.files[0]);
+      };
+    }
+    function chooseCartoon() {
+      var _a, _b;
+      const s = current;
+      if (!s) return;
+      s.selected = s.selected || s.info.avatar;
+      s.choices = s.choices || cartoonChoices(8);
+      const items = s.all ? cartoonAvatars : s.choices;
+      modal2("个人头像", '<div class="cartoon-picker"><div class="cartoon-preview">'.concat(av2(__spreadProps(__spreadValues({}, s.info), { avatar: s.selected }), "large"), '<div><b>选一个喜欢的头像</b><p>100 个卡通形象，也可以上传自己的照片</p></div></div><div class="cartoon-heading"><div class="cartoon-tabs"><button data-avatar="recommended" class="').concat(s.all ? "" : "active", '">为你推荐</button><button data-avatar="all-cartoons" class="').concat(s.all ? "active" : "", '">全部 100 个</button></div><button data-avatar="shuffle">换一批</button></div><div class="cartoon-grid ').concat(s.all ? "all" : "", '" id="cartoon-options" role="radiogroup" aria-label="卡通头像">').concat(cartoonOptions(items, s.selected), '</div><div class="cartoon-upload"><button class="secondary" data-avatar="pick">上传自己的照片</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden><small>支持移动、缩放和旋转裁剪</small>').concat(((_a = s.info.avatar) == null ? void 0 : _a.startsWith("image:")) ? '<button class="avatar-reset" data-avatar="reset">恢复默认头像</button>' : "", "</div></div>"), '<button class="secondary" data-avatar="cancel">取消</button><button class="primary" data-avatar="save-cartoon" ' + (!((_b = s.selected) == null ? void 0 : _b.startsWith("cartoon:")) ? "disabled" : "") + ">使用这个头像</button>", true);
+      $2(".modal").classList.add("cartoon-modal");
       $2("#avatar-file").onchange = (e) => {
         if (e.target.files[0]) load(e.target.files[0]);
       };
@@ -548,7 +581,7 @@
       };
       draw();
     }
-    async function save(reset = false) {
+    async function save(reset = false, preset = false) {
       var _a, _b, _c, _d;
       const s = current;
       if (!s || s.busy) return;
@@ -556,7 +589,8 @@
       document.querySelectorAll(".modal button,.modal input").forEach((e) => e.disabled = true);
       try {
         let result;
-        if (reset) result = await api2(endpoint(s), { method: "DELETE" });
+        if (preset) result = await api2(endpoint(s), { method: "PATCH", body: { avatar: s.selected } });
+        else if (reset) result = await api2(endpoint(s), { method: "DELETE" });
         else {
           const canvas = $2("#avatar-canvas");
           const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.94));
@@ -631,7 +665,18 @@
       }
     }, true);
     document.addEventListener("click", (e) => {
-      var _a;
+      var _a, _b;
+      const option = e.target.closest("[data-cartoon]");
+      if (option && (current == null ? void 0 : current.scope) === "user" && !current.busy) {
+        current.selected = option.dataset.cartoon;
+        document.querySelectorAll("#cartoon-options [data-cartoon]").forEach((n) => {
+          n.classList.toggle("selected", n === option);
+          n.setAttribute("aria-checked", String(n === option));
+        });
+        $2(".cartoon-preview .avatar").outerHTML = av2(__spreadProps(__spreadValues({}, current.info), { avatar: current.selected }), "large");
+        $2("[data-avatar=save-cartoon]").disabled = false;
+        return;
+      }
       const b = e.target.closest("[data-avatar]");
       if (!b) return;
       const action2 = b.dataset.avatar;
@@ -646,7 +691,21 @@
       const s = current;
       if (!s || s.busy) return;
       if (action2 === "cancel") finish();
-      if (action2 === "pick") (_a = $2("#avatar-file")) == null ? void 0 : _a.click();
+      if (action2 === "shuffle") {
+        s.choices = cartoonChoices(8, ((_a = s.choices) == null ? void 0 : _a.map((a) => a.id)) || []);
+        s.all = false;
+        chooseCartoon();
+      }
+      if (action2 === "recommended") {
+        s.all = false;
+        chooseCartoon();
+      }
+      if (action2 === "all-cartoons") {
+        s.all = true;
+        chooseCartoon();
+      }
+      if (action2 === "save-cartoon") save(false, true);
+      if (action2 === "pick") (_b = $2("#avatar-file")) == null ? void 0 : _b.click();
       if (action2 === "reselect") choose();
       if (action2 === "rotate") {
         s.angle = (s.angle + 90) % 360;
@@ -2810,7 +2869,7 @@
 
   // internal/ui/src/meetings.js
   function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
-    let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map();
+    let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
     const el = (id) => document.getElementById(id);
     const root = () => {
       let n = el("meeting-layer");
@@ -2821,6 +2880,62 @@
       }
       return n;
     };
+    function invitationText(code) {
+      return "邀请你加入 WeLink 会议\n会议号：" + grouped(code) + "\n会议链接：" + S2.config.server.replace(/\/$/, "") + "/join/" + code;
+    }
+    async function copyInvitation(code) {
+      const text = invitationText(code);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const input = document.createElement("textarea");
+        input.value = text;
+        document.body.append(input);
+        input.select();
+        const copied = document.execCommand("copy");
+        input.remove();
+        if (!copied) {
+          modal2("会议邀请", '<textarea readonly style="width:100%;height:120px">' + esc2(text) + "</textarea>");
+          return;
+        }
+      }
+      toast2("邀请链接和会议号已复制");
+    }
+    function parseInvitation(raw) {
+      const compact = raw.trim().replace(/\s/g, "");
+      if (/^[1-9]\d{8}$/.test(compact)) return compact;
+      const link = raw.match(/https?:\/\/[^\s]+/);
+      if (link) {
+        let url;
+        try {
+          url = new URL(link[0]);
+        } catch (e) {
+          throw Error("会议链接无效");
+        }
+        ;
+        if (url.origin !== new URL(S2.config.server).origin) throw Error("会议链接的服务器与当前连接不同");
+        const match = url.pathname.match(/^\/join\/([1-9]\d{8})$/);
+        if (!match || url.search || url.hash) throw Error("会议链接无效");
+        return match[1];
+      }
+      const code = raw.match(/会议号[：:]\s*([1-9]\d{2}\s?\d{3}\s?\d{3})(?!\d)/);
+      if (code) return code[1].replace(/\s/g, "");
+      throw Error("请粘贴有效的会议邀请链接或 9 位会议号");
+    }
+    async function checkNativeInvitation(force = false) {
+      var _a;
+      if (checkingInvitation || !S2.user || S2.signingOut || room || nativeCall || document.querySelector("#call-layer") || !force && document.querySelector(".modal")) return;
+      checkingInvitation = true;
+      try {
+        const code = ((_a = window.WeLinkAndroid) == null ? void 0 : _a.takeMeetingInvitation) ? window.WeLinkAndroid.takeMeetingInvitation() : window.welinkMeetingInvitation ? await window.welinkMeetingInvitation() : "";
+        if (code && S2.user && !S2.signingOut) openJoin(code);
+      } catch (e) {
+      } finally {
+        checkingInvitation = false;
+      }
+    }
+    setInterval(checkNativeInvitation, 1500);
+    window.addEventListener("welink-open-meeting", () => checkNativeInvitation(true));
     const grouped = (code) => String(code).replace(/(\d{3})(?=\d)/g, "$1 ");
     function send(message) {
       if ((room == null ? void 0 : room.ws.readyState) === 1) room.ws.send(JSON.stringify(message));
@@ -2870,12 +2985,12 @@
         show();
         return;
       }
-      modal2("加入会议", '<label>会议号</label><input id="meeting-code" inputmode="numeric" maxlength="11" placeholder="000 000 000" value="'.concat(esc2(code), '"><label class="check-row"><input type="checkbox" id="meeting-mic" checked>开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera">开启摄像头</label>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-join-submit">加入会议</button>');
+      modal2("加入会议", '<label>会议链接或会议号</label><input id="meeting-code" maxlength="1000" placeholder="粘贴会议邀请链接或输入 9 位会议号" value="'.concat(esc2(code), '"><label class="check-row"><input type="checkbox" id="meeting-mic" checked>开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera">开启摄像头</label>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-join-submit">加入会议</button>');
       el("meeting-join-submit").onclick = async () => {
         const b = el("meeting-join-submit");
         b.disabled = true;
         try {
-          await join(el("meeting-code").value.replace(/\s/g, ""), el("meeting-mic").checked, el("meeting-camera").checked);
+          await join(parseInvitation(el("meeting-code").value), el("meeting-mic").checked, el("meeting-camera").checked);
         } catch (e) {
           toast2(e.message);
         } finally {
@@ -2902,13 +3017,14 @@
         show();
         return;
       }
+      if (!call) await api2("/api/meetings/" + code);
       if (call && ((_b = window.WeLinkAndroid) == null ? void 0 : _b.openCall)) {
         nativeCall = call.id;
         window.WeLinkAndroid.openCall(code, S2.token, S2.user.name, call.id, call.peer.name, call.mode);
         return;
       }
       if ((_c = window.WeLinkAndroid) == null ? void 0 : _c.openMeeting) {
-        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam);
+        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam, S2.config.server);
         (_d = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _d.click();
         return;
       }
@@ -2958,13 +3074,13 @@
       };
     }
     function renderRoom() {
-      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize">').concat(icon2("minus"), '</button></header><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
+      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize">').concat(icon2("minus"), '</button></header><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
       el("meeting-copy").onclick = () => {
         if (root().classList.contains("meeting-minimized")) {
           show();
           return;
         }
-        navigator.clipboard.writeText(room.code).then(() => toast2("会议号已复制")).catch(() => toast2(room.code));
+        copyInvitation(room.code);
       };
       el("meeting-minimize").onclick = () => {
         root().classList.add("meeting-minimized");
@@ -3298,10 +3414,15 @@
     }
     function invite() {
       if (!room) return;
-      modal2("邀请好友入会", '<p class="hint">会议号：'.concat(grouped(room.code), '</p><div class="member-select">').concat(S2.friends.map((u) => '<label class="check-row">'.concat(esc2(u.name), '<input type="checkbox" value="').concat(u.id, '" name="meeting-invite-user"></label>')).join("") || '<p class="hint">还没有好友，可以复制会议号分享。</p>', "</div>"), '<button class="primary" id="meeting-send-invites">发送邀请</button>');
+      modal2("邀请好友入会", '<p class="hint">会议号：'.concat(grouped(room.code), '</p><button class="secondary" id="meeting-copy-invitation">复制邀请链接和会议号</button><div class="member-select">').concat(S2.friends.map((u) => '<label class="check-row">'.concat(esc2(u.name), '<input type="checkbox" value="').concat(u.id, '" name="meeting-invite-user"></label>')).join("") || '<p class="hint">还没有好友，可以复制会议号分享。</p>', "</div>"), '<button class="primary" id="meeting-send-invites">发送邀请</button>');
+      el("meeting-copy-invitation").onclick = () => copyInvitation(room.code);
       el("meeting-send-invites").onclick = async () => {
         try {
-          await action2("/api/meetings/".concat(room.code, "/invite"), { members: [...document.querySelectorAll("[name=meeting-invite-user]:checked")].map((x) => x.value) });
+          await action2("/api/meetings/".concat(room.code, "/invite"), { members: (() => {
+            const ids = [...document.querySelectorAll("[name=meeting-invite-user]:checked")].map((x) => x.value);
+            if (!ids.length) throw Error("请选择要邀请的好友");
+            return ids;
+          })() });
           document.querySelector("[data-action=close-modal]").click();
           toast2("会议邀请已发送");
         } catch (e) {
@@ -3309,11 +3430,78 @@
         }
       };
     }
-    function invited(m) {
+    function invitationSound() {
+      try {
+        const audio = new (window.AudioContext || window.webkitAudioContext)();
+        audio.resume().catch(() => {
+        });
+        for (let i = 0; i < 3; i++) {
+          const tone = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + i * 0.18;
+          tone.frequency.value = [523, 659, 784][i];
+          gain.gain.setValueAtTime(0.08, at);
+          gain.gain.exponentialRampToValueAtTime(1e-3, at + 0.26);
+          tone.connect(gain);
+          gain.connect(audio.destination);
+          tone.start(at);
+          tone.stop(at + 0.27);
+        }
+        setTimeout(() => audio.close(), 1100);
+      } catch (e) {
+      }
+    }
+    function dismissInvitation(code) {
+      var _a;
+      pending.delete(code);
+      (_a = document.querySelector('[data-meeting-notice="' + code + '"]')) == null ? void 0 : _a.remove();
+    }
+    async function invited(m) {
+      var _a;
+      if (!S2.user || !/^[1-9]\d{8}$/.test(m.code) || pending.has(m.code)) return;
+      const owner = S2.token;
       pending.set(m.code, m);
-      toast2("".concat(m.title, "：收到会议邀请"));
-      modal2("会议邀请", '<div class="remote-invite"><h3>'.concat(esc2(m.title), "</h3><p>会议号 ").concat(grouped(m.code), "</p></div>"), '<button class="secondary" data-action="close-modal">暂不加入</button><button class="primary" id="meeting-accept">加入会议</button>');
-      el("meeting-accept").onclick = () => openJoin(m.code);
+      if (window.welinkMeetingNotify) {
+        try {
+          const handled = await window.welinkMeetingNotify(m.code, m.title, m.expires || Date.now() + 72e5);
+          if (owner !== S2.token) {
+            (_a = window.welinkMeetingClear) == null ? void 0 : _a.call(window);
+            return;
+          }
+          if (handled) {
+            pending.delete(m.code);
+            return;
+          }
+        } catch (e) {
+        }
+      }
+      if (S2.config.platform === "windows" || innerWidth > 700 && !window.WeLinkAndroid) {
+        pending.delete(m.code);
+        return;
+      }
+      invitationSound();
+      let area = el("meeting-invitations");
+      if (!area) {
+        area = document.createElement("div");
+        area.id = "meeting-invitations";
+        document.body.append(area);
+      }
+      const box = document.createElement("section");
+      box.className = "meeting-invitation-notice";
+      box.dataset.meetingNotice = m.code;
+      box.setAttribute("role", "alert");
+      box.innerHTML = '<header><b>WeLink · 会议邀请</b><button data-meeting-notice-close title="关闭">'.concat(icon2("close"), "</button></header><h3>").concat(esc2(m.title), "</h3><p>会议号 ").concat(grouped(m.code), '</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>');
+      area.append(box);
+      box.querySelectorAll("[data-meeting-notice-close]").forEach((b) => b.onclick = () => dismissInvitation(m.code));
+      box.querySelector("[data-meeting-notice-enter]").onclick = () => {
+        dismissInvitation(m.code);
+        openJoin(m.code);
+      };
+      setTimeout(() => dismissInvitation(m.code), Math.max(0, Math.min(72e5, (m.expires || Date.now() + 72e5) - Date.now())));
+    }
+    function clearInvitations() {
+      var _a, _b;
+      pending.clear();
+      (_a = el("meeting-invitations")) == null ? void 0 : _a.remove();
+      (_b = window.welinkMeetingClear) == null ? void 0 : _b.call(window);
     }
     function leave(end) {
       if (!room) return;
@@ -3400,6 +3588,7 @@
         cleanup(room);
       }
     }, close: () => {
+      clearInvitations();
       if (room) {
         room.intentional = true;
         cleanup(room);
@@ -3416,8 +3605,8 @@
   var icon = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'.concat(paths[n] || paths.chat, '"/></svg>');
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => {
-    const photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
-    return '<span class="avatar '.concat(photo ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo ? '<img class="avatar-photo" src="/api/avatars/' + u.avatar.slice(6) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
+    const cartoon = cartoonURL(u.avatar), photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
+    return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
   var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
@@ -3481,10 +3670,29 @@
     return '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>");
   }
   function renderAuth(register = false) {
+    const choices = register ? cartoonChoices(8) : [];
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell">'.concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", '</p><div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links"><button type="button" data-action="').concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", '</button><button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links"><button type="button" data-action="').concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", '</button><button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
+    if (register) {
+      $("#register-avatar-shuffle").onclick = () => {
+        const next = cartoonChoices(8);
+        $("#register-avatar").value = next[0].id;
+        $("#register-avatar-options").innerHTML = cartoonOptions(next, next[0].id);
+      };
+      $("#register-avatar-options").onclick = (e) => {
+        const b = e.target.closest("[data-cartoon]");
+        if (b) {
+          $("#register-avatar").value = b.dataset.cartoon;
+          $("#register-avatar-options").querySelectorAll("[data-cartoon]").forEach((n) => {
+            n.classList.toggle("selected", n === b);
+            n.setAttribute("aria-checked", String(n === b));
+          });
+        }
+      };
+    }
+    ;
     $("#auth-form").onsubmit = async (e) => {
       e.preventDefault();
       const submit = $("button[type=submit]", e.target);
@@ -4091,10 +4299,9 @@
   }
   function profile(initial = {}) {
     const user = __spreadValues(__spreadValues({}, S.user), initial);
-    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><label>昵称</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><label>头像颜色</label><div class="color-list">').concat(["blue", "pink", "purple", "orange", "green", "cyan"].map((color) => '<button data-color="'.concat(color, '" class="').concat(color === user.avatar ? "selected" : "", '" aria-label="').concat(color, '">').concat(av(__spreadProps(__spreadValues({}, S.user), { avatar: color }), "small"), "</button>")).join(""), "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><label>昵称</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
-      var _a;
-      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, avatar: ((_a = $(".color-list .selected")) == null ? void 0 : _a.dataset.color) || user.avatar } });
+      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, avatar: user.avatar } });
       closeModal();
       updateRail();
       if (S.tab === "profile") renderMyPage();

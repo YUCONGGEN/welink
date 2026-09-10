@@ -165,8 +165,8 @@ func (s *Server) resetAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	value := "group"
 	if strings.HasPrefix(scope, "user:") {
-		value = "blue"
-		if _, e = tx.Exec("UPDATE users SET avatar='blue' WHERE id=?", uid(r)); e != nil {
+		value = defaultCartoonAvatar(uid(r))
+		if _, e = tx.Exec("UPDATE users SET avatar=? WHERE id=?", value, uid(r)); e != nil {
 			s.dbError(w, e)
 			return
 		}
@@ -232,7 +232,7 @@ func validateProfileAvatar(tx *sql.Tx, user string, value *string) error {
 	if value == nil {
 		return nil
 	}
-	if validAvatarColor(*value) {
+	if validAvatarColor(*value) || validCartoonAvatar(*value) {
 		_, e := tx.Exec("DELETE FROM avatar_images WHERE scope=?", "user:"+user)
 		return e
 	}
