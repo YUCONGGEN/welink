@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"golang.org/x/crypto/bcrypt"
@@ -79,16 +80,37 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "账号或密码不正确")
 		return
 	}
-	s.issueSession(w, r, id)
+	s.issueSession(w, r, id, hash)
 }
-func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id string) bool {
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id string, expectedPassword ...[]byte) bool {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		s.dbError(w, err)
 		return false
 	}
 	token := hex.EncodeToString(b[:])
-	if _, err := s.db.Exec("INSERT INTO sessions VALUES(?,?,?)", hashToken(token), id, time.Now().Add(30*24*time.Hour).UnixMilli()); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.dbError(w, err)
+		return false
+	}
+	defer tx.Rollback()
+	if len(expectedPassword) > 0 {
+		var current []byte
+		if tx.QueryRow("SELECT password FROM users WHERE id=?", id).Scan(&current) != nil || !bytes.Equal(current, expectedPassword[0]) {
+			fail(w, 401, "密码已变更，请重新登录")
+			return false
+		}
+	}
+	if _, err := tx.Exec("INSERT INTO sessions VALUES(?,?,?)", hashToken(token), id, time.Now().Add(30*24*time.Hour).UnixMilli()); err != nil {
+		s.dbError(w, err)
+		return false
+	}
+	if _, err = tx.Exec("INSERT INTO session_info VALUES(?,?,?,?,?)", hashToken(token), newID(), loginDevice(r), now(), now()); err != nil {
+		s.dbError(w, err)
+		return false
+	}
+	if err = tx.Commit(); err != nil {
 		s.dbError(w, err)
 		return false
 	}
@@ -99,13 +121,12 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id string)
 	return true
 }
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" {
-		if c, e := r.Cookie("welink_session"); e == nil {
-			token = c.Value
-		}
+	keys, err := s.removeSessions(uid(r), "", "", sessionHash(r))
+	if err != nil {
+		s.dbError(w, err)
+		return
 	}
-	_, _ = s.db.Exec("DELETE FROM sessions WHERE token=?", hashToken(token))
+	s.disconnectSessions(keys)
 	http.SetCookie(w, &http.Cookie{Name: "welink_session", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	ok(w, map[string]bool{"ok": true})
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query(`SELECT c.id,c.kind,c.name,c.owner,c.announcement,c.created,x.pinned,x.muted,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id AND m.seq>x.read_seq AND m.sender<>x.user_id),COALESCE((SELECT MAX(created) FROM messages WHERE conversation_id=c.id),c.created) FROM conversations c JOIN members x ON x.conversation_id=c.id WHERE x.user_id=? ORDER BY x.pinned DESC,10 DESC`, uid(r))
+	rows, e := s.db.Query(`SELECT c.id,c.kind,c.name,c.owner,c.announcement,c.created,x.pinned,x.muted,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id AND m.seq>x.read_seq AND m.sender<>x.user_id AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),COALESCE((SELECT MAX(m.created) FROM messages m WHERE m.conversation_id=c.id AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),c.created) FROM conversations c JOIN members x ON x.conversation_id=c.id WHERE x.user_id=? ORDER BY x.pinned DESC,10 DESC`, uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -35,7 +35,7 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			c["name"] = u.Name
 			c["avatar"] = u.Avatar
 		}
-		last, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.conversation_id=? ORDER BY m.seq DESC LIMIT 1", cid))
+		last, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.conversation_id=? AND "+messageVisible+"ORDER BY m.seq DESC LIMIT 1", cid, uid(r)))
 		if e == nil {
 			c["last"] = last
 		}
@@ -246,16 +246,70 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	if before <= 0 {
 		before = 1 << 62
 	}
-	query := messageQuery + "WHERE m.conversation_id=? AND m.seq<? "
-	args := []any{r.PathValue("id"), before}
-	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
-		query += "AND m.recalled=0 AND m.text LIKE ? ESCAPE '\\' "
-		args = append(args, "%"+escapeLike(q)+"%")
+	query := messageQuery + "WHERE m.conversation_id=? AND m.seq<? AND " + messageVisible
+	args := []any{r.PathValue("id"), before, uid(r)}
+	if around := r.URL.Query().Get("around"); around != "" {
+		var seq int64
+		if s.db.QueryRow("SELECT m.seq FROM messages m WHERE m.id=? AND m.conversation_id=? AND "+messageVisible, around, r.PathValue("id"), uid(r)).Scan(&seq) != nil {
+			fail(w, 404, "消息已删除或不可访问")
+			return
+		}
+		// Select by visible rows, so hidden messages do not leave gaps in the context window.
+		query += `AND m.seq IN (SELECT seq FROM (SELECT m.seq FROM messages m WHERE m.conversation_id=? AND m.seq<=? AND ` + messageVisible + `ORDER BY m.seq DESC LIMIT 31) UNION ALL SELECT seq FROM (SELECT m.seq FROM messages m WHERE m.conversation_id=? AND m.seq>? AND ` + messageVisible + `ORDER BY m.seq ASC LIMIT 30)) `
+		args = append(args, r.PathValue("id"), seq, uid(r), r.PathValue("id"), seq, uid(r))
 	}
-	rows, e := s.db.Query(query+"ORDER BY m.seq DESC LIMIT 60", args...)
+	if after > 0 {
+		query += "AND m.seq>? "
+		args = append(args, after)
+	}
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		if !validText(q, 200) {
+			fail(w, 400, "搜索内容最多 200 字")
+			return
+		}
+		query += "AND m.recalled=0 AND (m.text LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\') "
+		args = append(args, "%"+escapeLike(q)+"%", "%"+escapeLike(q)+"%")
+	}
+	if kind := r.URL.Query().Get("kind"); kind != "" {
+		if kind != "text" && kind != "image" && kind != "file" && kind != "meeting" {
+			fail(w, 400, "消息类型错误")
+			return
+		}
+		query += "AND m.kind=? AND m.recalled=0 "
+		args = append(args, kind)
+	}
+	if sender := r.URL.Query().Get("sender"); sender != "" {
+		query += "AND m.sender=? "
+		args = append(args, sender)
+	}
+	for _, field := range []string{"from", "to"} {
+		if value := r.URL.Query().Get(field); value != "" {
+			date, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || date < 0 {
+				fail(w, 400, "搜索日期错误")
+				return
+			}
+			if field == "from" {
+				query += "AND m.created>=? "
+			} else {
+				query += "AND m.created<? "
+			}
+			args = append(args, date)
+		}
+	}
+	order := "DESC"
+	if after > 0 {
+		order = "ASC"
+	}
+	limit := "60"
+	if r.URL.Query().Get("around") != "" {
+		limit = "61"
+	}
+	rows, e := s.db.Query(query+"ORDER BY m.seq "+order+" LIMIT "+limit, args...)
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -270,8 +324,14 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, m)
 	}
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
+	if e = rows.Err(); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	if after <= 0 {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
 	}
 	ok(w, out)
 }
@@ -310,7 +370,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if p.ReplyID != "" {
 		var n int
-		if s.db.QueryRow("SELECT 1 FROM messages WHERE id=? AND conversation_id=?", p.ReplyID, cid).Scan(&n) != nil {
+		if s.db.QueryRow("SELECT 1 FROM messages m WHERE m.id=? AND m.conversation_id=? AND m.recalled=0 AND "+messageVisible, p.ReplyID, cid, uid(r)).Scan(&n) != nil {
 			fail(w, 400, "引用消息不存在")
 			return
 		}
@@ -371,8 +431,29 @@ func (s *Server) recall(w http.ResponseWriter, r *http.Request) {
 	m.Recalled = true
 	m.Text = ""
 	m.AttachmentID = ""
+	m.FileName = ""
+	m.FileSize = 0
+	m.MIME = ""
+	m.Reply = nil
 	s.pushConversation(m.ConversationID, "recall", m)
 	ok(w, m)
+}
+
+// Deleting a message only hides this record for the authenticated account.
+// Other participants and separately saved favorites retain their copies.
+func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	var cid string
+	if s.db.QueryRow("SELECT conversation_id FROM messages WHERE id=?", r.PathValue("id")).Scan(&cid) != nil || !s.member(cid, uid(r)) {
+		fail(w, 404, "消息不存在或不可访问")
+		return
+	}
+	if _, err := s.db.Exec("INSERT OR IGNORE INTO message_deletions VALUES(?,?,?)", uid(r), r.PathValue("id"), now()); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	data := map[string]string{"id": r.PathValue("id"), "conversationId": cid}
+	s.push([]string{uid(r)}, "message-deleted", data)
+	ok(w, data)
 }
 func (s *Server) favorites(w http.ResponseWriter, r *http.Request) {
 	rows, e := s.db.Query(messageQuery+"JOIN favorites f ON f.message_id=m.id JOIN members x ON x.conversation_id=m.conversation_id AND x.user_id=f.user_id WHERE f.user_id=? AND m.recalled=0 ORDER BY f.created DESC LIMIT 200", uid(r))

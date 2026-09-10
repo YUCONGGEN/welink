@@ -19,6 +19,164 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/history.js
+  function createHistory({ S: S2, api: api2, modal: modal2, toast: toast2, esc: esc2, preview: preview2, fullTime: fullTime2, jump }) {
+    let current = null;
+    const $2 = (s) => document.querySelector(s);
+    function render() {
+      const state = current, list = $2("#history-results");
+      if (!list || !state) return;
+      list.innerHTML = state.items.map((m) => '<button class="history-item" data-history-id="'.concat(m.id, '"><small>').concat(esc2(m.name), " · ").concat(fullTime2(m.created), "</small><p>").concat(esc2(preview2(m)), "</p><span>查看上下文</span></button>")).join("") || '<div class="empty-list">未找到相关消息</div>';
+      if (state.more) list.insertAdjacentHTML("beforeend", '<button class="history-more secondary">加载更早记录</button>');
+      list.querySelectorAll("[data-history-id]").forEach((button) => button.onclick = () => jump(state.cid, button.dataset.historyId).catch((e) => toast2(e.message)));
+      const more = list.querySelector(".history-more");
+      if (more) more.onclick = () => load(true);
+    }
+    async function load(older = false) {
+      const state = current;
+      if (!state || !$2("#history-search")) return;
+      const revision = ++state.revision;
+      const params = new URLSearchParams({ q: $2("#history-search").value, kind: $2("#history-kind").value, sender: $2("#history-sender").value });
+      for (const field of ["from", "to"]) {
+        const value = $2("#history-" + field).value;
+        if (value) {
+          const day = /* @__PURE__ */ new Date(value + "T00:00:00");
+          if (field === "to") day.setDate(day.getDate() + 1);
+          params.set(field, String(day.getTime()));
+        }
+      }
+      if (older && state.items.length) params.set("before", String(state.items[state.items.length - 1].seq));
+      if (!older) $2("#history-results").innerHTML = '<p class="hint">正在查找…</p>';
+      else $2(".history-more").disabled = true;
+      try {
+        const items = await api2("/api/conversations/".concat(state.cid, "/messages?").concat(params));
+        if (current !== state || state.revision !== revision || !$2("#history-results")) return;
+        state.items = older ? [...state.items, ...items.reverse()] : items.reverse();
+        state.more = items.length === 60;
+        render();
+      } catch (e) {
+        if (current === state && state.revision === revision) {
+          toast2(e.message);
+          render();
+        }
+      }
+    }
+    async function open() {
+      const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
+      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="file">文件</option><option value="meeting">会议</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
+      let timer;
+      $2("#history-search").oninput = () => {
+        clearTimeout(timer);
+        ++state.revision;
+        timer = setTimeout(() => load(), 250);
+      };
+      for (const id of ["kind", "sender", "from", "to"]) $2("#history-" + id).onchange = () => {
+        clearTimeout(timer);
+        load();
+      };
+      load();
+      try {
+        const detail = await api2("/api/conversations/" + state.cid);
+        if (current === state && $2("#history-sender")) $2("#history-sender").innerHTML = '<option value="">所有人</option>' + detail.members.map((u) => '<option value="'.concat(u.id, '">').concat(esc2(u.name), "</option>")).join("");
+      } catch (e) {
+        toast2(e.message);
+      }
+    }
+    function changed(id, recalled = false) {
+      var _a;
+      if (!current || !$2("#history-results")) return;
+      current.revision++;
+      current.items = current.items.filter((m) => m.id !== id);
+      if (recalled) {
+        for (const item of current.items) if (((_a = item.reply) == null ? void 0 : _a.id) === id) item.reply = __spreadProps(__spreadValues({}, item.reply), { text: "", fileName: "", recalled: true });
+      }
+      render();
+    }
+    return { open, changed };
+  }
+
+  // internal/ui/src/security.js
+  function createSecurity({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, logout: logout2 }) {
+    const el = (id) => document.getElementById(id);
+    const when = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无活动记录";
+    function open() {
+      modal2("账号与安全", '<div class="security-account">'.concat(icon2("shield"), "<div><b>").concat(esc2(S2.user.name), "</b><p>WeLink 号：").concat(esc2(S2.user.number), '</p></div></div><button class="utility-row security-option" data-security="devices">').concat(icon2("monitor"), '<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>').concat(icon2("chevron"), '</button><button class="utility-row security-option" data-security="password">').concat(icon2("shield"), '<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>').concat(icon2("chevron"), "</button>"));
+    }
+    async function devices() {
+      if (!S2.user) return;
+      modal2("登录设备", '<p class="hint">退出设备后，该设备的聊天、会议和远程协助会断开。</p><div id="device-list">正在读取…</div>', '<button class="secondary" data-security="back">返回</button><button class="primary" id="revoke-other-devices">退出其他设备</button>');
+      el("revoke-other-devices").disabled = true;
+      try {
+        const items = await api2("/api/auth/sessions");
+        if (!el("device-list")) return;
+        el("device-list").innerHTML = items.map((d) => '<article class="device-row">'.concat(icon2(d.device.includes("Android") ? "phone" : "monitor"), '<div class="device-details"><b>').concat(esc2(d.device), " ").concat(d.current ? '<span class="device-current">本设备</span>' : "", "</b><p>登录：").concat(esc2(when(d.created)), "</p><p>最近使用：").concat(esc2(when(d.lastSeen)), "</p></div>").concat(d.current ? "" : '<button class="device-remove" data-device-id="'.concat(esc2(d.id), '">退出</button>'), "</article>")).join("");
+        el("revoke-other-devices").disabled = !items.some((d) => !d.current);
+        el("device-list").onclick = (e) => {
+          const button = e.target.closest("[data-device-id]");
+          if (button) confirm(items.find((d) => d.id === button.dataset.deviceId));
+        };
+        el("revoke-other-devices").onclick = () => confirm();
+      } catch (e) {
+        if (el("device-list")) el("device-list").textContent = e.message;
+      }
+    }
+    function confirm(device) {
+      modal2(device ? "退出登录设备" : "退出其他设备", '<p class="hint">'.concat(device ? "确认让 " + esc2(device.device) + " 退出登录？" : "确认退出其他所有登录设备？当前设备会保留登录。", "该操作会断开对应设备的聊天、会议和远程协助。</p>"), '<button class="secondary" data-security="devices">取消</button><button class="primary" id="device-confirm-revoke">确认退出</button>');
+      el("device-confirm-revoke").onclick = async () => {
+        const button = el("device-confirm-revoke");
+        button.disabled = true;
+        try {
+          const result = device ? await api2("/api/auth/sessions/" + encodeURIComponent(device.id), { method: "DELETE" }) : await action2("/api/auth/sessions/revoke-others");
+          if (result.current) {
+            await logout2(false);
+            return;
+          }
+          toast2("已退出所选设备");
+          await devices();
+        } catch (e) {
+          if (el("modal-error")) el("modal-error").textContent = e.message;
+          button.disabled = false;
+        }
+      };
+    }
+    function password() {
+      modal2("修改密码", '<form id="password-form"><label for="security-old-password">原密码</label><input id="security-old-password" type="password" autocomplete="current-password" required maxlength="72"><label for="security-new-password">新密码</label><input id="security-new-password" type="password" autocomplete="new-password" required minlength="8" maxlength="72" placeholder="至少 8 位"><label for="security-repeat-password">确认新密码</label><input id="security-repeat-password" type="password" autocomplete="new-password" required minlength="8" maxlength="72"><p class="hint">修改成功后保留本设备，其他设备会退出登录；尚未完成的扫码授权也将失效。</p></form>', '<button class="secondary" data-security="back">取消</button><button type="submit" form="password-form" class="primary" id="password-save">保存密码</button>');
+      el("password-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const button = el("password-save"), oldPassword = el("security-old-password").value, newPassword = el("security-new-password").value;
+        if (newPassword !== el("security-repeat-password").value) {
+          el("modal-error").textContent = "两次输入的新密码不一致";
+          return;
+        }
+        button.disabled = true;
+        el("modal-error").textContent = "";
+        try {
+          await action2("/api/auth/password", { oldPassword, newPassword });
+          toast2("密码已修改，其他设备已退出");
+          open();
+        } catch (error) {
+          if (el("modal-error")) el("modal-error").textContent = error.message;
+          button.disabled = false;
+        }
+      };
+    }
+    document.addEventListener("click", (e) => {
+      const node = e.target.closest("[data-security],[data-action=security]");
+      if (!node || !S2.user) return;
+      switch (node.dataset.security || "back") {
+        case "devices":
+          devices();
+          break;
+        case "password":
+          password();
+          break;
+        default:
+          open();
+      }
+    });
+    return { open, devices, password };
+  }
+
   // internal/ui/src/qr-login.js
   function createQRLogin({ action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, enter: enter2, renderAuth: renderAuth2, windows: windows2, logo: logo2, icon: icon2 }) {
     let active = null, phonePending = null;
@@ -72,7 +230,10 @@
       } catch (e) {
         if (active === current) {
           el("auth-error").textContent = e.message;
-          current.timer = setTimeout(() => poll(current), 3e3);
+          if (e.status === 404) {
+            el("qr-status").textContent = "二维码已失效，请刷新";
+            el("qr-image").classList.add("qr-inactive");
+          } else current.timer = setTimeout(() => poll(current), 3e3);
         }
       }
     }
@@ -686,7 +847,7 @@
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => '<span class="avatar '.concat(esc(u.avatar || "blue"), " ").concat(size, '">').concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], messages: [], active: null, profile: null, search: "", reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -719,7 +880,7 @@
         p = await r.json();
       } catch (e) {
       }
-      throw Error((p == null ? void 0 : p.error) || "请求失败 (".concat(r.status, ")"));
+      throw Object.assign(Error((p == null ? void 0 : p.error) || "请求失败 (".concat(r.status, ")")), { status: r.status });
     }
     ;
     return r.status === 204 ? null : r.json();
@@ -921,9 +1082,9 @@
   }
   function messageHTML(m) {
     var _a;
-    if (m.recalled) return '<div class="recalled">'.concat(m.sender === S.user.id ? "你" : esc(m.name), "撤回了一条消息</div>");
+    if (m.recalled) return '<div class="recalled" data-message="'.concat(m.id, '">').concat(m.sender === S.user.id ? "你" : esc(m.name), "撤回了一条消息</div>");
     const mine = m.sender === S.user.id;
-    const quote = S.messages.find((x) => x.id === m.replyId);
+    const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
     let content = esc(m.text);
     if (m.kind === "meeting") {
       try {
@@ -934,7 +1095,7 @@
     }
     if (m.kind === "image") content = '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
     if (m.kind === "file") content = '<button class="file-card" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">').concat(icon("file"), "<span><b>").concat(esc(m.fileName), "</b><small>").concat(bytes(m.fileSize), " · 点击下载</small></span></button>");
-    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<div class="quote">'.concat(quote ? esc(quote.name + "：" + preview(quote)) : "引用了一条历史消息", "</div>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu">').concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("trash", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "", "</div></article>");
+    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu">').concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -949,6 +1110,7 @@
       }
       return date + messageHTML(m);
     }).join("");
+    if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
     if (!S.messages.length) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
     if (!keep || near) area.scrollTop = area.scrollHeight;
     else area.scrollTop = old;
@@ -959,6 +1121,7 @@
   async function selectConversation(id) {
     var _a;
     S.active = id;
+    S.historyMode = false;
     S.tab = "messages";
     S.reply = null;
     S.messages = [];
@@ -978,7 +1141,7 @@
   }
   async function markRead() {
     const last = S.messages[S.messages.length - 1];
-    if (!last || document.hidden) return;
+    if (!last || document.hidden || S.historyMode) return;
     await action("/api/conversations/".concat(S.active, "/read"), { seq: last.seq });
     const c = activeConversation();
     if (c) c.unread = 0;
@@ -999,6 +1162,10 @@
       const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: "text", text, replyId: (reply == null ? void 0 : reply.id) || "", clientId });
       S.drafts[cid] = "";
       if (S.active === cid) {
+        if (S.historyMode) {
+          S.messages = await api("/api/conversations/".concat(cid, "/messages"));
+          S.historyMode = false;
+        }
         input.value = "";
         $("#send-message").disabled = true;
         S.reply = null;
@@ -1037,8 +1204,11 @@
     try {
       const f = await api("/api/files", { method: "POST", body: form });
       const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: /^image\/(png|jpeg|gif|webp)$/.test(f.mime) ? "image" : "file", attachmentId: f.id, text: "", clientId: randomID() });
-      if (S.active === cid && !S.messages.some((x) => x.id === m.id)) {
-        S.messages.push(m);
+      if (S.active === cid) {
+        if (S.historyMode) {
+          S.messages = await api("/api/conversations/".concat(cid, "/messages"));
+          S.historyMode = false;
+        } else if (!S.messages.some((x) => x.id === m.id)) S.messages.push(m);
         renderMessages();
       }
       queueRefresh();
@@ -1082,13 +1252,17 @@
       connectionState();
       refresh().catch(() => {
       });
-      if (S.active) api("/api/conversations/".concat(S.active, "/messages")).then((ms) => {
-        S.messages = ms;
-        renderMessages(true);
-        markRead().catch(() => {
+      if (S.active && !S.historyMode) {
+        const cid = S.active;
+        api("/api/conversations/".concat(cid, "/messages")).then((ms) => {
+          if (S.active !== cid || S.historyMode) return;
+          S.messages = ms;
+          renderMessages(true);
+          markRead().catch(() => {
+          });
+        }).catch(() => {
         });
-      }).catch(() => {
-      });
+      }
     };
     ws.onmessage = (e) => {
       var _a2;
@@ -1100,23 +1274,20 @@
       }
       const d = event.data;
       if (event.type === "message") {
-        if (S.active === d.conversationId) {
+        if (S.active === d.conversationId && !S.historyMode) {
           if (!S.messages.some((m) => m.id === d.id)) S.messages.push(d);
           renderMessages(true);
           markRead().catch(() => {
           });
-        } else if (d.sender !== S.user.id && !((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted)) {
+        } else if (S.active !== d.conversationId && d.sender !== S.user.id && !((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted)) {
           if (document.hidden && Notification.permission === "granted") new Notification(d.name, { body: preview(d), icon: "/assets/icon.svg" });
           document.title = "新消息 · WeLink";
         }
         queueRefresh();
       } else if (event.type === "recall") {
-        const i = S.messages.findIndex((m) => m.id === d.id);
-        if (i >= 0) {
-          S.messages[i] = d;
-          renderMessages(true);
-        }
-        queueRefresh();
+        applyRecall(d);
+      } else if (event.type === "message-deleted") {
+        applyDeletion(d);
       } else if (event.type === "typing") {
         if (d.conversationId === S.active && d.userId !== S.user.id && $("#typing-status")) {
           $("#typing-status").textContent = "对方正在输入…";
@@ -1133,12 +1304,23 @@
         queueRefresh();
       }
     };
-    ws.onclose = () => {
-      if (S.ws !== ws || !S.user) return;
+    ws.onclose = (e) => {
+      if (S.ws !== ws || !S.user || S.signingOut) return;
+      if (e.code === 4001) {
+        logout(false);
+        toast("此设备已退出登录，请重新登录");
+        return;
+      }
       S.offline = true;
       connectionState();
-      setTimeout(() => {
-        if (S.user && S.ws === ws) connectEvents();
+      setTimeout(async () => {
+        if (S.user && S.ws === ws) {
+          try {
+            await api("/api/me");
+          } catch (e2) {
+          }
+          if (S.user && S.ws === ws) connectEvents();
+        }
       }, 2500);
     };
   }
@@ -1147,23 +1329,29 @@
     if (n) n.innerHTML = S.offline ? '<div class="connection-state">网络连接已断开，正在重新连接…</div>' : "";
   }
   async function logout(notify = true) {
-    var _a;
-    Meetings.close();
-    if (notify) try {
-      await action("/api/auth/logout");
-    } catch (e) {
+    if (S.signingOut) return;
+    S.signingOut = true;
+    try {
+      Meetings.close();
+      if (notify) try {
+        await action("/api/auth/logout");
+      } catch (e) {
+      }
+      S.user = null;
+      const ws = S.ws;
+      S.ws = null;
+      ws == null ? void 0 : ws.close();
+      S.token = "";
+      localStorage.removeItem("welink_token");
+      S.active = null;
+      S.messages = [];
+      closeModal();
+      stopRemote(false).catch(() => {
+      });
+      renderAuth();
+    } finally {
+      S.signingOut = false;
     }
-    S.user = null;
-    (_a = S.ws) == null ? void 0 : _a.close();
-    S.ws = null;
-    S.token = "";
-    localStorage.removeItem("welink_token");
-    S.active = null;
-    S.messages = [];
-    closeModal();
-    stopRemote(false).catch(() => {
-    });
-    renderAuth();
   }
   function addFriend() {
     modal("添加好友", '<label for="find-user">WeLink 号码 / 昵称</label><input id="find-user" placeholder="输入 WeLink 号码或昵称" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>');
@@ -1212,7 +1400,7 @@
   }
   async function chatDetail() {
     const c = await api("/api/conversations/".concat(S.active)), mine = c.owner === S.user.id, local = activeConversation();
-    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       const p = { pinned: $("#detail-pin").checked, muted: $("#detail-mute").checked };
       if (c.kind === "group" && mine) {
@@ -1237,21 +1425,7 @@
     };
   }
   function searchHistory() {
-    const cid = S.active;
-    modal("聊天记录", '<input id="history-search" placeholder="搜索聊天内容" aria-label="搜索聊天记录"><div id="history-results" class="history-results"><p class="hint">搜索本会话中的历史消息。</p></div>', "", true);
-    $("#history-search").oninput = (e) => {
-      clearTimeout(searchTimer);
-      const q = e.target.value;
-      searchTimer = setTimeout(async () => {
-        try {
-          const result = await api("/api/conversations/".concat(cid, "/messages?q=").concat(encodeURIComponent(q)));
-          const list = $("#history-results");
-          if (list) list.innerHTML = result.map((m) => '<div class="history-item"><small>'.concat(esc(m.name), " · ").concat(fullTime(m.created), "</small><p>").concat(esc(preview(m)), "</p></div>")).join("") || '<div class="empty-list">未找到相关消息</div>';
-        } catch (e2) {
-          modalError(e2);
-        }
-      }, 250);
-    };
+    History.open();
   }
   async function renderFiles() {
     const n = $("#main-content");
@@ -1291,7 +1465,7 @@
     $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", '></label><label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", '></label><label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label><div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -1314,12 +1488,13 @@
     const n = document.createElement("div");
     n.className = "context-menu";
     n.innerHTML = items;
-    n.style.left = Math.min(x, innerWidth - 175) + "px";
-    n.style.top = Math.min(y, innerHeight - 180) + "px";
     document.body.append(n);
+    const r = n.getBoundingClientRect();
+    n.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + "px";
+    n.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
   }
   function messageMenu(m, x, y) {
-    contextMenu(x, y, '<button data-action="quote" data-mid="'.concat(m.id, '">').concat(icon("reply"), '引用</button><button data-action="copy-message" data-mid="').concat(m.id, '">').concat(icon("copy"), '复制文字</button><button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("trash"), "撤回</button>") : ""));
+    contextMenu(x, y, (m.recalled ? "" : '<button data-action="quote" data-mid="'.concat(m.id, '">').concat(icon("reply"), "引用</button>").concat(m.kind === "text" ? '<button data-action="copy-message" data-mid="'.concat(m.id, '">').concat(icon("copy"), "复制文字</button>") : "", '<button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("history"), "撤回</button>") : "")) + '<button class="destructive" data-action="delete-message" data-mid="'.concat(m.id, '">').concat(icon("trash"), "删除</button>"));
   }
   function emojis() {
     const old = $(".popup");
@@ -1332,6 +1507,79 @@
     d.className = "popup";
     d.innerHTML = [..."😀😃😄😁😆😅😂🙂😉😊🥰😍🤩😘😋😎🥳🤔🤗🤭🤫😴😪😮😯😳😱😢😭😤😡🤯🥺😇💙❤️💛💚💜✨🌟🎉🎈🎁🌷🌸🍀☀️🌈☕🍰🍉🍎🎵💡🔥👍👋👏🤝🙏💪👌✅"].map((v) => '<button data-emoji="'.concat(v, '">').concat(v, "</button>")).join("");
     $(".composer").append(d);
+  }
+  async function copyMessage(text) {
+    var _a;
+    if ((_a = navigator.clipboard) == null ? void 0 : _a.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement("textarea");
+      input.value = text;
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.append(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      if (!copied) throw Error("复制失败，请重试");
+    }
+    toast("已复制");
+  }
+  function applyRecall(message) {
+    var _a, _b;
+    const i = S.messages.findIndex((m) => m.id === message.id);
+    if (i >= 0) S.messages[i] = message;
+    for (const m of S.messages) if (((_a = m.reply) == null ? void 0 : _a.id) === message.id) m.reply = __spreadProps(__spreadValues({}, m.reply), { text: "", fileName: "", recalled: true });
+    if (((_b = S.reply) == null ? void 0 : _b.id) === message.id) {
+      S.reply = null;
+      renderReply();
+    }
+    History.changed(message.id, true);
+    renderMessages(true);
+    queueRefresh();
+  }
+  function applyDeletion(message) {
+    var _a;
+    if (S.active === message.conversationId) {
+      S.messages = S.messages.filter((m) => m.id !== message.id);
+      if (((_a = S.reply) == null ? void 0 : _a.id) === message.id) {
+        S.reply = null;
+        renderReply();
+      }
+      renderMessages(true);
+    }
+    History.changed(message.id);
+    queueRefresh();
+  }
+  function deleteMessage(id) {
+    const cid = S.active;
+    modal("删除消息", '<p class="hint">删除后，这条消息将从你所有设备的聊天记录中移除。对方的记录和你已保存的收藏会保留。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">删除</button>');
+    modalHandler = async () => {
+      await api("/api/messages/" + id, { method: "DELETE" });
+      applyDeletion({ id, conversationId: cid });
+      closeModal();
+      toast("已删除消息");
+    };
+  }
+  async function jumpMessage(cid, id) {
+    const current = S.messages.find((m) => m.id === id);
+    if (S.active !== cid || !current) {
+      const messages = await api("/api/conversations/" + cid + "/messages?around=" + encodeURIComponent(id));
+      S.active = cid;
+      S.messages = messages;
+      S.historyMode = true;
+      S.tab = "messages";
+      S.profile = null;
+      S.reply = null;
+      renderShell();
+    }
+    closeModal();
+    const target = document.querySelector('[data-message="' + id + '"]');
+    if (!target) throw Error("消息已删除或不可访问");
+    target.scrollIntoView({ block: "center", behavior: "auto" });
+    target.classList.remove("highlight-message");
+    void target.offsetWidth;
+    target.classList.add("highlight-message");
   }
   async function screenshot() {
     var _a;
@@ -1784,14 +2032,32 @@
           await renderFavorites();
           break;
         case "copy-message":
-          await navigator.clipboard.writeText(((_d = S.messages.find((m) => m.id === b.dataset.mid)) == null ? void 0 : _d.text) || "");
-          toast("已复制");
+          await copyMessage(((_d = S.messages.find((m) => m.id === b.dataset.mid)) == null ? void 0 : _d.text) || "");
           break;
+        case "delete-message":
+          deleteMessage(b.dataset.mid);
+          break;
+        case "jump-message":
+          await jumpMessage(S.active, b.dataset.mid);
+          break;
+        case "latest-messages":
+          await selectConversation(S.active);
+          break;
+        case "load-newer": {
+          const cid = S.active, area = $("#messages"), top = area.scrollTop;
+          const ms = await api("/api/conversations/".concat(cid, "/messages?after=").concat(S.messages[S.messages.length - 1].seq));
+          if (S.active !== cid) break;
+          if (!ms.length) {
+            toast("已到最新消息");
+            S.historyMode = false;
+          } else S.messages.push(...ms.filter((m) => !S.messages.some((x) => x.id === m.id)));
+          renderMessages(true);
+          area.scrollTop = top;
+          break;
+        }
         case "recall": {
           const m = await action("/api/messages/" + b.dataset.mid + "/recall");
-          const i = S.messages.findIndex((x) => x.id === m.id);
-          if (i >= 0) S.messages[i] = m;
-          renderMessages(true);
+          applyRecall(m);
           break;
         }
         case "load-older": {
@@ -1854,17 +2120,27 @@
     if (el) {
       e.preventDefault();
       const m = S.messages.find((x) => x.id === el.dataset.message);
-      if (m && !m.recalled) messageMenu(m, e.clientX, e.clientY);
+      if (m) messageMenu(m, e.clientX, e.clientY);
     }
   });
   var touchTimer;
+  var suppressMessageClickUntil = 0;
+  document.addEventListener("click", (e) => {
+    if (Date.now() < suppressMessageClickUntil && e.target.closest("[data-message]")) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
   document.addEventListener("touchstart", (e) => {
     const el = e.target.closest("[data-message]");
     if (el) {
       const p = e.touches[0];
       touchTimer = setTimeout(() => {
         const m = S.messages.find((x) => x.id === el.dataset.message);
-        if (m && !m.recalled) messageMenu(m, p.clientX, p.clientY);
+        if (m) {
+          suppressMessageClickUntil = Date.now() + 1e3;
+          messageMenu(m, p.clientX, p.clientY);
+        }
       }, 550);
     }
   }, { passive: true });
@@ -1889,7 +2165,9 @@
     }
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
+  var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });
+  var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
   (async () => {
     try {

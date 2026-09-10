@@ -39,12 +39,14 @@ type bucket struct {
 	until time.Time
 }
 type socket struct {
-	c    *websocket.Conn
-	send chan []byte
-	done chan struct{}
-	once sync.Once
+	c       *websocket.Conn
+	session string
+	send    chan []byte
+	done    chan struct{}
+	once    sync.Once
 }
 type userKey struct{}
+type sessionKey struct{}
 
 func New(cfg Config) (*Server, error) {
 	db, err := openStore(cfg.DataDir)
@@ -111,13 +113,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"GET /api/auth/sessions": s.listSessions, "DELETE /api/auth/sessions/{id}": s.revokeDevice, "POST /api/auth/sessions/revoke-others": s.revokeOtherDevices, "POST /api/auth/password": s.changePassword,
 		"POST /api/auth/qr/scan": s.scanQRLogin, "POST /api/auth/qr/confirm": s.confirmQRLogin,
 		"POST /api/meetings": s.createMeeting, "GET /api/meetings": s.listMeetings, "POST /api/meetings/{code}/invite": s.inviteMeeting, "POST /api/meetings/{code}/end": s.endMeeting, "GET /api/meetings/{code}/ws": s.meetingSocket,
 		"POST /api/auth/logout": s.logout, "GET /api/me": s.me, "PATCH /api/me": s.updateMe,
 		"GET /api/users": s.users, "GET /api/friends": s.friends, "GET /api/requests": s.requests, "POST /api/requests": s.addRequest, "POST /api/requests/{id}": s.resolveRequest,
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
 		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
-		"POST /api/messages/{id}/recall": s.recall, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
+		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {
@@ -144,6 +147,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 func uid(r *http.Request) string { return r.Context().Value(userKey{}).(string) }
+func sessionHash(r *http.Request) string {
+	value, _ := r.Context().Value(sessionKey{}).(string)
+	return value
+}
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
@@ -161,7 +168,10 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			fail(w, 401, "请重新登录")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, id)))
+		hashed := hashToken(token)
+		_, _ = s.db.Exec("UPDATE session_info SET last_seen=? WHERE token=? AND last_seen<?", now(), hashed, now()-60000)
+		ctx := context.WithValue(r.Context(), userKey{}, id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, sessionKey{}, hashed)))
 	})
 }
 func (s *Server) rate(r *http.Request, key string, limit int, d time.Duration) bool {
@@ -256,7 +266,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uid(r)
-	c := &socket{c: conn, send: make(chan []byte, 128), done: make(chan struct{})}
+	c := &socket{c: conn, session: sessionHash(r), send: make(chan []byte, 128), done: make(chan struct{})}
 	s.mu.Lock()
 	if s.clients[id] == nil {
 		s.clients[id] = map[*socket]bool{}
@@ -277,6 +287,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			s.notifyPresence(id, false)
 		}
 	}()
+	if !s.sessionAlive(c) {
+		return
+	}
 	go func() {
 		t := time.NewTicker(25 * time.Second)
 		defer t.Stop()
@@ -291,6 +304,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-t.C:
+				if !s.sessionAlive(c) {
+					return
+				}
 				if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
 					c.close()
 					return

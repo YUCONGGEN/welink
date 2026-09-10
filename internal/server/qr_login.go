@@ -16,6 +16,7 @@ import (
 
 type qrLogin struct {
 	PollHash, ScanHash, State, UserID, Device, CheckCode string
+	UserSession                                          string
 	Expires                                              int64
 }
 type qrLoginDirectory struct {
@@ -140,11 +141,12 @@ func (s *Server) scanQRLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "二维码已处理，请在电脑上刷新")
 		return
 	}
-	if q.UserID != "" && q.UserID != uid(r) {
+	if q.UserID != "" && (q.UserID != uid(r) || q.UserSession != sessionHash(r)) {
 		fail(w, 403, "此二维码已由其他账号扫描")
 		return
 	}
 	q.UserID, q.State = uid(r), "scanned"
+	q.UserSession = sessionHash(r)
 	ok(w, map[string]any{"state": q.State, "device": q.Device, "checkCode": q.CheckCode, "expires": q.Expires})
 }
 
@@ -160,7 +162,7 @@ func (s *Server) confirmQRLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "二维码已失效，请重新扫码")
 		return
 	}
-	if q.State != "scanned" || q.UserID != uid(r) {
+	if q.State != "scanned" || q.UserID != uid(r) || q.UserSession != sessionHash(r) {
 		fail(w, 403, "请先使用当前账号扫码")
 		return
 	}

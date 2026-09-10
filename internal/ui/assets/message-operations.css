@@ -1,0 +1,17 @@
+.message .quote{display:block;text-align:left;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+.message .quote:hover{color:var(--blue)}
+.message.highlight-message .bubble,.recalled.highlight-message{animation:message-highlight 2.6s ease-out}
+@keyframes message-highlight{0%,40%{box-shadow:0 0 0 3px #54b9ff;background:#c5e8ff}100%{box-shadow:0 0 0 0 #54b9ff00}}
+.history-filters{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.history-filters label{min-width:0}
+.history-filters input,.history-filters select{min-width:0;font-size:12px;height:38px}
+.history-item{display:block;width:100%;text-align:left;padding:13px 10px;border-radius:6px}
+.history-item:hover{background:var(--hover)}
+.history-item span{font-size:11px;color:var(--blue)}
+.history-more{display:block;margin:16px auto}
+.history-live-bar{position:sticky;bottom:4px;display:flex;justify-content:center;gap:10px;padding:8px;z-index:2;background:var(--white);border:1px solid var(--line);border-radius:8px}
+.history-live-bar button{font-size:12px;color:var(--blue);padding:5px 10px}
+.context-menu{max-height:calc(100vh - 16px);overflow:auto}
+.context-menu .destructive{color:#d9535a;border-top:1px solid var(--line);border-radius:0;margin-top:4px}
+.chat-history-entry{width:100%;text-align:left;padding:14px 0;color:var(--blue);border-top:1px solid var(--line);margin-top:12px}
+@media(max-width:700px){.message-area{-webkit-touch-callout:none}.message .bubble,.message .quote,.recalled{-webkit-user-select:none;user-select:none}.chat-actions button[data-action=search-history]{display:flex}.history-filters{gap:0 10px}.history-results{max-height:40vh}.history-item{padding:12px 4px}.context-menu button{padding:12px;font-size:14px}}

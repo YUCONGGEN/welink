@@ -10,6 +10,9 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 - Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
 - 注册时填写昵称和密码，登录别名可留空。系统分配永久数字 WeLink 号码，用该号码登录、搜索和添加好友。
 - 桌面登录页点击“使用二维码登录”；安卓登录后从消息页“+ → 扫一扫”或“我的 → 扫一扫 · 电脑登录”扫描。手机核对数字后确认，电脑自动登录。二维码 3 分钟有效、单次使用；也支持选择二维码图片。
+- 消息右键（Windows）或长按（Android）可引用、复制文字、收藏、删除，自己发送的消息可在两分钟内撤回。删除同步到本账号的所有设备，不影响对方记录或独立保存的收藏；撤回会同步清除引用中的原文。
+- 聊天右上角搜索或“聊天设置 → 查找聊天记录”支持内容 / 文件名、类型、发送人、日期筛选，加载更早记录和查看上下文。点击消息下方的引用也可定位原消息。
+- “设置 → 账号与安全”可修改密码、查看登录设备并退出指定设备 / 其他设备。退出立即断开对应聊天、会议与远程协助；修改密码会保留当前设备、退出其他设备，并使未完成的扫码授权失效。
 - 在好友单聊中发起远程协助，对方同意后开始。Android 共享屏幕需系统 MediaProjection 授权；远程触控另需主动开启无障碍权限。
 - 从“会议”或聊天右上角发起音视频会议，输入 9 位会议号加入，也可以邀请当前好友 / 群。参考 YuDesk 的会议目前最多 8 人、最长 2 小时；主持人可共享屏幕、转交主持、录制和结束会议。两端会议均采用白色面板、浅灰背景和蓝色控件。安卓录制当前只保存屏幕画面，不含声音。
 
@@ -51,12 +54,13 @@ curl http://127.0.0.1:8250/health
 ## 验证
 
 ```sh
-go test -race -timeout 180s ./internal/server ./internal/client ./internal/remote ./mobile/core
+go test -race -timeout 300s ./internal/server ./internal/client ./internal/remote ./mobile/core
 go test ./internal/yudesk/secureconn ./internal/yudesk/protocol ./internal/yudesk/peerpath ./internal/yudesk/desktop ./internal/yudesk/stream
 node scripts/windows-smoke.mjs
 node scripts/ui-test.mjs
 node scripts/meeting-test.mjs
 node scripts/qr-login-test.mjs
+node scripts/message-operations-test.mjs
 ```
 
 界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。

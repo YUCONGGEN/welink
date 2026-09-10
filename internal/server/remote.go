@@ -169,7 +169,7 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 	if e != nil {
 		return
 	}
-	c := &socket{c: conn, send: make(chan []byte, 32), done: make(chan struct{})}
+	c := &socket{c: conn, session: sessionHash(r), send: make(chan []byte, 32), done: make(chan struct{})}
 	s.mu.Lock()
 	if s.rooms[v.ID] == nil {
 		s.rooms[v.ID] = map[string]*socket{}
@@ -188,6 +188,9 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 		v.State = "ended"
 		s.publishRemote(v)
 	}()
+	if !s.sessionAlive(c) {
+		return
+	}
 	go func() {
 		tick := time.NewTicker(20 * time.Second)
 		defer tick.Stop()
@@ -202,6 +205,9 @@ func (s *Server) tunnel(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-tick.C:
+				if !s.sessionAlive(c) {
+					return
+				}
 				if now()-v.Created > 7200000 {
 					c.close()
 					return

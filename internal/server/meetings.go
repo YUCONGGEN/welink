@@ -255,7 +255,7 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		s.meetings.Unlock()
 		return
 	}
-	p := &meetingParticipant{meetingPeer: meetingPeer{ID: u.ID, Name: u.Name, Number: u.Number, Host: u.ID == room.HostID}, socket: &socket{c: conn, send: make(chan []byte, 64), done: make(chan struct{})}, joined: time.Now().UnixNano()}
+	p := &meetingParticipant{meetingPeer: meetingPeer{ID: u.ID, Name: u.Name, Number: u.Number, Host: u.ID == room.HostID}, socket: &socket{c: conn, session: sessionHash(r), send: make(chan []byte, 64), done: make(chan struct{})}, joined: time.Now().UnixNano()}
 	peers := []meetingPeer{}
 	for _, existing := range room.Peers {
 		peer := existing.meetingPeer
@@ -267,6 +267,9 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 	meetingBroadcast(room, meetingSignal{Type: "peer-joined", ID: u.ID, Name: u.Name, Host: room.HostID}, u.ID)
 	s.meetings.Unlock()
 	defer s.leaveMeeting(code, p)
+	if !s.sessionAlive(p.socket) {
+		return
+	}
 	go func() {
 		ticker := time.NewTicker(20 * time.Second)
 		defer ticker.Stop()
@@ -281,6 +284,9 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-ticker.C:
+				if !s.sessionAlive(p.socket) {
+					return
+				}
 				if conn.WriteControl(9, nil, time.Now().Add(5*time.Second)) != nil {
 					p.socket.close()
 					return

@@ -213,6 +213,7 @@ func (c *Client) proxy(w http.ResponseWriter, r *http.Request) {
 		req.Header.Del("X-Forwarded-For")
 		req.Header.Del("X-Forwarded-Host")
 		req.Header.Del("X-Forwarded-Proto")
+		req.Header.Set("X-WeLink-Client", cfg.Platform)
 		cookies := req.Cookies()
 		req.Header.Del("Cookie")
 		for _, cookie := range cookies {
