@@ -8,8 +8,8 @@ func (s *Server) meetingInvitees(user, cid string, members []string) ([]string, 
 	}
 	ids := map[string]bool{}
 	if cid != "" {
-		if !s.member(cid, user) {
-			return nil, errors.New("不能向其他会话邀请会议")
+		if !s.canSpeak(cid, user) {
+			return nil, errors.New("你已被禁言或不在该会话，无法发送会议邀请")
 		}
 		rows, e := s.db.Query("SELECT user_id FROM members WHERE conversation_id=?", cid)
 		if e != nil {

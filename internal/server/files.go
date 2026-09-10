@@ -25,7 +25,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.MultipartForm.RemoveAll()
 	cid := r.FormValue("conversationId")
-	if !s.member(cid, uid(r)) {
+	if !s.canSpeak(cid, uid(r)) {
 		fail(w, 403, "无法向该会话发送文件")
 		return
 	}

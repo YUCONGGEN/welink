@@ -113,6 +113,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"GET /api/groups": s.searchGroups, "POST /api/groups/{id}/join": s.joinGroup, "GET /api/group-requests": s.groupRequests, "POST /api/group-requests/{request}": s.resolveGroupRequest,
+		"PATCH /api/groups/{id}": s.updateGroup, "PATCH /api/groups/{id}/members/{user}": s.updateGroupMember, "POST /api/groups/{id}/transfer": s.transferGroup, "DELETE /api/groups/{id}": s.dissolveGroup,
 		"GET /api/auth/sessions": s.listSessions, "DELETE /api/auth/sessions/{id}": s.revokeDevice, "POST /api/auth/sessions/revoke-others": s.revokeOtherDevices, "POST /api/auth/password": s.changePassword,
 		"POST /api/auth/qr/scan": s.scanQRLogin, "POST /api/auth/qr/confirm": s.confirmQRLogin,
 		"POST /api/meetings": s.createMeeting, "GET /api/meetings": s.listMeetings, "POST /api/meetings/{code}/invite": s.inviteMeeting, "POST /api/meetings/{code}/end": s.endMeeting, "GET /api/meetings/{code}/ws": s.meetingSocket,
@@ -250,6 +252,10 @@ func (s *Server) audience(cid string) []string {
 }
 func (s *Server) pushConversation(cid, kind string, data any) { s.push(s.audience(cid), kind, data) }
 func (s *Server) dbError(w http.ResponseWriter, err error) {
+	if strings.Contains(err.Error(), "group_send_forbidden") {
+		fail(w, 403, "你已被禁言或不在该群，无法发送消息")
+		return
+	}
 	s.logger.Printf("storage: %v", err)
 	fail(w, 500, "保存失败，请重试")
 }
@@ -323,7 +329,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		if conn.ReadJSON(&p) != nil {
 			return
 		}
-		if p.Type == "typing" && s.rate(r, "typing:"+id, 90, time.Minute) && s.member(p.ConversationID, id) {
+		if p.Type == "typing" && s.rate(r, "typing:"+id, 90, time.Minute) && s.canSpeak(p.ConversationID, id) {
 			s.pushConversation(p.ConversationID, "typing", map[string]string{"userId": id, "conversationId": p.ConversationID})
 		}
 	}

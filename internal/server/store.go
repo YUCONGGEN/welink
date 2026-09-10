@@ -54,6 +54,10 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(groupSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -121,14 +125,17 @@ func newID() string {
 func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
-	ID      string `json:"id"`
-	Number  string `json:"number"`
-	Account string `json:"account"`
-	Name    string `json:"name"`
-	Avatar  string `json:"avatar"`
-	Bio     string `json:"bio"`
-	Online  bool   `json:"online"`
-	Remark  string `json:"remark,omitempty"`
+	ID        string `json:"id"`
+	Number    string `json:"number"`
+	Account   string `json:"account"`
+	Name      string `json:"name"`
+	Avatar    string `json:"avatar"`
+	Bio       string `json:"bio"`
+	Online    bool   `json:"online"`
+	Remark    string `json:"remark,omitempty"`
+	Role      string `json:"role,omitempty"`
+	Nickname  string `json:"nickname,omitempty"`
+	MuteUntil int64  `json:"muteUntil,omitempty"`
 }
 type Message struct {
 	Seq            int64             `json:"seq"`
@@ -162,7 +169,7 @@ type MessageReference struct {
 	Recalled bool   `json:"recalled"`
 }
 
-const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,u.name,u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0),COALESCE(am.duration_ms,0),COALESCE(am.width,0),COALESCE(am.height,0) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id LEFT JOIN attachment_media am ON am.attachment_id=m.attachment_id `
+const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,COALESCE(NULLIF(gn.nickname,''),u.name),u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(NULLIF(gr.nickname,''),ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0),COALESCE(am.duration_ms,0),COALESCE(am.width,0),COALESCE(am.height,0) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id LEFT JOIN attachment_media am ON am.attachment_id=m.attachment_id LEFT JOIN group_members gn ON gn.conversation_id=m.conversation_id AND gn.user_id=m.sender LEFT JOIN group_members gr ON gr.conversation_id=m.conversation_id AND gr.user_id=rm.sender `
 
 const messageVisible = `NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=?) `
 

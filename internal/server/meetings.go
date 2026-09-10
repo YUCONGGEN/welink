@@ -240,6 +240,12 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "你已被主持人移出本次会议")
 		return
 	}
+	var groupNumber string
+	if room.ConversationID != "" && s.db.QueryRow("SELECT number FROM group_profiles WHERE conversation_id=?", room.ConversationID).Scan(&groupNumber) == nil && !s.member(room.ConversationID, u.ID) {
+		s.meetings.Unlock()
+		fail(w, 403, "只有当前群成员可以加入群会议")
+		return
+	}
 	if len(room.Peers) >= maxMeetingPeers || room.Peers[u.ID] != nil {
 		s.meetings.Unlock()
 		fail(w, 409, "会议已满或当前账号已入会")

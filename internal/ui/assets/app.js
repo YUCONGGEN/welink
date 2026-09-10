@@ -19,6 +19,292 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/groups.js
+  function createGroups({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, refresh: refresh2, selectConversation: selectConversation2, renderMain: renderMain2, copy, stopMedia }) {
+    const $2 = (s) => document.querySelector(s), roles = { owner: "群主", admin: "管理员", member: "成员" }, modes = { open: "允许任何人加入", approval: "需要管理员审核", closed: "不允许申请加入" };
+    let detailState = null, searchVersion = 0, muteTimer;
+    const modal2 = (...args) => {
+      var _a;
+      showModal(...args);
+      (_a = $2(".modal")) == null ? void 0 : _a.classList.add("group-modal");
+    };
+    const manager = (g) => (g == null ? void 0 : g.role) === "owner" || (g == null ? void 0 : g.role) === "admin";
+    const error = (e) => {
+      const n = $2("#modal-error");
+      if (n) n.textContent = e.message;
+      else toast2(e.message);
+    };
+    function bind(id, fn) {
+      const b = $2("#" + id);
+      if (!b) return;
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await fn();
+        } catch (e) {
+          error(e);
+        } finally {
+          b.disabled = false;
+        }
+      };
+    }
+    const back = () => detailState && detail(detailState.id);
+    function row(label, text, act) {
+      return '<button class="group-setting-row" data-group="'.concat(act, '"><span>').concat(label, "</span><small>").concat(text || "", "</small>").concat(icon2("chevron"), "</button>");
+    }
+    async function detail(cid = S2.active) {
+      var _a;
+      const c = await api2("/api/conversations/" + cid);
+      if (c.kind !== "group") return;
+      detailState = c;
+      const g = c.group, local = S2.conversations.find((x) => x.id === cid) || {}, me = c.members.find((x) => x.id === S2.user.id);
+      modal2("群聊设置", '<div class="group-summary">'.concat(av2({ kind: "group", avatar: "group", name: c.name }, "large"), "<div><h3>").concat(esc2(c.name), "</h3><p>群号 ").concat(esc2(g.number), ' <button class="group-link" data-group="copy-number">复制</button></p><small>').concat(g.count, " 人 · ").concat(roles[g.role], '</small></div></div><div class="group-member-grid">').concat(c.members.slice(0, 9).map((u) => '<button data-group-user="'.concat(u.id, '">').concat(av2(u), "<span>").concat(esc2(u.nickname || u.name), "</span>").concat(u.role !== "member" ? '<small class="group-role '.concat(u.role, '">').concat(roles[u.role], "</small>") : "", "</button>")).join("")).concat(manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : "", "</div>").concat(row("群聊成员", g.count + " 人", "members")).concat(row("群公告", esc2(((_a = c.announcement) == null ? void 0 : _a.slice(0, 24)) || "暂无公告"), "announcement")).concat(row("我的群名片", esc2((me == null ? void 0 : me.nickname) || (me == null ? void 0 : me.name) || ""), "my-card")).concat(manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : "").concat(row("查找聊天记录", "", "history"), '<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ').concat(local.muted ? "checked" : "", '></label><p class="hint">').concat(esc2(g.description || "暂无群介绍"), '</p><button class="group-danger" data-group="').concat(g.role === "owner" ? "dissolve" : "leave", '">').concat(g.role === "owner" ? "解散该群" : "退出该群", "</button>"), '<button class="primary" id="group-save-prefs">完成</button>', true);
+      bind("group-save-prefs", async () => {
+        await api2("/api/conversations/" + cid, { method: "PATCH", body: { pinned: $2("#group-pin").checked, muted: $2("#group-notifications").checked } });
+        closeModal2();
+        await refresh2();
+      });
+    }
+    async function members() {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      modal2("群聊成员 · " + c.members.length, '<input id="group-member-search" placeholder="搜索群成员或号码" aria-label="搜索群成员"><div id="group-members-list"></div>', '<button class="secondary" data-group="back">返回</button>', true);
+      const render = () => {
+        const q = $2("#group-member-search").value.toLowerCase();
+        $2("#group-members-list").innerHTML = c.members.filter((u) => (u.name + u.nickname + u.number).toLowerCase().includes(q)).map((u) => '<button class="group-person-row" data-group-user="'.concat(u.id, '">').concat(av2(u), "<span><b>").concat(esc2(u.nickname || u.name), "</b><small>").concat(esc2(u.number)).concat(u.muteUntil > Date.now() ? " · 禁言中" : "", '</small></span><i class="group-role ').concat(u.role, '">').concat(roles[u.role], "</i>").concat(icon2("chevron"), "</button>")).join("") || '<p class="hint">没有找到成员</p>';
+      };
+      $2("#group-member-search").oninput = render;
+      render();
+    }
+    async function member(id) {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      const u = c.members.find((x) => x.id === id);
+      if (!u) {
+        toast2("该成员已退出群聊");
+        return;
+      }
+      ;
+      const g = c.group, self = id === S2.user.id, canManage = manager(g) && !self && u.role !== "owner" && (g.role === "owner" || u.role !== "admin"), canCard = self || canManage;
+      modal2("群成员资料", '<div class="group-summary">'.concat(av2(u, "large"), "<div><h3>").concat(esc2(u.name), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p><span class="group-role ').concat(u.role, '">').concat(roles[u.role], '</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="').concat(esc2(u.nickname || ""), '" placeholder="').concat(esc2(u.name), '" ').concat(canCard ? "" : "disabled", ">").concat(canManage ? '<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">'.concat(u.muteUntil > Date.now() ? "禁言至 " + esc2(new Date(u.muteUntil).toLocaleString()) : "当前未禁言", "</p>") : "").concat(g.role === "owner" && !self ? '<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" '.concat(u.role === "admin" ? "checked" : "", "></label>") : "").concat(canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""), '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
+      bind("group-member-save", async () => {
+        var _a;
+        const p = { nickname: $2("#group-member-card").value };
+        if ($2("#group-member-admin") && $2("#group-member-admin").checked !== (u.role === "admin")) p.admin = $2("#group-member-admin").checked;
+        if ((_a = $2("#group-member-mute")) == null ? void 0 : _a.value) p.muteMinutes = Number($2("#group-member-mute").value);
+        await api2("/api/groups/".concat(c.id, "/members/").concat(id), { method: "PATCH", body: p });
+        toast2("已更新群成员");
+        await refresh2();
+        await members();
+      });
+      bind("group-remove-member", () => confirm("移出群聊", "确定将 " + esc2(u.nickname || u.name) + " 移出群聊？", async () => {
+        await api2("/api/conversations/".concat(c.id, "/members/").concat(id), { method: "DELETE" });
+        await refresh2();
+        await members();
+      }));
+    }
+    async function manage() {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      const g = c.group;
+      if (!manager(g)) throw Error("你已没有群管理权限");
+      modal2("群管理", '<label for="group-edit-name">群名称</label><input id="group-edit-name" value="'.concat(esc2(c.name), '" maxlength="60"><label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">').concat(esc2(g.description), '</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ').concat(g.discoverable ? "checked" : "", '></label><label for="group-join-mode">加群方式</label><select id="group-join-mode">').concat(Object.entries(modes).map(([v, t]) => '<option value="'.concat(v, '" ').concat(g.joinMode === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ').concat(g.membersInvite ? "checked" : "", '></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ').concat(g.allMuted ? "checked" : "", '></label><p class="hint">全员禁言时，群主和管理员仍可发言。需审核的群，普通成员邀请好友也需要审核。</p>').concat(row("设置管理员", "在成员资料中设置，最多 10 人", "members")).concat(g.role === "owner" ? row("转让群主", "", "transfer") : ""), '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
+      bind("group-manage-save", async () => {
+        await api2("/api/groups/" + c.id, { method: "PATCH", body: { name: $2("#group-edit-name").value, description: $2("#group-description").value, discoverable: $2("#group-discoverable").checked, joinMode: $2("#group-join-mode").value, membersInvite: $2("#group-members-invite").checked, allMuted: $2("#group-all-muted").checked } });
+        await refresh2();
+        toast2("群管理设置已保存");
+        await detail(c.id);
+      });
+    }
+    function confirm(title, text, fn) {
+      modal2(title, '<p class="group-confirm">'.concat(text, "</p>"), '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-confirm">确定</button>');
+      bind("group-confirm", fn);
+    }
+    async function transfer() {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      modal2("转让群主", '<p class="hint">转让后，你将成为普通成员。请选择新群主。</p><div class="member-select">' + c.members.filter((u) => u.id !== S2.user.id).map((u) => '<button class="group-person-row" data-group-transfer="'.concat(u.id, '">').concat(av2(u), "<span><b>").concat(esc2(u.nickname || u.name), "</b><small>").concat(roles[u.role], "</small></span>").concat(icon2("chevron"), "</button>")).join("") + "</div>", '<button class="secondary" data-group="manage">取消</button>');
+    }
+    async function invite() {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      const list = S2.friends.filter((u) => !c.members.some((m) => m.id === u.id));
+      modal2("邀请好友入群", '<p class="hint">'.concat(manager(c.group) || c.group.joinMode === "open" ? "选择好友加入群聊" : "邀请会提交给群主和管理员审核", '</p><div class="member-select">').concat(list.map((u) => '<label class="check-row">'.concat(av2(u)).concat(esc2(u.name), '<input type="checkbox" name="group-invite" value="').concat(u.id, '"></label>')).join("") || '<p class="hint">好友都已在群里</p>', "</div>"), '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-invite-send">邀请</button>');
+      bind("group-invite-send", async () => {
+        const result = await action2("/api/conversations/" + c.id + "/members", { members: [...document.querySelectorAll("[name=group-invite]:checked")].map((x) => x.value) });
+        toast2(result.pending ? "邀请已提交，等待审核" : "好友已加入");
+        await refresh2();
+        await detail(c.id);
+      });
+    }
+    async function announcement() {
+      const c = await api2("/api/conversations/" + detailState.id);
+      detailState = c;
+      modal2("群公告", '<textarea id="group-announcement" maxlength="2000" placeholder="暂无群公告" '.concat(manager(c.group) ? "" : "readonly", ">").concat(esc2(c.announcement), "</textarea>"), '<button class="secondary" data-group="back">返回</button>' + (manager(c.group) ? '<button class="primary" id="group-announcement-save">发布</button>' : ""));
+      bind("group-announcement-save", async () => {
+        await api2("/api/groups/" + c.id, { method: "PATCH", body: { announcement: $2("#group-announcement").value } });
+        await refresh2();
+        toast2("群公告已发布");
+        await detail(c.id);
+      });
+    }
+    async function requests() {
+      const list = await api2("/api/group-requests");
+      S2.groupRequests = list;
+      const status = { pending: "等待审核", accepted: "已同意", rejected: "已拒绝", cancelled: "群已解散" };
+      modal2("群通知", '<div class="group-requests">'.concat(list.map((q) => '<article class="group-request">'.concat(av2(q), "<div><b>").concat(esc2(q.name), "</b><p>").concat(q.inviter ? esc2(q.inviterName) + " 邀请加入" : "申请加入", " ").concat(esc2(q.groupName), "</p><small>群号 ").concat(esc2(q.number), '</small><p class="hint">').concat(esc2(q.message), "</p>").concat(q.status === "pending" && q.canReview ? '<button class="secondary" data-group-review="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-group-review="').concat(q.id, '" data-accept="true">同意</button>') : '<span class="group-request-state">'.concat(status[q.status] || q.status, "</span>"), "</div></article>")).join("") || '<p class="hint">暂无群通知</p>', "</div>"), "", true);
+    }
+    function search() {
+      const revision = ++searchVersion;
+      let requestVersion = 0;
+      modal2("查找群聊", '<form id="group-search-form" class="group-search-form"><input id="group-search-query" placeholder="输入群号或群名称" aria-label="搜索群聊" maxlength="60"><button class="primary">查找</button></form><div id="group-search-results"><p class="hint">群主开启搜索后，可通过群号或群名称找到群。</p></div>', "", true);
+      $2("#group-search-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const request = ++requestVersion;
+        const query = $2("#group-search-query").value.trim(), list = $2("#group-search-results");
+        list.innerHTML = '<p class="hint">正在查找…</p>';
+        try {
+          const results = await api2("/api/groups?q=" + encodeURIComponent(query));
+          if (searchVersion !== revision || request !== requestVersion || !document.contains(list)) return;
+          list.innerHTML = results.map((g) => '<article class="group-search-result">'.concat(av2({ kind: "group", avatar: "group" }), "<div><b>").concat(esc2(g.name), "</b><p>群号 ").concat(esc2(g.number), " · ").concat(g.count, ' 人</p><p class="hint">').concat(esc2(g.description), "</p><small>").concat(modes[g.joinMode], '</small></div><button class="').concat(g.joined ? "secondary" : "primary", '" data-group-join="').concat(g.id, '" data-joined="').concat(g.joined, '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(g.joined ? "发消息" : "加入", "</button></article>")).join("") || '<p class="hint">没有找到群聊</p>';
+        } catch (e2) {
+          if (request === requestVersion && document.contains(list)) list.textContent = e2.message;
+        }
+      };
+      $2("#group-search-query").focus();
+    }
+    function join(button) {
+      const cid = button.dataset.groupJoin;
+      if (button.dataset.joined === "true") {
+        closeModal2();
+        selectConversation2(cid);
+        return;
+      }
+      ;
+      modal2("申请加入 " + button.dataset.name, '<label for="group-join-message">验证信息</label><textarea id="group-join-message" maxlength="200" placeholder="向群主和管理员介绍一下自己"></textarea>', '<button class="secondary" data-group="search">取消</button><button class="primary" id="group-join-submit">发送申请</button>');
+      bind("group-join-submit", async () => {
+        const result = await action2("/api/groups/" + cid + "/join", { message: $2("#group-join-message").value });
+        await refresh2();
+        if (result.status === "joined") {
+          closeModal2();
+          await selectConversation2(cid);
+        } else {
+          modal2("申请已发送", '<p class="hint">等待群主或管理员审核，处理结果会显示在群通知中。</p>', '<button class="primary" data-group="requests">查看群通知</button>');
+        }
+      });
+    }
+    function syncComposer() {
+      clearTimeout(muteTimer);
+      const c = S2.conversations.find((x) => x.id === S2.active), g = c == null ? void 0 : c.group, blocked = g && !manager(g) && (g.allMuted || g.muteUntil > Date.now()), composer = $2(".composer");
+      if (!composer) return;
+      const wasBlocked = composer.classList.contains("group-muted");
+      if (blocked && !wasBlocked) stopMedia();
+      composer.classList.toggle("group-muted", !!blocked);
+      let banner = $2("#group-muted-banner");
+      if (!banner) {
+        composer.insertAdjacentHTML("beforeend", '<div id="group-muted-banner" class="group-muted-banner"></div>');
+        banner = $2("#group-muted-banner");
+      }
+      ;
+      banner.textContent = blocked ? g.allMuted ? "全员禁言中，仅群主和管理员可发言" : "你已被禁言至 " + new Date(g.muteUntil).toLocaleString("zh-CN", { hour12: false }) : "";
+      if (blocked && !g.allMuted) muteTimer = setTimeout(syncComposer, Math.min(6e4, Math.max(50, g.muteUntil - Date.now() + 50)));
+      if (blocked || wasBlocked) $2("#composer").disabled = !!blocked;
+      const header = $2(".chat-head h2");
+      if (c && header && c.kind === "group") header.innerHTML = esc2(c.name) + '<small id="typing-status">'.concat((g == null ? void 0 : g.count) || "", " 人 · 群号 ").concat(esc2((g == null ? void 0 : g.number) || ""), "</small>");
+    }
+    document.addEventListener("click", async (e) => {
+      var _a;
+      const b = e.target.closest("[data-group],[data-group-user],[data-group-review],[data-group-join],[data-group-transfer]");
+      if (!b || !S2.user) return;
+      try {
+        if (b.dataset.groupUser) {
+          await member(b.dataset.groupUser);
+          return;
+        }
+        ;
+        if (b.dataset.groupReview) {
+          b.disabled = true;
+          try {
+            await action2("/api/group-requests/" + b.dataset.groupReview, { accept: b.dataset.accept === "true" });
+            await refresh2();
+            await requests();
+          } finally {
+            b.disabled = false;
+          }
+          ;
+          return;
+        }
+        ;
+        if (b.dataset.groupJoin) {
+          join(b);
+          return;
+        }
+        ;
+        if (b.dataset.groupTransfer) {
+          const c = detailState, u = c.members.find((u2) => u2.id === b.dataset.groupTransfer);
+          confirm("转让群主", "确定将群主转让给 " + esc2(u.nickname || u.name) + "？", async () => {
+            await action2("/api/groups/" + c.id + "/transfer", { userId: u.id });
+            await refresh2();
+            toast2("群主已转让");
+            await detail(c.id);
+          });
+          return;
+        }
+        switch (b.dataset.group) {
+          case "back":
+            await back();
+            break;
+          case "members":
+            await members();
+            break;
+          case "my-card":
+            await member(S2.user.id);
+            break;
+          case "manage":
+            await manage();
+            break;
+          case "announcement":
+            await announcement();
+            break;
+          case "invite":
+            await invite();
+            break;
+          case "transfer":
+            await transfer();
+            break;
+          case "requests":
+            await requests();
+            break;
+          case "search":
+            search();
+            break;
+          case "copy-number":
+            await copy(detailState.group.number);
+            break;
+          case "history":
+            closeModal2();
+            (_a = document.querySelector(".chat-head [data-action=search-history]")) == null ? void 0 : _a.click();
+            break;
+          case "leave":
+          case "dissolve": {
+            const c = detailState, dissolve = b.dataset.group === "dissolve";
+            confirm(dissolve ? "解散群聊" : "退出群聊", dissolve ? "解散后所有成员都将失去该群的访问权限，群号不再使用。确定解散 " + esc2(c.name) + "？" : "确定退出 " + esc2(c.name) + "？退出后将无法继续访问群聊记录。", async () => {
+              await api2(dissolve ? "/api/groups/" + c.id : "/api/conversations/".concat(c.id, "/members/").concat(S2.user.id), { method: "DELETE" });
+              closeModal2();
+              await refresh2();
+              renderMain2();
+              toast2(dissolve ? "群已解散" : "已退出群聊");
+            });
+            break;
+          }
+        }
+      } catch (e2) {
+        error(e2);
+      }
+    });
+    return { detail, search, requests, syncComposer };
+  }
+
   // internal/ui/src/media.js
   function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2 }) {
     const $2 = (s, r = document) => r.querySelector(s);
@@ -1611,7 +1897,7 @@
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => '<span class="avatar '.concat(esc(u.avatar || "blue"), " ").concat(size, '">').concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -1694,7 +1980,7 @@
     };
   }
   function nav() {
-    const unread = S.conversations.reduce((n, c) => n + (c.muted ? 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length;
+    const unread = S.conversations.reduce((n, c) => n + (c.muted ? 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
     return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["remote", "monitor", "远程协助", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t === "远程协助" ? "远程" : t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
   }
   function renderShell() {
@@ -1713,13 +1999,16 @@
     if (!list) return;
     if (S.tab === "contacts") {
       const pending = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length;
-      list.innerHTML = '<button class="notify-row" data-action="requests">'.concat(icon("bell"), "好友通知").concat(pending ? '<span class="badge">'.concat(pending, "</span>") : "", '</button><div class="contact-tab"><button data-contact-tab="friends" class="').concat(S.contactTab === "friends" ? "active" : "", '">好友</button><button data-contact-tab="groups" class="').concat(S.contactTab === "groups" ? "active" : "", '">群聊</button></div>').concat(S.contactTab === "friends" ? '<div class="contact-group">'.concat(icon("down"), '我的好友 <span class="muted">').concat(S.friends.length, "</span></div>").concat(S.friends.filter((u) => "".concat(u.name).concat(u.account).concat(u.number).toLowerCase().includes(S.search.toLowerCase())).map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc(u.remark || u.name), '</b></div><div class="row-preview"><span>').concat(esc(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join("") || '<div class="empty-list">还没有好友<br>添加好友，开始新的聊天</div>') : S.conversations.filter((c) => c.kind === "group").map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
+      list.innerHTML = '<button class="notify-row" data-action="requests">'.concat(icon("bell"), "好友通知").concat(pending ? '<span class="badge">'.concat(pending, "</span>") : "", '</button><button class="notify-row group-notice-row" data-group="requests">').concat(icon("contacts"), "群通知").concat(S.groupRequests.some((q) => q.canReview && q.status === "pending") ? '<span class="badge">' + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length + "</span>" : "", '</button><div class="contact-tab"><button data-contact-tab="friends" class="').concat(S.contactTab === "friends" ? "active" : "", '">好友</button><button data-contact-tab="groups" class="').concat(S.contactTab === "groups" ? "active" : "", '">群聊</button></div>').concat(S.contactTab === "friends" ? '<div class="contact-group">'.concat(icon("down"), '我的好友 <span class="muted">').concat(S.friends.length, "</span></div>").concat(S.friends.filter((u) => "".concat(u.name).concat(u.account).concat(u.number).toLowerCase().includes(S.search.toLowerCase())).map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc(u.remark || u.name), '</b></div><div class="row-preview"><span>').concat(esc(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join("") || '<div class="empty-list">还没有好友<br>添加好友，开始新的聊天</div>') : S.conversations.filter((c) => {
+        var _a;
+        return c.kind === "group" && (c.name + (((_a = c.group) == null ? void 0 : _a.number) || "")).toLowerCase().includes(S.search.toLowerCase());
+      }).map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
       return;
     }
     ;
     const result = S.conversations.filter((c) => {
-      var _a;
-      return "".concat(c.name).concat(((_a = c.last) == null ? void 0 : _a.text) || "").toLowerCase().includes(S.search.toLowerCase());
+      var _a, _b;
+      return "".concat(c.name).concat(((_a = c.group) == null ? void 0 : _a.number) || "").concat(((_b = c.last) == null ? void 0 : _b.text) || "").toLowerCase().includes(S.search.toLowerCase());
     });
     list.innerHTML = result.map(conversationRow).join("") || '<div class="empty-list">'.concat(S.search ? "没有找到相关会话" : "暂无消息<br>添加好友后，消息会出现在这里", "</div>").concat(S.search ? "" : '<button class="search-action" data-action="add-friend">＋ 添加好友</button>');
   }
@@ -1847,6 +2136,7 @@
     renderReply();
     renderSharing();
     Media.mount();
+    Groups.syncComposer();
   }
   function empty(title, sub, add = false) {
     return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">添加好友</button>' : "", "</div>");
@@ -2005,16 +2295,30 @@
     return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.ceil(n / 1024) + " KB" : n + " B";
   }
   async function refresh() {
-    var _a;
+    var _a, _b;
     if (!S.user) return;
-    const [conversations, friends, requests] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests")]);
+    const userId = S.user.id;
+    const [conversations, friends, requests, groupRequests] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests")]);
+    if (((_a = S.user) == null ? void 0 : _a.id) !== userId) return;
     S.conversations = conversations;
     S.friends = friends;
     S.requests = requests;
+    S.groupRequests = groupRequests;
+    if (S.active && !conversations.some((c2) => c2.id === S.active)) {
+      Media.reset();
+      Forwarding.reset(false);
+      S.active = null;
+      S.messages = [];
+      S.reply = null;
+      closeModal();
+      renderShell();
+      toast("你已退出该群或群已解散");
+    }
     renderSidebar();
     updateRail();
     const c = activeConversation();
-    if (c && $("#typing-status")) $("#typing-status").textContent = c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊";
+    if (c && $("#typing-status")) $("#typing-status").textContent = c.kind === "direct" ? ((_b = c.peer) == null ? void 0 : _b.online) ? "在线" : "离线" : "群聊";
+    Groups.syncComposer();
   }
   function queueRefresh() {
     clearTimeout(refreshTimer);
@@ -2185,6 +2489,11 @@
     $(".modal-body").innerHTML = S.requests.map((q) => '<div class="utility-row">'.concat(av(q), '<div class="body"><b>').concat(esc(q.name), "</b><p>").concat(q.sender === S.user.id ? "我：" : "").concat(esc(q.message), "</p><p>").concat(shortTime(q.created), "</p></div>").concat(q.status === "pending" && q.recipient === S.user.id ? '<div class="request-actions"><button class="secondary" data-resolve="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-resolve="').concat(q.id, '" data-accept="true">同意</button></div>') : '<span class="muted">'.concat({ pending: "等待验证", accepted: "已添加", rejected: "已拒绝" }[q.status], "</span>"), "</div>")).join("") || '<div class="empty-list">暂无好友通知</div>';
   }
   async function chatDetail() {
+    var _a;
+    if (((_a = activeConversation()) == null ? void 0 : _a.kind) === "group") {
+      await Groups.detail();
+      return;
+    }
     const c = await api("/api/conversations/".concat(S.active)), mine = c.owner === S.user.id, local = activeConversation();
     modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
@@ -2775,7 +3084,7 @@
           break;
         case "add-menu": {
           const r = b.getBoundingClientRect();
-          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="add-friend">'.concat(icon("contacts"), '添加好友</button><button data-action="create-group">').concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
+          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="add-friend">'.concat(icon("contacts"), '添加好友</button><button data-group="search">').concat(icon("search"), '查找群聊</button><button data-action="create-group">').concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
           break;
         }
         case "more-menu": {
@@ -2956,6 +3265,7 @@
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });

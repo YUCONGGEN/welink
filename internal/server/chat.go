@@ -34,6 +34,8 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			c["peer"] = u
 			c["name"] = u.Name
 			c["avatar"] = u.Avatar
+		} else if g, e := readGroup(s.db, cid, uid(r)); e == nil {
+			c["group"] = g
 		}
 		last, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.conversation_id=? AND "+messageVisible+"ORDER BY m.seq DESC LIMIT 1", cid, uid(r)))
 		if e == nil {
@@ -100,6 +102,12 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if p.Kind == "group" {
+		if _, e = tx.Exec("INSERT INTO group_profiles(conversation_id) VALUES(?)", id); e != nil {
+			s.dbError(w, e)
+			return
+		}
+	}
 	if e = tx.Commit(); e != nil {
 		s.dbError(w, e)
 		return
@@ -114,7 +122,7 @@ func (s *Server) conversationDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var kind, name, owner, notice string
 	_ = s.db.QueryRow("SELECT kind,name,owner,announcement FROM conversations WHERE id=?", id).Scan(&kind, &name, &owner, &notice)
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN members m ON u.id=m.user_id JOIN user_numbers n ON n.user_id=u.id WHERE m.conversation_id=? ORDER BY u.name", id)
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number,CASE WHEN c.kind<>'group' THEN '' WHEN c.owner=u.id THEN 'owner' WHEN COALESCE(gm.admin,0)=1 THEN 'admin' ELSE 'member' END,COALESCE(gm.nickname,''),COALESCE(gm.mute_until,0) FROM users u JOIN members m ON u.id=m.user_id JOIN conversations c ON c.id=m.conversation_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN group_members gm ON gm.conversation_id=c.id AND gm.user_id=u.id WHERE m.conversation_id=? ORDER BY CASE WHEN c.owner=u.id THEN 0 WHEN COALESCE(gm.admin,0)=1 THEN 1 ELSE 2 END,u.name", id)
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -123,16 +131,23 @@ func (s *Server) conversationDetail(w http.ResponseWriter, r *http.Request) {
 	members := []User{}
 	for rows.Next() {
 		var u User
-		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number)
+		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number, &u.Role, &u.Nickname, &u.MuteUntil)
 		u.Online = s.online(u.ID)
 		members = append(members, u)
 	}
-	ok(w, map[string]any{"id": id, "kind": kind, "name": name, "owner": owner, "announcement": notice, "members": members})
+	rows.Close()
+	out := map[string]any{"id": id, "kind": kind, "name": name, "owner": owner, "announcement": notice, "members": members}
+	if kind == "group" {
+		g, e := readGroup(s.db, id, uid(r))
+		if e != nil {
+			s.dbError(w, e)
+			return
+		}
+		out["group"] = g
+	}
+	ok(w, out)
 }
 func (s *Server) updateConversation(w http.ResponseWriter, r *http.Request) {
-	if !s.requireMember(w, r) {
-		return
-	}
 	var p struct {
 		Name, Announcement *string
 		Pinned, Muted      *bool
@@ -140,107 +155,121 @@ func (s *Server) updateConversation(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &p) {
 		return
 	}
-	id := r.PathValue("id")
-	if p.Name != nil || p.Announcement != nil {
-		var owner, kind string
-		_ = s.db.QueryRow("SELECT owner,kind FROM conversations WHERE id=?", id).Scan(&owner, &kind)
-		if owner != uid(r) || kind != "group" {
-			fail(w, 403, "只有群主可以修改群资料")
-			return
+	if p.Name != nil && (strings.TrimSpace(*p.Name) == "" || !validText(*p.Name, 60)) || p.Announcement != nil && !validText(*p.Announcement, 2000) {
+		fail(w, 400, "群名称或公告格式错误")
+		return
+	}
+	cid := r.PathValue("id")
+	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
+		if !forwardMember(tx, cid, uid(r)) {
+			return nil, nil, groupFail(403, "无法访问该会话")
+		}
+		if p.Name != nil || p.Announcement != nil {
+			g, e := groupRequired(tx, cid, uid(r))
+			if e != nil {
+				return nil, nil, e
+			}
+			if !g.manager() {
+				return nil, nil, groupFail(403, "只有群主和管理员可以修改群资料")
+			}
 		}
 		if p.Name != nil {
-			if strings.TrimSpace(*p.Name) == "" || !validText(*p.Name, 60) {
-				fail(w, 400, "群名称格式错误")
-				return
-			}
-			if _, e := s.db.Exec("UPDATE conversations SET name=? WHERE id=?", strings.TrimSpace(*p.Name), id); e != nil {
-				s.dbError(w, e)
-				return
+			if _, e := tx.Exec("UPDATE conversations SET name=? WHERE id=?", strings.TrimSpace(*p.Name), cid); e != nil {
+				return nil, nil, e
 			}
 		}
 		if p.Announcement != nil {
-			if !validText(*p.Announcement, 2000) {
-				fail(w, 400, "公告最多 2000 字")
-				return
-			}
-			if _, e := s.db.Exec("UPDATE conversations SET announcement=? WHERE id=?", *p.Announcement, id); e != nil {
-				s.dbError(w, e)
-				return
+			if _, e := tx.Exec("UPDATE conversations SET announcement=? WHERE id=?", *p.Announcement, cid); e != nil {
+				return nil, nil, e
 			}
 		}
-	}
-	if p.Pinned != nil {
-		_, _ = s.db.Exec("UPDATE members SET pinned=? WHERE conversation_id=? AND user_id=?", *p.Pinned, id, uid(r))
-	}
-	if p.Muted != nil {
-		_, _ = s.db.Exec("UPDATE members SET muted=? WHERE conversation_id=? AND user_id=?", *p.Muted, id, uid(r))
-	}
-	s.pushConversation(id, "conversation", map[string]string{"id": id})
-	ok(w, map[string]bool{"ok": true})
+		if p.Pinned != nil {
+			if _, e := tx.Exec("UPDATE members SET pinned=? WHERE conversation_id=? AND user_id=?", *p.Pinned, cid, uid(r)); e != nil {
+				return nil, nil, e
+			}
+		}
+		if p.Muted != nil {
+			if _, e := tx.Exec("UPDATE members SET muted=? WHERE conversation_id=? AND user_id=?", *p.Muted, cid, uid(r)); e != nil {
+				return nil, nil, e
+			}
+		}
+		ids, e := groupAudience(tx, cid)
+		return map[string]bool{"ok": true}, ids, e
+	})
 }
 func (s *Server) addMembers(w http.ResponseWriter, r *http.Request) {
-	if !s.requireMember(w, r) {
-		return
-	}
-	var kind string
-	_ = s.db.QueryRow("SELECT kind FROM conversations WHERE id=?", r.PathValue("id")).Scan(&kind)
-	if kind != "group" {
-		fail(w, 400, "单聊不能添加成员")
-		return
-	}
 	var p struct{ Members []string }
 	if !decode(w, r, &p) {
 		return
 	}
-	if len(p.Members) == 0 || len(p.Members) > 100 {
-		fail(w, 400, "请选择 1–100 个好友")
+	ids, valid := uniqueIDs(p.Members, 100)
+	if !valid {
+		fail(w, 400, "请选择 1–100 位好友")
 		return
 	}
-	for _, id := range p.Members {
-		var n int
-		if s.db.QueryRow("SELECT 1 FROM friends WHERE user_id=? AND peer_id=?", uid(r), id).Scan(&n) != nil {
-			fail(w, 403, "只能邀请自己的好友")
-			return
+	cid, user := r.PathValue("id"), uid(r)
+	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
+		g, e := groupRequired(tx, cid, user)
+		if e != nil {
+			return nil, nil, e
 		}
-	}
-	tx, e := s.db.Begin()
-	if e != nil {
-		s.dbError(w, e)
-		return
-	}
-	defer tx.Rollback()
-	for _, id := range p.Members {
-		if _, e = tx.Exec("INSERT OR IGNORE INTO members(conversation_id,user_id) VALUES(?,?)", r.PathValue("id"), id); e != nil {
-			s.dbError(w, e)
-			return
+		if !g.manager() && !g.MembersInvite {
+			return nil, nil, groupFail(403, "群主已关闭成员邀请")
 		}
-	}
-	if e = tx.Commit(); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	s.pushConversation(r.PathValue("id"), "conversation", map[string]string{"id": r.PathValue("id")})
-	ok(w, map[string]bool{"ok": true})
+		if !g.manager() && g.JoinMode == "closed" {
+			return nil, nil, groupFail(403, "该群暂不接受成员邀请")
+		}
+		added, pending := 0, 0
+		for _, target := range ids {
+			var n int
+			if e = tx.QueryRow("SELECT 1 FROM friends WHERE user_id=? AND peer_id=?", user, target).Scan(&n); e != nil {
+				return nil, nil, groupFail(403, "只能邀请自己的好友")
+			}
+			if forwardMember(tx, cid, target) {
+				continue
+			}
+			if g.manager() || g.JoinMode == "open" {
+				if e = addGroupMember(tx, cid, target); e != nil {
+					return nil, nil, e
+				}
+				added++
+			} else {
+				if g.Count >= 200 {
+					return nil, nil, groupFail(409, "群成员已满（200 人）")
+				}
+				if _, e = tx.Exec("INSERT OR IGNORE INTO group_requests(id,conversation_id,user_id,inviter,message,created) VALUES(?,?,?,?,?,?)", newID(), cid, target, user, "好友邀请入群", now()); e != nil {
+					return nil, nil, e
+				}
+				pending++
+			}
+		}
+		audience, e := groupAudience(tx, cid)
+		return map[string]any{"ok": true, "added": added, "pending": pending}, append(audience, ids...), e
+	})
 }
 func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
-	if !s.requireMember(w, r) {
-		return
-	}
-	var owner, kind string
-	_ = s.db.QueryRow("SELECT owner,kind FROM conversations WHERE id=?", r.PathValue("id")).Scan(&owner, &kind)
-	target := r.PathValue("user")
-	if kind != "group" || target == owner || (uid(r) != owner && uid(r) != target) {
-		fail(w, 403, "无法移除该成员，群主不能直接退群")
-		return
-	}
-	audience := s.audience(r.PathValue("id"))
-	if _, e := s.db.Exec("DELETE FROM members WHERE conversation_id=? AND user_id=?", r.PathValue("id"), target); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	s.push(audience, "conversation", map[string]string{"id": r.PathValue("id")})
-	ok(w, map[string]bool{"ok": true})
+	cid, user, target := r.PathValue("id"), uid(r), r.PathValue("user")
+	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
+		g, e := groupRequired(tx, cid, user)
+		if e != nil {
+			return nil, nil, e
+		}
+		other, e := groupRequired(tx, cid, target)
+		if e != nil {
+			return nil, nil, e
+		}
+		if other.Role == "owner" || user != target && (!g.manager() || g.Role == "admin" && other.Role == "admin") {
+			return nil, nil, groupFail(403, "无法移除该成员，群主需先转让或解散群")
+		}
+		ids, e := groupAudience(tx, cid)
+		if e != nil {
+			return nil, nil, e
+		}
+		_, e = tx.Exec("DELETE FROM members WHERE conversation_id=? AND user_id=?", cid, target)
+		return map[string]bool{"ok": true}, ids, e
+	})
 }
+
 func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 	if !s.requireMember(w, r) {
 		return
