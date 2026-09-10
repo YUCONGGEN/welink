@@ -83,8 +83,8 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{"id": id, "name": name, "mime": typ, "size": size})
 }
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
-	var cid, name, typ string
-	if s.db.QueryRow("SELECT conversation_id,name,mime FROM attachments WHERE id=?", r.PathValue("id")).Scan(&cid, &name, &typ) != nil {
+	var cid, name, typ, blob string
+	if s.db.QueryRow("SELECT a.conversation_id,a.name,a.mime,COALESCE(b.blob_id,a.id) FROM attachments a LEFT JOIN attachment_blobs b ON b.attachment_id=a.id WHERE a.id=?", r.PathValue("id")).Scan(&cid, &name, &typ, &blob) != nil {
 		fail(w, 404, "文件不存在")
 		return
 	}
@@ -92,7 +92,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无权下载该文件")
 		return
 	}
-	f, e := os.Open(filepath.Join(s.dir, "uploads", r.PathValue("id")))
+	f, e := os.Open(filepath.Join(s.dir, "uploads", blob))
 	if e != nil {
 		fail(w, 404, "文件已不可用")
 		return

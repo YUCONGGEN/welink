@@ -19,6 +19,286 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/forwarding.js
+  function createForwarding({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, preview: preview2, fullTime: fullTime2, bytes: bytes2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2 }) {
+    const $2 = (s, r = document) => r.querySelector(s);
+    let selection = null, chooser = null, viewer = null;
+    function selected(message) {
+      return (selection == null ? void 0 : selection.cid) === S2.active && selection.ids.has(message.id);
+    }
+    function checkbox(message) {
+      return (selection == null ? void 0 : selection.cid) === S2.active ? '<button class="message-check" role="checkbox" aria-checked="'.concat(selected(message), '" aria-label="选择消息">').concat(selected(message) ? icon2("check") : "", "</button>") : "";
+    }
+    function reset(render = true) {
+      selection = null;
+      if (render) renderMessages2(true);
+    }
+    function sync() {
+      var _a;
+      if (selection && (selection.cid !== S2.active || S2.tab !== "messages" || !S2.user)) selection = null;
+      const area = $2("#messages"), composer = $2(".composer");
+      if (!area) return;
+      area.classList.toggle("selecting-messages", !!selection);
+      if (composer) composer.classList.toggle("selection-hidden", !!selection);
+      (_a = $2("#message-selection-toolbar")) == null ? void 0 : _a.remove();
+      if (!selection) return;
+      const selectedMessages = S2.messages.filter((m) => selection.ids.has(m.id));
+      selection.ids = new Set(selectedMessages.map((m) => m.id));
+      const count = selection.ids.size, unavailable = selectedMessages.some((m) => m.recalled);
+      area.insertAdjacentHTML("afterend", '<section class="message-selection-toolbar" id="message-selection-toolbar"><div><b>已选择 '.concat(count, ' 条消息</b><button data-fw="cancel-select">取消</button></div><nav><button data-fw="selected-forward" ').concat(!count || unavailable ? "disabled" : "", ' title="').concat(unavailable ? "已撤回消息不能转发" : "转发所选消息", '">').concat(icon2("send"), '<span>转发</span></button><button data-fw="selected-delete" ').concat(count ? "" : "disabled", ">").concat(icon2("trash"), "<span>删除</span></button></nav></section>"));
+    }
+    function start(id) {
+      selection = { cid: S2.active, ids: /* @__PURE__ */ new Set([id]) };
+      renderMessages2(true);
+    }
+    function toggle(id) {
+      if (selection.ids.has(id)) selection.ids.delete(id);
+      else if (selection.ids.size < 100) selection.ids.add(id);
+      else {
+        toast2("一次最多选择 100 条消息");
+        return;
+      }
+      renderMessages2(true);
+    }
+    function removed(id) {
+      if (selection) {
+        selection.ids.delete(id);
+        sync();
+      }
+      invalidate(id);
+    }
+    function invalidate(id) {
+      if ((viewer == null ? void 0 : viewer.id) === id && ($2(".forward-record-dialog") || $2(".forward-record-image"))) {
+        viewer = null;
+        closeModal2();
+        toast2("这条聊天记录已删除或撤回");
+      }
+    }
+    function deleteSelected() {
+      const state = selection;
+      if (!(state == null ? void 0 : state.ids.size)) return;
+      const ids = [...state.ids];
+      modal2("删除所选消息", '<p class="hint">删除这 '.concat(ids.length, " 条消息？它们将从你所有设备的聊天记录中移除，对方的记录和已保存的收藏会保留。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="selection-delete-confirm">删除</button>');
+      $2("#selection-delete-confirm").onclick = async (e) => {
+        e.target.disabled = true;
+        try {
+          await action2("/api/conversations/".concat(state.cid, "/messages/delete"), { messageIds: ids });
+          if (S2.active === state.cid) S2.messages = S2.messages.filter((m) => !ids.includes(m.id));
+          reset();
+          closeModal2();
+          queueRefresh2();
+          toast2("已删除所选消息");
+        } catch (error) {
+          $2("#modal-error").textContent = error.message;
+          e.target.disabled = false;
+        }
+      };
+    }
+    function targets(tab) {
+      const recent = S2.conversations.map((c) => {
+        var _a;
+        return { key: c.id, cid: c.id, name: c.name, kind: c.kind, avatar: ((_a = c.peer) == null ? void 0 : _a.avatar) || "group" };
+      });
+      if (tab === "groups") return recent.filter((c) => c.kind === "group");
+      if (tab === "friends") return S2.friends.map((u) => {
+        const existing = S2.conversations.find((c) => {
+          var _a;
+          return c.kind === "direct" && ((_a = c.peer) == null ? void 0 : _a.id) === u.id;
+        });
+        return { key: (existing == null ? void 0 : existing.id) || "user:" + u.id, cid: existing == null ? void 0 : existing.id, userId: u.id, name: u.remark || u.name, number: u.number, avatar: u.avatar };
+      });
+      return recent;
+    }
+    function renderTargets() {
+      const state = chooser;
+      if (!state || !$2("#forward-recipients")) return;
+      const query = $2("#forward-search").value.toLowerCase();
+      const items = targets(state.tab).filter((c) => (c.name + (c.number || "")).toLowerCase().includes(query));
+      $2("#forward-recipients").innerHTML = items.map((c) => '<label class="forward-recipient">'.concat(av2(c), "<span>").concat(esc2(c.name)).concat(c.number ? "<small>".concat(esc2(c.number), "</small>") : "", '</span><input type="checkbox" value="').concat(esc2(c.key), '" ').concat(state.targets.has(c.key) ? "checked" : "", ' aria-label="选择 ').concat(esc2(c.name), '"></label>')).join("") || '<p class="empty-list">没有匹配的会话</p>';
+      $2("#forward-recipients").onchange = (e) => {
+        const target = items.find((c) => c.key === e.target.value);
+        if (!target) return;
+        if (e.target.checked) {
+          if (state.targets.size >= 9) {
+            e.target.checked = false;
+            toast2("最多选择 9 个会话");
+            return;
+          }
+          state.targets.set(target.key, target);
+        } else state.targets.delete(target.key);
+        renderChosen();
+      };
+      document.querySelectorAll("[data-forward-tab]").forEach((b) => b.classList.toggle("active", b.dataset.forwardTab === state.tab));
+    }
+    function renderChosen() {
+      const state = chooser;
+      $2("#forward-selected-count").textContent = "已选择 ".concat(state.targets.size, " 个会话");
+      $2("#forward-selected").innerHTML = [...state.targets.values()].map((c) => '<button class="forward-chip" data-forward-remove="'.concat(esc2(c.key), '">').concat(esc2(c.name), "<span>×</span></button>")).join("") || '<p class="hint">选择好友或群聊</p>';
+      $2("#forward-submit").disabled = !state.targets.size;
+    }
+    function open(ids) {
+      const messages = S2.messages.filter((m) => ids.includes(m.id));
+      if (!messages.length || messages.some((m) => m.recalled) || messages.length !== ids.length) {
+        toast2("所选消息已删除或撤回");
+        return;
+      }
+      const state = chooser = { cid: S2.active, ids, tab: "recent", targets: /* @__PURE__ */ new Map(), mode: ids.length > 1 ? "merge" : "each", messages, signature: "", clientId: "" };
+      modal2("发送给", '<div class="forward-chooser"><section class="forward-people"><input id="forward-search" aria-label="搜索接收人" placeholder="搜索好友或群聊"><nav class="forward-tabs"><button data-forward-tab="recent" class="active">最近</button><button data-forward-tab="friends">好友</button><button data-forward-tab="groups">群聊</button></nav><div id="forward-recipients"></div></section><section class="forward-confirm"><b id="forward-selected-count"></b><div id="forward-selected"></div>'.concat(ids.length > 1 ? '<div class="forward-mode"><label><input type="radio" name="forward-mode" value="merge" checked>合并转发</label><label><input type="radio" name="forward-mode" value="each">逐条转发</label></div>' : "", '<div class="forward-send-preview"><b>').concat(ids.length > 1 ? "聊天记录" : esc2(preview2(messages[0]).slice(0, 60)), "</b>").concat(ids.length > 1 ? messages.slice(0, 3).map((m) => "<p>".concat(esc2(m.name + "：" + preview2(m)), "</p>")).join("") : "", "<small>").concat(ids.length, ' 条消息</small></div><textarea id="forward-note" placeholder="给对方留言（可选）" aria-label="转发留言" maxlength="600"></textarea></section></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="forward-submit" disabled>发送</button>', true);
+      $2(".modal").classList.add("forward-dialog");
+      renderTargets();
+      renderChosen();
+      $2("#forward-search").oninput = renderTargets;
+      $2("#forward-selected").onclick = (e) => {
+        const button = e.target.closest("[data-forward-remove]");
+        if (button) {
+          state.targets.delete(button.dataset.forwardRemove);
+          renderTargets();
+          renderChosen();
+        }
+      };
+      $2(".forward-tabs").onclick = (e) => {
+        const b = e.target.closest("[data-forward-tab]");
+        if (b) {
+          state.tab = b.dataset.forwardTab;
+          renderTargets();
+        }
+      };
+      document.querySelectorAll("[name=forward-mode]").forEach((input) => input.onchange = () => {
+        state.mode = input.value;
+      });
+      $2("#forward-submit").onclick = async () => {
+        const button = $2("#forward-submit");
+        button.disabled = true;
+        const chosen = [...state.targets.values()].map((target) => __spreadValues({}, target)), mode = state.mode, note = $2("#forward-note").value;
+        try {
+          const destinations = [];
+          for (const target of chosen) {
+            if (!target.cid) {
+              const created = await action2("/api/conversations", { kind: "direct", members: [target.userId] });
+              target.cid = created.id;
+            }
+            destinations.push(target.cid);
+          }
+          const body = { conversationId: state.cid, messageIds: state.ids, targets: destinations, mode, note };
+          const signature = JSON.stringify(body);
+          if (signature !== state.signature) {
+            state.signature = signature;
+            state.clientId = randomID2();
+          }
+          await action2("/api/messages/forward", __spreadProps(__spreadValues({}, body), { clientId: state.clientId }));
+          closeModal2();
+          reset();
+          queueRefresh2();
+          toast2("已转发到 ".concat(destinations.length, " 个会话"));
+        } catch (error) {
+          if ($2("#modal-error")) $2("#modal-error").textContent = error.message;
+          button.disabled = false;
+        }
+      };
+    }
+    function card(m) {
+      let card2;
+      try {
+        card2 = JSON.parse(m.text);
+      } catch (e) {
+        return esc2("[聊天记录]");
+      }
+      ;
+      return '<button class="forward-card" data-forward-view="'.concat(m.id, '"><b>').concat(esc2(card2.title), "</b>").concat((card2.preview || []).slice(0, 3).map((line) => "<p>".concat(esc2(line), "</p>")).join(""), "<small>聊天记录 · ").concat(Number(card2.count) || 0, " 条</small></button>");
+    }
+    function previewRecord(record) {
+      return "<b>".concat(esc2(record.title), "</b>").concat(record.items.slice(0, 3).map((item) => "<p>".concat(esc2(item.name + "：" + preview2(item)), "</p>")).join(""), "<small>聊天记录 · ").concat(record.items.length, " 条</small>");
+    }
+    function showDocument() {
+      const record = viewer.stack[viewer.stack.length - 1];
+      modal2(record.title, '<div class="forward-record">'.concat(record.items.map((item, index) => {
+        let content = esc2(item.text);
+        if (item.kind === "image") content = '<img loading="lazy" src="'.concat(fileURL2(item.attachmentId), '" alt="').concat(esc2(item.fileName || "图片"), '" data-forward-image="').concat(item.attachmentId, '">');
+        else if (item.kind === "file") content = '<button class="file-card" data-download="'.concat(item.attachmentId, '" data-filename="').concat(esc2(item.fileName), '">').concat(icon2("file"), "<span><b>").concat(esc2(item.fileName), "</b><small>").concat(bytes2(item.fileSize), " · 点击下载</small></span></button>");
+        else if (item.record) content = '<button class="forward-card" data-forward-nested="'.concat(index, '">').concat(previewRecord(item.record), "</button>");
+        else if (item.kind === "meeting") content = esc2("[会议]");
+        return '<article class="forward-record-item">'.concat(av2(item), "<div><header><b>").concat(esc2(item.name), "</b><time>").concat(fullTime2(item.created), '</time></header><div class="forward-record-content">').concat(content, "</div>").concat(item.quote ? '<p class="forward-record-quote">'.concat(esc2(item.quote.name + "：" + item.quote.text), "</p>") : "", "</div></article>");
+      }).join(""), "</div>"), viewer.stack.length > 1 ? '<button class="secondary" data-fw="record-back">返回上一层</button>' : "", true);
+      $2(".modal").classList.add("forward-record-dialog");
+    }
+    async function view(id) {
+      try {
+        const document2 = await api2("/api/messages/".concat(id, "/forward"));
+        viewer = { id, stack: [document2] };
+        showDocument();
+      } catch (e) {
+        toast2(e.message);
+      }
+    }
+    document.addEventListener("click", (e) => {
+      var _a;
+      if (!selection) return;
+      const message = e.target.closest("[data-message]");
+      if (message && ((_a = $2("#messages")) == null ? void 0 : _a.contains(message))) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        toggle(message.dataset.message);
+      }
+    }, true);
+    document.addEventListener("contextmenu", (e) => {
+      if (selection && e.target.closest("[data-message]")) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && selection && !$2(".modal")) reset();
+    });
+    document.addEventListener("click", (e) => {
+      var _a, _b;
+      const button = e.target.closest("[data-fw],[data-forward-view],[data-forward-nested],[data-forward-image]");
+      if (!button) return;
+      (_a = $2(".context-menu")) == null ? void 0 : _a.remove();
+      if (button.dataset.forwardView) {
+        view(button.dataset.forwardView);
+        return;
+      }
+      if (button.dataset.forwardNested !== void 0) {
+        const record = (_b = viewer == null ? void 0 : viewer.stack[viewer.stack.length - 1].items[Number(button.dataset.forwardNested)]) == null ? void 0 : _b.record;
+        if (record) {
+          viewer.stack.push(record);
+          showDocument();
+        }
+        ;
+        return;
+      }
+      if (button.dataset.forwardImage) {
+        modal2("图片", '<img class="forward-record-image" src="'.concat(fileURL2(button.dataset.forwardImage), '" alt="图片预览">'), '<button class="secondary" data-fw="image-back">返回聊天记录</button>', true);
+        return;
+      }
+      switch (button.dataset.fw) {
+        case "single":
+          open([button.dataset.mid]);
+          break;
+        case "select":
+          start(button.dataset.mid);
+          break;
+        case "cancel-select":
+          reset();
+          break;
+        case "selected-forward":
+          if (selection) open([...selection.ids]);
+          break;
+        case "selected-delete":
+          deleteSelected();
+          break;
+        case "record-back":
+          viewer == null ? void 0 : viewer.stack.pop();
+          showDocument();
+          break;
+        case "image-back":
+          showDocument();
+          break;
+      }
+    });
+    return { checkbox, selected, sync, reset, removed, invalidate, open, card };
+  }
+
   // internal/ui/src/history.js
   function createHistory({ S: S2, api: api2, modal: modal2, toast: toast2, esc: esc2, preview: preview2, fullTime: fullTime2, jump }) {
     let current = null;
@@ -63,7 +343,7 @@
     }
     async function open() {
       const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
-      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="file">文件</option><option value="meeting">会议</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
+      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
       let timer;
       $2("#history-search").oninput = () => {
         clearTimeout(timer);
@@ -969,6 +1249,13 @@
   }
   function preview(m) {
     if (!m) return "开始聊天";
+    if (m.kind === "forward" && !m.recalled) {
+      try {
+        return "[聊天记录] " + JSON.parse(m.text).title;
+      } catch (e) {
+        return "[聊天记录]";
+      }
+    }
     if (m.kind === "meeting" && !m.recalled) {
       try {
         return "[会议] " + JSON.parse(m.text).title;
@@ -1082,10 +1369,11 @@
   }
   function messageHTML(m) {
     var _a;
-    if (m.recalled) return '<div class="recalled" data-message="'.concat(m.id, '">').concat(m.sender === S.user.id ? "你" : esc(m.name), "撤回了一条消息</div>");
+    if (m.recalled) return '<div class="recalled" data-message="'.concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(m.sender === S.user.id ? "你" : esc(m.name), "撤回了一条消息</div>");
     const mine = m.sender === S.user.id;
     const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
     let content = esc(m.text);
+    if (m.kind === "forward") content = Forwarding.card(m);
     if (m.kind === "meeting") {
       try {
         const meeting = JSON.parse(m.text);
@@ -1095,7 +1383,7 @@
     }
     if (m.kind === "image") content = '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
     if (m.kind === "file") content = '<button class="file-card" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">').concat(icon("file"), "<span><b>").concat(esc(m.fileName), "</b><small>").concat(bytes(m.fileSize), " · 点击下载</small></span></button>");
-    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu">').concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
+    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -1112,6 +1400,7 @@
     }).join("");
     if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
     if (!S.messages.length) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
+    Forwarding.sync();
     if (!keep || near) area.scrollTop = area.scrollHeight;
     else area.scrollTop = old;
     $$("img", area).forEach((img) => img.onload = () => {
@@ -1120,6 +1409,7 @@
   }
   async function selectConversation(id) {
     var _a;
+    Forwarding.reset(false);
     S.active = id;
     S.historyMode = false;
     S.tab = "messages";
@@ -1330,6 +1620,7 @@
   }
   async function logout(notify = true) {
     if (S.signingOut) return;
+    Forwarding.reset(false);
     S.signingOut = true;
     try {
       Meetings.close();
@@ -1445,7 +1736,7 @@
       const items = await api("/api/favorites"), list = $("#favorites-list");
       if (!list) return;
       list.className = "";
-      list.innerHTML = items.map((m) => '<div class="utility-row">'.concat(av(m), '<div class="body"><b>').concat(esc(m.name), "</b><p>").concat(esc(preview(m)), "</p><p>").concat(fullTime(m.created), "</p>").concat(m.attachmentId ? '<button class="secondary" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">下载附件</button>') : "", "</div>").concat(btn("trash", "取消收藏", "unfavorite", 'data-mid="'.concat(m.id, '"')), "</div>")).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
+      list.innerHTML = items.map((m) => '<div class="utility-row">'.concat(av(m), '<div class="body"><b>').concat(esc(m.name), "</b><p>").concat(esc(preview(m)), "</p><p>").concat(fullTime(m.created), "</p>").concat(m.kind === "forward" ? '<button class="secondary" data-forward-view="'.concat(m.id, '">查看聊天记录</button>') : "").concat(m.attachmentId ? '<button class="secondary" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">下载附件</button>') : "", "</div>").concat(btn("trash", "取消收藏", "unfavorite", 'data-mid="'.concat(m.id, '"')), "</div>")).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
     } catch (e) {
       toast(e.message);
     }
@@ -1494,7 +1785,7 @@
     n.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
   }
   function messageMenu(m, x, y) {
-    contextMenu(x, y, (m.recalled ? "" : '<button data-action="quote" data-mid="'.concat(m.id, '">').concat(icon("reply"), "引用</button>").concat(m.kind === "text" ? '<button data-action="copy-message" data-mid="'.concat(m.id, '">').concat(icon("copy"), "复制文字</button>") : "", '<button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("history"), "撤回</button>") : "")) + '<button class="destructive" data-action="delete-message" data-mid="'.concat(m.id, '">').concat(icon("trash"), "删除</button>"));
+    contextMenu(x, y, (m.recalled ? "" : '<button data-action="quote" data-mid="'.concat(m.id, '">').concat(icon("reply"), '引用</button><button data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "转发</button>").concat(m.kind === "text" ? '<button data-action="copy-message" data-mid="'.concat(m.id, '">').concat(icon("copy"), "复制文字</button>") : "", '<button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("history"), "撤回</button>") : "")) + '<button data-fw="select" data-mid="'.concat(m.id, '">').concat(icon("check"), '多选</button><button class="destructive" data-action="delete-message" data-mid="').concat(m.id, '">').concat(icon("trash"), "删除</button>"));
   }
   function emojis() {
     const old = $(".popup");
@@ -1527,6 +1818,7 @@
   }
   function applyRecall(message) {
     var _a, _b;
+    Forwarding.invalidate(message.id);
     const i = S.messages.findIndex((m) => m.id === message.id);
     if (i >= 0) S.messages[i] = message;
     for (const m of S.messages) if (((_a = m.reply) == null ? void 0 : _a.id) === message.id) m.reply = __spreadProps(__spreadValues({}, m.reply), { text: "", fileName: "", recalled: true });
@@ -1540,6 +1832,7 @@
   }
   function applyDeletion(message) {
     var _a;
+    Forwarding.removed(message.id);
     if (S.active === message.conversationId) {
       S.messages = S.messages.filter((m) => m.id !== message.id);
       if (((_a = S.reply) == null ? void 0 : _a.id) === message.id) {
@@ -2165,6 +2458,7 @@
     }
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
+  var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
   var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });

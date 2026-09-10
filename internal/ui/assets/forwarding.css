@@ -1,0 +1,55 @@
+.selection-hidden{display:none!important}
+.message-area,.message-area button,.message-area img{-webkit-tap-highlight-color:transparent}
+.selecting-messages{padding-left:55px}
+.selecting-messages .message,.selecting-messages .recalled{position:relative;cursor:pointer}
+.selecting-messages .message-menu{display:none!important}
+.message-check{position:absolute;left:-35px;top:8px;width:22px;height:22px;border:1px solid #bac5cf;border-radius:50%;background:var(--white);display:grid;place-items:center;padding:3px}
+.message-check[aria-checked=true]{background:var(--blue);border-color:var(--blue);color:white}
+.message-check svg{width:16px;height:16px;stroke-width:2.4}
+.recalled .message-check{top:0}
+.message-selection-toolbar{flex-shrink:0;padding:15px 24px 20px;border-top:1px solid var(--line);background:var(--white)}
+.message-selection-toolbar>div{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.message-selection-toolbar b{font-weight:400}.message-selection-toolbar>div button{color:var(--blue)}
+.message-selection-toolbar nav{display:flex;justify-content:center;gap:80px;margin-top:16px}
+.message-selection-toolbar nav button{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px}
+.message-selection-toolbar nav svg{height:25px;width:25px;color:var(--blue)}
+.message-selection-toolbar nav [data-fw=selected-delete] svg{color:#d86c73}
+.forward-dialog{width:720px!important}.forward-dialog .modal-body{padding:0 20px}
+.forward-chooser{display:grid;grid-template-columns:1fr 1fr;min-height:390px}
+.forward-people{padding:20px 18px 10px 0;border-right:1px solid var(--line);min-width:0}
+.forward-tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-top:-3px}
+.forward-tabs button{font-size:13px;padding:0 2px 10px;color:var(--muted)}
+.forward-tabs button.active{color:var(--blue);border-bottom:2px solid var(--blue)}
+#forward-recipients{max-height:294px;overflow:auto;padding-top:8px}
+.modal .forward-recipient{display:flex;align-items:center;gap:10px;padding:10px 6px;border-radius:6px;color:var(--ink);margin:0;cursor:pointer}
+.forward-recipient:hover{background:var(--hover)}
+.forward-recipient>.avatar{width:34px;height:34px;border-radius:9px;font-size:16px}
+.forward-recipient>span:not(.avatar){min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.forward-recipient small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+.forward-recipient input{accent-color:var(--blue);width:16px;height:16px;flex-shrink:0}
+.forward-confirm{padding:24px 0 10px 20px;min-width:0}.forward-confirm>b{font-size:13px;font-weight:400}
+#forward-selected{display:flex;flex-wrap:wrap;gap:5px;margin:14px 0;max-height:92px;overflow:auto;min-height:28px}
+.forward-chip{padding:5px 8px;border-radius:4px;background:#eaf5ff;color:#3583ba;font-size:11px;display:flex;gap:9px}
+.forward-mode{display:flex;gap:12px}.modal .forward-mode label{display:flex;align-items:center;gap:3px;font-size:12px;color:var(--ink)}
+.modal .forward-mode input{width:14px;margin:0;padding:0;height:14px;accent-color:var(--blue)}
+.forward-send-preview{background:var(--panel);padding:13px;border:1px solid var(--line);border-radius:7px;margin:10px 0 16px;overflow:hidden}
+.forward-send-preview b{font-size:13px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.forward-send-preview p{font-size:11px;line-height:1.8;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.forward-send-preview small{display:block;font-size:10px;color:var(--muted);margin-top:8px}
+.modal #forward-note{font-size:12px;min-height:65px;margin-bottom:0;resize:none}
+.bubble.forward-bubble{padding:0;background:var(--white);border:1px solid var(--line)}
+.forward-card{display:block;text-align:left;width:260px;max-width:100%;padding:14px 16px;border-radius:7px;background:var(--white);color:var(--ink);overflow:hidden}
+.forward-card>b{display:block;font-size:14px;font-weight:500;white-space:normal;line-height:1.5;margin-bottom:9px}
+.forward-card>p{font-size:12px;line-height:1.8;color:var(--muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.forward-card>small{display:block;border-top:1px solid var(--line);padding-top:9px;margin-top:10px;font-size:11px;color:var(--muted)}
+.forward-record-item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}
+.forward-record-item>.avatar{height:34px;width:34px;font-size:15px;flex-shrink:0}
+.forward-record-item>div{flex:1;min-width:0}
+.forward-record-item header{display:flex;gap:14px;align-items:center;margin-bottom:9px}
+.forward-record-item header b{font-size:12px;font-weight:500}.forward-record-item time{font-size:10px;color:var(--muted);margin-left:auto}
+.forward-record-content{font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.forward-record-content>img{max-width:100%;max-height:240px;object-fit:contain;border-radius:6px;cursor:pointer}
+.forward-record-content .forward-card{border:1px solid var(--line);white-space:normal}
+.forward-record-quote{margin-top:10px;border-left:2px solid #afd9f8;background:var(--panel);padding:6px 10px;font-size:11px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.forward-record-image{display:block;width:100%;max-height:60vh;object-fit:contain}
+@media(max-width:700px){.selecting-messages{padding-left:48px}.message-check{left:-32px}.message-selection-toolbar{padding:12px 18px 18px}.message-selection-toolbar nav{margin-top:13px;gap:75px}.forward-chooser{display:flex;flex-direction:column;min-height:0}.forward-people{border-right:0;padding:15px 0 0}.forward-tabs{justify-content:space-around;gap:0}#forward-recipients{max-height:26vh}.forward-confirm{padding:15px 0 8px;border-top:1px solid var(--line)}#forward-selected{margin:8px 0;max-height:65px}.forward-send-preview{padding:8px 10px;margin:8px 0}.forward-send-preview>p{display:none}.forward-send-preview small{margin-top:3px}.modal #forward-note{min-height:40px;height:40px;margin:0}.forward-dialog .modal-footer{padding-top:6px}.forward-card{width:225px;padding:12px}.forward-record-item{gap:9px}.forward-record-item header{display:block}.forward-record-item header time{display:block;margin-top:4px}.forward-record-item .file-card{width:100%}.forward-record-dialog .modal-body{padding:8px 16px}.forward-record-content{font-size:14px}}

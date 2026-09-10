@@ -121,6 +121,7 @@ func (s *Server) routes() {
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
 		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
 		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
+		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
 		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {

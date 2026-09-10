@@ -275,7 +275,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "%"+escapeLike(q)+"%", "%"+escapeLike(q)+"%")
 	}
 	if kind := r.URL.Query().Get("kind"); kind != "" {
-		if kind != "text" && kind != "image" && kind != "file" && kind != "meeting" {
+		if kind != "text" && kind != "image" && kind != "file" && kind != "meeting" && kind != "forward" {
 			fail(w, 400, "消息类型错误")
 			return
 		}

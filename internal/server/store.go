@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TE
 CREATE INDEX IF NOT EXISTS message_history ON messages(conversation_id,seq);
 CREATE TABLE IF NOT EXISTS message_deletions(user_id TEXT NOT NULL REFERENCES users(id), message_id TEXT NOT NULL REFERENCES messages(id), created INTEGER NOT NULL, PRIMARY KEY(user_id,message_id));
 CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), conversation_id TEXT NOT NULL REFERENCES conversations(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS attachment_blobs(attachment_id TEXT PRIMARY KEY REFERENCES attachments(id), blob_id TEXT NOT NULL REFERENCES attachments(id));
+CREATE TABLE IF NOT EXISTS forward_records(message_id TEXT PRIMARY KEY REFERENCES messages(id), data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forward_batches(user_id TEXT NOT NULL REFERENCES users(id), client_id TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(user_id,client_id));
 CREATE TABLE IF NOT EXISTS favorites(user_id TEXT NOT NULL REFERENCES users(id), message_id TEXT NOT NULL REFERENCES messages(id), created INTEGER NOT NULL, PRIMARY KEY(user_id,message_id));
 CREATE TABLE IF NOT EXISTS remotes(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), requester TEXT NOT NULL REFERENCES users(id), recipient TEXT NOT NULL REFERENCES users(id), host TEXT NOT NULL REFERENCES users(id), mode TEXT NOT NULL, state TEXT NOT NULL, device_id TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, updated INTEGER NOT NULL);
 `
