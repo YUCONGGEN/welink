@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
@@ -59,6 +60,10 @@ func openStore(dir string) (*sql.DB, error) {
 		return nil, err
 	}
 	if _, err = db.Exec(contactSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err = db.Exec(mentionSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -144,26 +149,28 @@ type User struct {
 	Note           string `json:"note,omitempty"`
 }
 type Message struct {
-	Seq            int64             `json:"seq"`
-	ID             string            `json:"id"`
-	ConversationID string            `json:"conversationId"`
-	Sender         string            `json:"sender"`
-	Kind           string            `json:"kind"`
-	Text           string            `json:"text"`
-	AttachmentID   string            `json:"attachmentId"`
-	ReplyID        string            `json:"replyId"`
-	ClientID       string            `json:"clientId"`
-	Recalled       bool              `json:"recalled"`
-	Created        int64             `json:"created"`
-	Name           string            `json:"name"`
-	Avatar         string            `json:"avatar"`
-	FileName       string            `json:"fileName,omitempty"`
-	FileSize       int64             `json:"fileSize,omitempty"`
-	MIME           string            `json:"mime,omitempty"`
-	DurationMS     int64             `json:"durationMs,omitempty"`
-	Width          int               `json:"width,omitempty"`
-	Height         int               `json:"height,omitempty"`
-	Reply          *MessageReference `json:"reply,omitempty"`
+	MentionRecipients []string          `json:"mentionRecipients,omitempty"`
+	Mentions          []Mention         `json:"mentions,omitempty"`
+	Seq               int64             `json:"seq"`
+	ID                string            `json:"id"`
+	ConversationID    string            `json:"conversationId"`
+	Sender            string            `json:"sender"`
+	Kind              string            `json:"kind"`
+	Text              string            `json:"text"`
+	AttachmentID      string            `json:"attachmentId"`
+	ReplyID           string            `json:"replyId"`
+	ClientID          string            `json:"clientId"`
+	Recalled          bool              `json:"recalled"`
+	Created           int64             `json:"created"`
+	Name              string            `json:"name"`
+	Avatar            string            `json:"avatar"`
+	FileName          string            `json:"fileName,omitempty"`
+	FileSize          int64             `json:"fileSize,omitempty"`
+	MIME              string            `json:"mime,omitempty"`
+	DurationMS        int64             `json:"durationMs,omitempty"`
+	Width             int               `json:"width,omitempty"`
+	Height            int               `json:"height,omitempty"`
+	Reply             *MessageReference `json:"reply,omitempty"`
 }
 
 type MessageReference struct {
@@ -175,7 +182,7 @@ type MessageReference struct {
 	Recalled bool   `json:"recalled"`
 }
 
-const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,COALESCE(NULLIF(gn.nickname,''),u.name),u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(NULLIF(gr.nickname,''),ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0),COALESCE(am.duration_ms,0),COALESCE(am.width,0),COALESCE(am.height,0) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id LEFT JOIN attachment_media am ON am.attachment_id=m.attachment_id LEFT JOIN group_members gn ON gn.conversation_id=m.conversation_id AND gn.user_id=m.sender LEFT JOIN group_members gr ON gr.conversation_id=m.conversation_id AND gr.user_id=rm.sender `
+const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,COALESCE(NULLIF(gn.nickname,''),u.name),u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,''),COALESCE(rm.id,''),COALESCE(NULLIF(gr.nickname,''),ru.name,''),COALESCE(rm.kind,''),COALESCE(rm.text,''),COALESCE(ra.name,''),COALESCE(rm.recalled,0),COALESCE(am.duration_ms,0),COALESCE(am.width,0),COALESCE(am.height,0),COALESCE((SELECT data FROM message_mentions WHERE message_id=m.id),'[]'),(SELECT json_group_array(user_id) FROM message_mention_recipients WHERE message_id=m.id) FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id LEFT JOIN messages rm ON rm.id=m.reply_id AND rm.conversation_id=m.conversation_id LEFT JOIN users ru ON ru.id=rm.sender LEFT JOIN attachments ra ON ra.id=rm.attachment_id LEFT JOIN attachment_media am ON am.attachment_id=m.attachment_id LEFT JOIN group_members gn ON gn.conversation_id=m.conversation_id AND gn.user_id=m.sender LEFT JOIN group_members gr ON gr.conversation_id=m.conversation_id AND gr.user_id=rm.sender `
 
 const messageVisible = `NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=?) `
 
@@ -183,7 +190,14 @@ type scanner interface{ Scan(...any) error }
 
 func scanMessage(s scanner) (m Message, err error) {
 	var reply MessageReference
-	err = s.Scan(&m.Seq, &m.ID, &m.ConversationID, &m.Sender, &m.Kind, &m.Text, &m.AttachmentID, &m.ReplyID, &m.ClientID, &m.Recalled, &m.Created, &m.Name, &m.Avatar, &m.FileName, &m.FileSize, &m.MIME, &reply.ID, &reply.Name, &reply.Kind, &reply.Text, &reply.FileName, &reply.Recalled, &m.DurationMS, &m.Width, &m.Height)
+	var mentions, recipients string
+	err = s.Scan(&m.Seq, &m.ID, &m.ConversationID, &m.Sender, &m.Kind, &m.Text, &m.AttachmentID, &m.ReplyID, &m.ClientID, &m.Recalled, &m.Created, &m.Name, &m.Avatar, &m.FileName, &m.FileSize, &m.MIME, &reply.ID, &reply.Name, &reply.Kind, &reply.Text, &reply.FileName, &reply.Recalled, &m.DurationMS, &m.Width, &m.Height, &mentions, &recipients)
+	if err == nil && !m.Recalled {
+		err = json.Unmarshal([]byte(mentions), &m.Mentions)
+	}
+	if err == nil && !m.Recalled {
+		err = json.Unmarshal([]byte(recipients), &m.MentionRecipients)
+	}
 	if reply.ID != "" && !m.Recalled {
 		if reply.Recalled {
 			reply.Text = ""

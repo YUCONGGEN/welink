@@ -256,6 +256,11 @@ func (s *Server) audience(cid string) []string {
 }
 func (s *Server) pushConversation(cid, kind string, data any) { s.push(s.audience(cid), kind, data) }
 func (s *Server) dbError(w http.ResponseWriter, err error) {
+	var permission *groupError
+	if errors.As(err, &permission) {
+		fail(w, permission.status, permission.text)
+		return
+	}
 	if strings.Contains(err.Error(), "contact_send_forbidden") {
 		fail(w, 403, "你们暂时无法私聊，请先确认好友关系")
 		return

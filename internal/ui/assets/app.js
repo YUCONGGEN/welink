@@ -19,6 +19,236 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/mentions.js
+  function createMentions({ S: S2, api: api2, esc: esc2, av: av2, toast: toast2, jump }) {
+    const $2 = (s) => document.querySelector(s), drafts = /* @__PURE__ */ new Map();
+    let popup = null, revision = 0, pending = null, cache = null;
+    const group = () => {
+      var _a;
+      return ((_a = S2.conversations.find((c) => c.id === S2.active)) == null ? void 0 : _a.kind) === "group";
+    };
+    const input = () => $2("#composer");
+    function state() {
+      var _a;
+      const cid = S2.active, text2 = ((_a = input()) == null ? void 0 : _a.value) || "";
+      if (!drafts.has(cid)) drafts.set(cid, { text: text2, spans: [] });
+      return drafts.get(cid);
+    }
+    function reconcile() {
+      var _a;
+      const d = state(), text2 = ((_a = input()) == null ? void 0 : _a.value) || "";
+      if (text2 === d.text) return d;
+      let left = 0;
+      while (left < text2.length && left < d.text.length && text2[left] === d.text[left]) left++;
+      let oldEnd = d.text.length, newEnd = text2.length;
+      while (oldEnd > left && newEnd > left && d.text[oldEnd - 1] === text2[newEnd - 1]) {
+        oldEnd--;
+        newEnd--;
+      }
+      const delta = newEnd - oldEnd;
+      d.spans = d.spans.flatMap((m) => m.end <= left ? [m] : m.start >= oldEnd ? [__spreadProps(__spreadValues({}, m), { start: m.start + delta, end: m.end + delta })] : []);
+      d.text = text2;
+      return d;
+    }
+    function hide() {
+      var _a, _b, _c;
+      revision++;
+      popup = null;
+      (_a = $2("#mention-picker")) == null ? void 0 : _a.remove();
+      (_b = input()) == null ? void 0 : _b.setAttribute("aria-expanded", "false");
+      (_c = input()) == null ? void 0 : _c.removeAttribute("aria-activedescendant");
+    }
+    async function members() {
+      if ((cache == null ? void 0 : cache.cid) === S2.active && Date.now() - cache.at < 1e4) return cache.value;
+      const cid = S2.active, value = await api2("/api/conversations/" + cid);
+      if (cid === S2.active) cache = { cid, at: Date.now(), value };
+      return value;
+    }
+    function render() {
+      var _a, _b, _c, _d, _e;
+      const p = popup;
+      if (!p) return;
+      (_a = $2("#mention-picker")) == null ? void 0 : _a.remove();
+      const node = document.createElement("div");
+      node.id = "mention-picker";
+      node.className = "mention-picker";
+      node.setAttribute("role", "listbox");
+      node.setAttribute("aria-label", "选择要提醒的成员");
+      node.innerHTML = '<div class="mention-picker-title">选择要提醒的成员</div>' + p.items.map((u, i) => '<button type="button" id="mention-option-'.concat(i, '" role="option" aria-selected="').concat(i === p.index, '" data-mention-index="').concat(i, '" class="').concat(i === p.index ? "selected" : "", '">').concat(u.id === "all" ? '<span class="mention-all-avatar">@</span>' : av2(u), "<span><b>").concat(esc2(u.nickname || u.name), "</b><small>").concat(u.id === "all" ? "提醒群内所有成员" : esc2(u.number), "</small></span></button>")).join("") + (p.items.length ? "" : '<p class="hint">没有找到成员</p>');
+      node.onpointerdown = (e) => e.preventDefault();
+      node.onclick = (e) => {
+        const b = e.target.closest("[data-mention-index]");
+        if (b) choose(p.items[Number(b.dataset.mentionIndex)]);
+      };
+      (_b = $2(".composer")) == null ? void 0 : _b.append(node);
+      (_c = input()) == null ? void 0 : _c.setAttribute("aria-expanded", "true");
+      if (p.items.length) {
+        (_d = input()) == null ? void 0 : _d.setAttribute("aria-activedescendant", "mention-option-" + p.index);
+        (_e = node.querySelector(".selected")) == null ? void 0 : _e.scrollIntoView({ block: "nearest" });
+      }
+    }
+    async function show(start, end, query = "") {
+      var _a, _b, _c;
+      if (!group() || ((_a = input()) == null ? void 0 : _a.disabled)) return;
+      const request = ++revision, cid = S2.active;
+      try {
+        const c = await members();
+        if (request !== revision || cid !== S2.active || !input()) return;
+        const q = query.toLocaleLowerCase();
+        const all = ((_b = c.group) == null ? void 0 : _b.role) === "owner" || ((_c = c.group) == null ? void 0 : _c.role) === "admin";
+        let users = c.members.filter((u) => u.id !== S2.user.id);
+        if (all) users.unshift({ id: "all", name: "全体成员" });
+        users = users.filter((u) => [u.name, u.nickname, u.number].some((v) => (v || "").toLocaleLowerCase().includes(q)));
+        popup = { start, end, items: users, index: 0 };
+        render();
+      } catch (e) {
+        if (request === revision) {
+          hide();
+          toast2(e.message);
+        }
+      }
+    }
+    function changed() {
+      var _a;
+      reconcile();
+      if (!group() || ((_a = input()) == null ? void 0 : _a.disabled)) {
+        hide();
+        return;
+      }
+      const el = input(), caret = el.selectionStart;
+      if (caret !== el.selectionEnd) {
+        hide();
+        return;
+      }
+      const d = state();
+      if (d.spans.some((m) => m.start < caret && m.end >= caret)) {
+        hide();
+        return;
+      }
+      const match = el.value.slice(0, caret).match(/@([^@\s]{0,32})$/u);
+      if (match) show(caret - match[0].length, caret, match[1]);
+      else hide();
+    }
+    function choose(user) {
+      var _a;
+      const el = input(), p = popup;
+      if (!el || !p || !user) return;
+      const label = "@" + (user.nickname || user.name), start = p.start, end = p.end;
+      el.value = el.value.slice(0, start) + label + " " + el.value.slice(end);
+      reconcile();
+      state().spans.push({ userId: user.id, start, end: start + label.length });
+      state().spans.sort((a, b) => a.start - b.start);
+      hide();
+      el.focus();
+      el.setSelectionRange(start + label.length + 1, start + label.length + 1);
+      (_a = el.oninput) == null ? void 0 : _a.call(el);
+      hide();
+    }
+    function key(e) {
+      if (!popup || e.isComposing) return false;
+      if (["ArrowDown", "ArrowUp"].includes(e.key)) {
+        e.preventDefault();
+        if (popup.items.length) popup.index = (popup.index + (e.key === "ArrowDown" ? 1 : -1) + popup.items.length) % popup.items.length;
+        render();
+        return true;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        choose(popup.items[popup.index]);
+        return true;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        hide();
+        return true;
+      }
+      return false;
+    }
+    function open() {
+      const el = input();
+      if (!el || el.disabled) return;
+      show(el.selectionStart, el.selectionEnd);
+    }
+    async function mentionUser(id) {
+      try {
+        const c = await members(), u = c.members.find((u2) => u2.id === id);
+        if (!u) throw Error("该成员已离开群聊");
+        const el = input();
+        if (!el || el.disabled) return;
+        popup = { start: el.selectionStart, end: el.selectionEnd, items: [u], index: 0 };
+        choose(u);
+      } catch (e) {
+        toast2(e.message);
+      }
+    }
+    function text(m) {
+      var _a;
+      if (!((_a = m.mentions) == null ? void 0 : _a.length)) return esc2(m.text);
+      let at = 0, out = "";
+      for (const span of m.mentions) {
+        if (span.start < at || span.end > m.text.length) continue;
+        out += esc2(m.text.slice(at, span.start)) + '<span class="message-mention">'.concat(esc2(m.text.slice(span.start, span.end)), "</span>");
+        at = span.end;
+      }
+      return out + esc2(m.text.slice(at));
+    }
+    function applies(m) {
+      var _a, _b;
+      return m.sender !== ((_a = S2.user) == null ? void 0 : _a.id) && !m.recalled && (m.mentionRecipients || []).includes((_b = S2.user) == null ? void 0 : _b.id);
+    }
+    function mount() {
+      hide();
+      reconcile();
+      const el = input();
+      el == null ? void 0 : el.setAttribute("aria-controls", "mention-picker");
+      el == null ? void 0 : el.addEventListener("compositionend", () => changed());
+      const target = $2("#mention-jump");
+      if (target && (pending == null ? void 0 : pending.cid) === S2.active) {
+        target.innerHTML = '<button data-mention="jump">有人 @我 · 查看消息 ↑</button>';
+      }
+    }
+    function select(cid) {
+      hide();
+      cache = null;
+      const c = S2.conversations.find((x) => x.id === cid);
+      pending = (c == null ? void 0 : c.firstMentionId) ? { cid, id: c.firstMentionId } : null;
+    }
+    function clear(cid) {
+      drafts.delete(cid);
+      hide();
+    }
+    function reset() {
+      drafts.clear();
+      pending = null;
+      cache = null;
+      hide();
+    }
+    function invalidated(id) {
+      var _a;
+      if ((pending == null ? void 0 : pending.id) === id) {
+        pending = null;
+        (_a = $2("#mention-jump")) == null ? void 0 : _a.replaceChildren();
+      }
+    }
+    document.addEventListener("click", (e) => {
+      var _a;
+      const b = e.target.closest("[data-mention],[data-mention-user]");
+      if (b) {
+        if (b.dataset.mention === "open") open();
+        if (b.dataset.mentionUser) mentionUser(b.dataset.mentionUser);
+        if (b.dataset.mention === "jump" && pending) {
+          const p = pending;
+          pending = null;
+          (_a = $2("#mention-jump")) == null ? void 0 : _a.replaceChildren();
+          jump(p.cid, p.id).catch((e2) => toast2(e2.message));
+        }
+      } else if (!e.target.closest("#mention-picker,#composer")) hide();
+    });
+    return { changed, key, mount, select, clear, reset, invalidated, text, applies, failed: () => {
+      cache = null;
+    }, payload: () => reconcile().spans, tool: () => group() ? '<button type="button" class="icon-btn mention-tool" title="@成员" aria-label="@成员" data-mention="open">@</button>' : "", menu: (m) => group() && m.sender !== S2.user.id ? '<button data-mention-user="'.concat(m.sender, '">@TA</button>') : "" };
+  }
+
   // internal/ui/src/contacts.js
   function createContacts({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, refresh: refresh2, renderSidebar: renderSidebar2, renderMain: renderMain2, stopMedia, requestFriend: requestFriend2, contextMenu: contextMenu2 }) {
     const $2 = (s) => document.querySelector(s), title = (u) => u.remark || u.name;
@@ -1302,6 +1532,7 @@
       if (more) more.onclick = () => load(true);
     }
     async function load(older = false) {
+      var _a;
       const state = current;
       if (!state || !$2("#history-search")) return;
       const revision = ++state.revision;
@@ -1314,6 +1545,7 @@
           params.set(field, String(day.getTime()));
         }
       }
+      if ((_a = $2("#history-mentions")) == null ? void 0 : _a.checked) params.set("mentions", "me");
       if (older && state.items.length) params.set("before", String(state.items[state.items.length - 1].seq));
       if (!older) $2("#history-results").innerHTML = '<p class="hint">正在查找…</p>';
       else $2(".history-more").disabled = true;
@@ -1331,8 +1563,9 @@
       }
     }
     async function open() {
+      var _a;
       const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
-      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div><div id="history-results" class="history-results" aria-live="polite"></div>', "", true);
+      modal2("聊天记录", '<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div>'.concat(((_a = S2.conversations.find((c) => c.id === state.cid)) == null ? void 0 : _a.kind) === "group" ? '<label class="history-mention-filter"><input type="checkbox" id="history-mentions">只看 @我的消息</label>' : "", '<div id="history-results" class="history-results" aria-live="polite"></div>'), "", true);
       let timer;
       $2("#history-search").oninput = () => {
         clearTimeout(timer);
@@ -1346,6 +1579,7 @@
         clearTimeout(timer);
         load();
       };
+      if ($2("#history-mentions")) $2("#history-mentions").onchange = () => load();
       load();
       try {
         const detail = await api2("/api/conversations/" + state.cid);
@@ -2202,7 +2436,7 @@
     };
   }
   function nav() {
-    const unread = S.conversations.reduce((n, c) => n + (c.muted ? 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
+    const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
     return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["remote", "monitor", "远程协助", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t === "远程协助" ? "远程" : t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
   }
   function renderShell() {
@@ -2263,7 +2497,7 @@
     return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
   }
   function conversationRow(c) {
-    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
+    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);
@@ -2313,11 +2547,12 @@
       return;
     }
     ;
-    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(btn("phone", "语音通话", "meeting-audio-call")).concat(btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
+    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(btn("phone", "语音通话", "meeting-audio-call")).concat(btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
     renderMessages();
     const input = $("#composer");
     input.oninput = () => {
       var _a2;
+      Mentions.changed();
       S.drafts[S.active] = input.value;
       $("#send-message").disabled = !input.value.trim();
       if (Date.now() - typingAt > 2500 && ((_a2 = S.ws) == null ? void 0 : _a2.readyState) === 1) {
@@ -2326,6 +2561,7 @@
       }
     };
     input.onkeydown = (e) => {
+      if (Mentions.key(e)) return;
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         sendMessage();
@@ -2360,6 +2596,7 @@
     Media.mount();
     Groups.syncComposer();
     Contacts.syncComposer();
+    Mentions.mount();
   }
   function empty(title, sub, add = false) {
     return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">添加好友</button>' : "", "</div>");
@@ -2372,7 +2609,7 @@
     if (m.recalled) return '<div class="recalled" data-message="'.concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(m.sender === S.user.id ? "你" : esc(m.name), "撤回了一条消息</div>");
     const mine = m.sender === S.user.id;
     const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
-    let content = esc(m.text);
+    let content = Mentions.text(m);
     if (m.kind === "voice" || m.kind === "video") content = Media.bubble(m);
     if (m.kind === "forward") content = Forwarding.card(m);
     if (m.kind === "meeting") {
@@ -2411,6 +2648,7 @@
   }
   async function selectConversation(id) {
     var _a;
+    Mentions.select(id);
     Media.reset();
     Forwarding.reset(false);
     S.active = id;
@@ -2434,10 +2672,14 @@
   }
   async function markRead() {
     const last = S.messages[S.messages.length - 1];
-    if (!last || document.hidden || S.historyMode) return;
+    if (!last || document.hidden || S.historyMode || S.tab !== "messages" || !$("#messages")) return;
     await action("/api/conversations/".concat(S.active, "/read"), { seq: last.seq });
     const c = activeConversation();
-    if (c) c.unread = 0;
+    if (c) {
+      c.unread = 0;
+      c.mentionCount = 0;
+      c.firstMentionId = "";
+    }
     renderSidebar();
     updateRail();
   }
@@ -2452,8 +2694,9 @@
     const clientId = randomID();
     input.disabled = true;
     try {
-      const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: "text", text, replyId: (reply == null ? void 0 : reply.id) || "", clientId });
+      const m = await action("/api/conversations/".concat(cid, "/messages"), { kind: "text", text, mentions: Mentions.payload(), replyId: (reply == null ? void 0 : reply.id) || "", clientId });
       S.drafts[cid] = "";
+      Mentions.clear(cid);
       if (S.active === cid) {
         if (S.historyMode) {
           S.messages = await api("/api/conversations/".concat(cid, "/messages"));
@@ -2470,6 +2713,7 @@
       }
       queueRefresh();
     } catch (e) {
+      Mentions.failed();
       toast(e.message);
     } finally {
       input.disabled = false;
@@ -2582,7 +2826,7 @@
       }
     };
     ws.onmessage = (e) => {
-      var _a2, _b;
+      var _a2, _b, _c;
       let event;
       try {
         event = JSON.parse(e.data);
@@ -2596,9 +2840,10 @@
           renderMessages(true);
           markRead().catch(() => {
           });
-        } else if (S.active !== d.conversationId && d.sender !== S.user.id && !((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted)) {
-          if (document.hidden && Notification.permission === "granted") new Notification(((_b = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _b.remark) || d.name, { body: preview(d), icon: "/assets/icon.svg" });
-          document.title = "新消息 · WeLink";
+        }
+        if ((S.active !== d.conversationId || S.tab !== "messages" || document.hidden) && d.sender !== S.user.id && (!((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted) || Mentions.applies(d))) {
+          if (document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg" });
+          document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
         }
         queueRefresh();
       } else if (event.type === "recall") {
@@ -2650,6 +2895,8 @@
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
+    Mentions.reset();
+    S.drafts = {};
     try {
       Meetings.close();
       if (notify) try {
@@ -2818,7 +3065,7 @@
     n.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
   }
   function messageMenu(m, x, y) {
-    contextMenu(x, y, (m.recalled ? "" : '<button data-action="quote" data-mid="'.concat(m.id, '">').concat(icon("reply"), '引用</button><button data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "转发</button>").concat(m.kind === "text" ? '<button data-action="copy-message" data-mid="'.concat(m.id, '">').concat(icon("copy"), "复制文字</button>") : "", '<button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("history"), "撤回</button>") : "")) + '<button data-fw="select" data-mid="'.concat(m.id, '">').concat(icon("check"), '多选</button><button class="destructive" data-action="delete-message" data-mid="').concat(m.id, '">').concat(icon("trash"), "删除</button>"));
+    contextMenu(x, y, (m.recalled ? "" : "".concat(Mentions.menu(m), '<button data-action="quote" data-mid="').concat(m.id, '">').concat(icon("reply"), '引用</button><button data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "转发</button>").concat(m.kind === "text" ? '<button data-action="copy-message" data-mid="'.concat(m.id, '">').concat(icon("copy"), "复制文字</button>") : "", '<button data-action="favorite" data-mid="').concat(m.id, '">').concat(icon("star"), "收藏</button>").concat(m.sender === S.user.id && Date.now() - m.created < 12e4 ? '<button data-action="recall" data-mid="'.concat(m.id, '">').concat(icon("history"), "撤回</button>") : "")) + '<button data-fw="select" data-mid="'.concat(m.id, '">').concat(icon("check"), '多选</button><button class="destructive" data-action="delete-message" data-mid="').concat(m.id, '">').concat(icon("trash"), "删除</button>"));
   }
   function emojis() {
     const old = $(".popup");
@@ -2851,6 +3098,7 @@
   }
   function applyRecall(message) {
     var _a, _b;
+    Mentions.invalidated(message.id);
     Media.invalidate(message.id);
     Forwarding.invalidate(message.id);
     const i = S.messages.findIndex((m) => m.id === message.id);
@@ -2866,6 +3114,7 @@
   }
   function applyDeletion(message) {
     var _a;
+    Mentions.invalidated(message.id);
     Media.invalidate(message.id);
     Forwarding.removed(message.id);
     if (S.active === message.conversationId) {
@@ -3494,6 +3743,7 @@
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });

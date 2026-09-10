@@ -45,6 +45,7 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			c["avatar"] = u.Avatar
 		} else if g, e := readGroup(s.db, cid, uid(r)); e == nil {
 			c["group"] = g
+			c["mentionCount"], c["firstMentionId"] = s.unreadMentions(cid, uid(r))
 		}
 		last, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.conversation_id=? AND "+messageVisible+"ORDER BY m.seq DESC LIMIT 1", cid, uid(r)))
 		if e == nil {
@@ -323,6 +324,14 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		query += "AND m.sender=? "
 		args = append(args, sender)
 	}
+	if mentioned := r.URL.Query().Get("mentions"); mentioned != "" {
+		if mentioned != "me" {
+			fail(w, 400, "提醒筛选无效")
+			return
+		}
+		query += "AND m.recalled=0 AND " + mentionForUser
+		args = append(args, uid(r))
+	}
 	for _, field := range []string{"from", "to"} {
 		if value := r.URL.Query().Get(field); value != "" {
 			date, err := strconv.ParseInt(value, 10, 64)
@@ -380,7 +389,10 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 429, "发送太快，请稍后再试")
 		return
 	}
-	var p struct{ Kind, Text, AttachmentID, ReplyID, ClientID string }
+	var p struct {
+		Kind, Text, AttachmentID, ReplyID, ClientID string
+		Mentions                                    []Mention
+	}
 	if !decode(w, r, &p) {
 		return
 	}
@@ -421,18 +433,50 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	id := newID()
-	_, e := s.db.Exec("INSERT INTO messages(id,conversation_id,sender,kind,text,attachment_id,reply_id,client_id,created) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(sender,client_id) DO NOTHING", id, cid, uid(r), p.Kind, p.Text, p.AttachmentID, p.ReplyID, p.ClientID, now())
+	tx, e := s.db.Begin()
 	if e != nil {
 		s.dbError(w, e)
 		return
 	}
-	m, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.sender=? AND m.client_id=?", uid(r), p.ClientID))
+	defer tx.Rollback()
+	old, e := scanMessage(tx.QueryRow(messageQuery+"WHERE m.sender=? AND m.client_id=?", uid(r), p.ClientID))
+	if e == nil {
+		if old.ConversationID != cid {
+			fail(w, 409, "消息标识重复，请重试")
+			return
+		}
+		ok(w, old)
+		return
+	}
+	if e != sql.ErrNoRows {
+		s.dbError(w, e)
+		return
+	}
+	recipients, e := validateMentions(tx, cid, uid(r), p.Kind, p.Text, p.Mentions)
+	if e != nil {
+		s.dbError(w, e)
+		return
+	}
+	_, e = tx.Exec("INSERT INTO messages(id,conversation_id,sender,kind,text,attachment_id,reply_id,client_id,created) VALUES(?,?,?,?,?,?,?,?,?)", id, cid, uid(r), p.Kind, p.Text, p.AttachmentID, p.ReplyID, p.ClientID, now())
+	if e != nil {
+		s.dbError(w, e)
+		return
+	}
+	if e = saveMentions(tx, id, p.Mentions, recipients); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	m, e := scanMessage(tx.QueryRow(messageQuery+"WHERE m.sender=? AND m.client_id=?", uid(r), p.ClientID))
 	if e != nil {
 		s.dbError(w, e)
 		return
 	}
 	if m.ConversationID != cid {
 		fail(w, 409, "消息标识重复，请重试")
+		return
+	}
+	if e = tx.Commit(); e != nil {
+		s.dbError(w, e)
 		return
 	}
 	if m.ID == id {
@@ -483,6 +527,8 @@ func (s *Server) recall(w http.ResponseWriter, r *http.Request) {
 	m.Width = 0
 	m.Height = 0
 	m.Reply = nil
+	m.Mentions = nil
+	m.MentionRecipients = nil
 	s.pushConversation(m.ConversationID, "recall", m)
 	ok(w, m)
 }
