@@ -17,8 +17,9 @@ import (
 var user32 = syscall.NewLazyDLL("user32.dll")
 
 type windowsHost struct {
-	view webview.WebView
-	hwnd uintptr
+	view    webview.WebView
+	hwnd    uintptr
+	desktop desktopState
 }
 
 func newWindow(address, dir string) (windowHost, error) {
@@ -44,6 +45,10 @@ func newWindow(address, dir string) (windowHost, error) {
 	set.Call(h.hwnd, uintptr(index), style&^uintptr(0x00c00000))
 	user32.NewProc("SetWindowPos").Call(h.hwnd, 0, 0, 0, 0, 0, 0x0027)
 	v.SetSize(760, 540, webview.HintMin)
+	if err := h.installDesktop(dir); err != nil {
+		v.Destroy()
+		return nil, err
+	}
 	v.Bind("welinkDrag", func() {
 		user32.NewProc("ReleaseCapture").Call()
 		user32.NewProc("SendMessageW").Call(h.hwnd, 0x00A1, 2, 0)
@@ -62,8 +67,12 @@ func newWindow(address, dir string) (windowHost, error) {
 	}
 	return h, nil
 }
-func (h *windowsHost) Run()   { h.view.Run() }
-func (h *windowsHost) Close() { h.view.Destroy() }
+func (h *windowsHost) Run() { h.view.Run() }
+func (h *windowsHost) Close() {
+	h.removeDesktop()
+	user32.NewProc("DestroyWindow").Call(h.hwnd)
+	runtime.UnlockOSThread()
+}
 func (h *windowsHost) Action(action string) {
 	h.view.Dispatch(func() {
 		switch action {
@@ -77,7 +86,11 @@ func (h *windowsHost) Action(action string) {
 				user32.NewProc("ShowWindow").Call(h.hwnd, 3)
 			}
 		case "close":
-			h.view.Terminate()
+			h.closeWindow()
+		case "show":
+			h.showWindow()
+		case "quit":
+			h.exitDesktop()
 		}
 	})
 }

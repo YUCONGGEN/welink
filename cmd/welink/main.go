@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"welink/internal/client"
 )
 
@@ -25,15 +26,35 @@ func main() {
 		*dir = filepath.Join(root, "WeLink")
 	}
 	_ = os.MkdirAll(*dir, 0700)
+	var instance instanceGuard
+	if !*headless {
+		var existing bool
+		var err error
+		instance, existing, err = acquireInstance(*dir)
+		if err != nil {
+			showError(err.Error())
+			return
+		}
+		if existing {
+			return
+		}
+		if instance != nil {
+			defer instance.Close()
+		}
+	}
 	f, e := os.OpenFile(filepath.Join(*dir, "client.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if e == nil {
 		log.SetOutput(f)
 		defer f.Close()
 	}
 	var window windowHost
+	var windowMu sync.RWMutex
 	c, e := client.New(client.Options{Directory: *dir, Listen: *listen, Server: *server, Fingerprint: *pin, WindowAction: func(action string) {
-		if window != nil {
-			window.Action(action)
+		windowMu.RLock()
+		target := window
+		windowMu.RUnlock()
+		if target != nil {
+			target.Action(action)
 		}
 	}})
 	if e != nil {
@@ -50,18 +71,35 @@ func main() {
 		<-signals
 		return
 	}
-	window, e = newWindow(c.URL(), *dir)
+	created, e := newWindow(c.URL(), *dir)
 	if e != nil {
 		log.Print(e)
 		showError(e.Error())
 		return
 	}
-	window.Run()
-	window.Close()
+	windowMu.Lock()
+	window = created
+	windowMu.Unlock()
+	if instance != nil {
+		instance.Watch(func() { created.Action("show") })
+	}
+	created.Run()
+	if instance != nil {
+		instance.Close()
+	}
+	windowMu.Lock()
+	window = nil
+	windowMu.Unlock()
+	created.Close()
 }
 
 type windowHost interface {
 	Action(string)
 	Run()
+	Close()
+}
+
+type instanceGuard interface {
+	Watch(func())
 	Close()
 }

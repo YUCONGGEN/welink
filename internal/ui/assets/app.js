@@ -19,6 +19,64 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/desktop.js
+  function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2 }) {
+    const native = typeof window.welinkDesktopSettings === "function";
+    let lastCount = -1, nativeHidden = !!window.welinkNativeHidden;
+    const hidden = () => document.hidden || native && nativeHidden;
+    function unread() {
+      if (!native) return;
+      const count = S2.user ? S2.conversations.reduce((n, c) => n + Number((c.muted ? c.mentionCount : c.unread) || 0), 0) : 0;
+      if (count === lastCount) return;
+      lastCount = count;
+      window.welinkDesktopUnread(count).catch(() => {
+        lastCount = -1;
+      });
+    }
+    async function settings2() {
+      try {
+        const p = await window.welinkDesktopSettings();
+        modal2("Windows 桌面设置", '<label class="prefs-row" for="desktop-close-tray"><span>关闭窗口后留在系统托盘</span><input id="desktop-close-tray" type="checkbox" '.concat(p.closeToTray ? "checked" : "", '></label><p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><label class="prefs-row" for="desktop-message-alerts"><span>后台新消息提醒</span><input id="desktop-message-alerts" type="checkbox" ').concat(p.messageAlerts ? "checked" : "", '></label><p class="hint">提醒只显示未读数量，遵守会话免打扰和 Windows 通知设置。群 @提醒仍会提示。</p>').concat(p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>', '<p class="hint">完全退出可使用托盘右键菜单中的“退出 WeLink”。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
+        document.querySelector(".modal").classList.add("desktop-settings");
+        const button = document.querySelector("#desktop-save");
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await window.welinkDesktopSave({ closeToTray: document.querySelector("#desktop-close-tray").checked, messageAlerts: document.querySelector("#desktop-message-alerts").checked });
+            closeModal2();
+            toast2("桌面设置已保存");
+          } catch (e) {
+            toast2(String(e));
+            button.disabled = false;
+          }
+        };
+      } catch (e) {
+        toast2(String(e));
+      }
+    }
+    function quit() {
+      modal2("退出 WeLink", "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
+      document.querySelector("#desktop-exit").onclick = () => window.welinkDesktopExit();
+    }
+    window.addEventListener("welink-native-visibility", (e) => {
+      var _a;
+      nativeHidden = !!((_a = e.detail) == null ? void 0 : _a.hidden);
+      if (!hidden() && S2.user) {
+        document.title = "WeLink";
+        markRead2().catch(() => {
+        });
+      }
+    });
+    document.addEventListener("click", (e) => {
+      var _a;
+      if (!native) return;
+      const action2 = (_a = e.target.closest("[data-desktop]")) == null ? void 0 : _a.dataset.desktop;
+      if (action2 === "settings") settings2();
+      if (action2 === "quit") quit();
+    });
+    return { native, hidden, unread, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 WeLink</button>' : "" };
+  }
+
   // internal/ui/src/avatars.js
   function createAvatars({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, av: av2, refresh: refresh2, renderMessages: renderMessages2, renderMain: renderMain2, updateRail: updateRail2, profile: profile2, groupDetail }) {
     const $2 = (s) => document.querySelector(s);
@@ -2653,6 +2711,7 @@
   function renderAuth(register = false) {
     QR.stop();
     S.user = null;
+    Desktop.unread();
     $("#app").innerHTML = '<main class="auth-shell">'.concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", '</p><div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links"><button type="button" data-action="').concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", '</button><button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
     $("#auth-form").onsubmit = async (e) => {
       e.preventDefault();
@@ -2910,7 +2969,7 @@
   }
   async function markRead() {
     const last = S.messages[S.messages.length - 1];
-    if (!last || document.hidden || S.historyMode || S.tab !== "messages" || !$("#messages")) return;
+    if (!last || Desktop.hidden() || S.historyMode || S.tab !== "messages" || !$("#messages")) return;
     await action("/api/conversations/".concat(S.active, "/read"), { seq: last.seq });
     const c = activeConversation();
     if (c) {
@@ -2924,6 +2983,7 @@
   function updateRail() {
     const old = $(".rail");
     if (old) old.outerHTML = nav();
+    Desktop.unread();
   }
   async function sendMessage() {
     const input = $("#composer");
@@ -3079,8 +3139,8 @@
           markRead().catch(() => {
           });
         }
-        if ((S.active !== d.conversationId || S.tab !== "messages" || document.hidden) && d.sender !== S.user.id && (!((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted) || Mentions.applies(d))) {
-          if (document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg" });
+        if ((S.active !== d.conversationId || S.tab !== "messages" || Desktop.hidden()) && d.sender !== S.user.id && (!((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted) || Mentions.applies(d))) {
+          if (!Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg" });
           document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
         }
         queueRefresh();
@@ -3279,7 +3339,7 @@
     $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", '></label><label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label><div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -3810,7 +3870,7 @@
         }
         case "more-menu": {
           const r = b.getBoundingClientRect();
-          contextMenu(r.left + 40, r.top - 80, '<button data-action="settings">'.concat(icon("settings"), '设置</button><button data-action="logout">').concat(icon("logout"), "退出登录</button>"));
+          contextMenu(r.left + 40, r.top - 80, '<button data-action="settings">'.concat(icon("settings"), '设置</button><button data-action="logout">').concat(icon("logout"), "退出登录</button>").concat(Desktop.exitMenu()));
           break;
         }
         case "emoji":
@@ -3966,7 +4026,7 @@
   }, { passive: true });
   for (const ev of ["touchend", "touchmove", "touchcancel"]) document.addEventListener(ev, () => clearTimeout(touchTimer), { passive: true });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
+    if (!Desktop.hidden()) {
       document.title = "WeLink";
       if (S.active && S.user) markRead().catch(() => {
       });
@@ -3986,6 +4046,7 @@
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Desktop = createDesktop({ S, modal, closeModal, toast, markRead });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });

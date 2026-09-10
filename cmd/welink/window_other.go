@@ -11,3 +11,5 @@ func newWindow(address, dir string) (windowHost, error) {
 	return nil, errors.New("this desktop build targets Windows; use -headless for automated verification")
 }
 func showError(message string) { log.Print(message) }
+
+func acquireInstance(directory string) (instanceGuard, bool, error) { return nil, false, nil }

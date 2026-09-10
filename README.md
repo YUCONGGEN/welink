@@ -7,6 +7,7 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`
 - Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
+- Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 WeLink 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
 - 注册时填写昵称和密码，登录别名可留空。系统分配永久数字 WeLink 号码，用该号码登录、搜索和添加好友。
 - “编辑资料 → 更换头像”可选照片、拖动裁剪、缩放、旋转或恢复默认；照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
@@ -73,6 +74,7 @@ node scripts/groups-test.mjs
 node scripts/contacts-test.mjs
 node scripts/mentions-test.mjs
 node scripts/avatars-test.mjs
+node scripts/desktop-ui-test.mjs
 ```
 
 界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。
