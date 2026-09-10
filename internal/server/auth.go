@@ -139,19 +139,37 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	ok(w, u)
 }
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
-	var p struct{ Name, Avatar, Bio string }
+	var p struct {
+		Name, Bio string
+		Avatar    *string
+	}
 	if !decode(w, r, &p) {
 		return
 	}
 	p.Name = strings.TrimSpace(p.Name)
-	if p.Name == "" || !validText(p.Name, 32) || !validText(p.Bio, 150) || !regexp.MustCompile(`^(blue|pink|purple|orange|green|cyan)$`).MatchString(p.Avatar) {
+	if p.Name == "" || !validText(p.Name, 32) || !validText(p.Bio, 150) {
 		fail(w, 400, "个人资料格式错误")
 		return
 	}
-	if _, e := s.db.Exec("UPDATE users SET name=?,avatar=?,bio=? WHERE id=?", p.Name, p.Avatar, p.Bio, uid(r)); e != nil {
+	tx, e := s.db.Begin()
+	if e != nil {
 		s.dbError(w, e)
 		return
 	}
+	defer tx.Rollback()
+	if e = validateProfileAvatar(tx, uid(r), p.Avatar); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	if _, e := tx.Exec("UPDATE users SET name=?,avatar=COALESCE(?,avatar),bio=? WHERE id=?", p.Name, p.Avatar, p.Bio, uid(r)); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	if e = tx.Commit(); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	s.profileChanged(uid(r))
 	s.me(w, r)
 }
 func (s *Server) users(w http.ResponseWriter, r *http.Request) {

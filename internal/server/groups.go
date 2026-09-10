@@ -21,6 +21,7 @@ END;
 `
 
 type groupInfo struct {
+	Avatar        string `json:"avatar"`
 	Number        string `json:"number"`
 	Description   string `json:"description"`
 	Discoverable  bool   `json:"discoverable"`
@@ -35,7 +36,7 @@ type groupInfo struct {
 type rowQuery interface{ QueryRow(string, ...any) *sql.Row }
 
 func readGroup(q rowQuery, cid, user string) (g groupInfo, err error) {
-	err = q.QueryRow(`SELECT g.number,g.description,g.discoverable,g.join_mode,g.members_invite,g.all_muted,c.owner,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),CASE WHEN x.user_id IS NULL THEN '' WHEN c.owner=? THEN 'owner' WHEN COALESCE(m.admin,0)=1 THEN 'admin' ELSE 'member' END,COALESCE(m.mute_until,0) FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id LEFT JOIN members x ON x.conversation_id=c.id AND x.user_id=? LEFT JOIN group_members m ON m.conversation_id=c.id AND m.user_id=? WHERE c.id=? AND g.dissolved=0`, user, user, user, cid).Scan(&g.Number, &g.Description, &g.Discoverable, &g.JoinMode, &g.MembersInvite, &g.AllMuted, &g.Owner, &g.Count, &g.Role, &g.MuteUntil)
+	err = q.QueryRow(`SELECT g.number,g.description,g.discoverable,g.join_mode,g.members_invite,g.all_muted,c.owner,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),CASE WHEN x.user_id IS NULL THEN '' WHEN c.owner=? THEN 'owner' WHEN COALESCE(m.admin,0)=1 THEN 'admin' ELSE 'member' END,COALESCE(m.mute_until,0),COALESCE((SELECT 'image:'||id FROM avatar_images WHERE scope='group:'||c.id),'group') FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id LEFT JOIN members x ON x.conversation_id=c.id AND x.user_id=? LEFT JOIN group_members m ON m.conversation_id=c.id AND m.user_id=? WHERE c.id=? AND g.dissolved=0`, user, user, user, cid).Scan(&g.Number, &g.Description, &g.Discoverable, &g.JoinMode, &g.MembersInvite, &g.AllMuted, &g.Owner, &g.Count, &g.Role, &g.MuteUntil, &g.Avatar)
 	return
 }
 func (g groupInfo) manager() bool { return g.Role == "owner" || g.Role == "admin" }
@@ -161,7 +162,7 @@ func (s *Server) searchGroups(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "搜索内容最多 60 字")
 		return
 	}
-	rows, e := s.db.Query(`SELECT c.id,c.name,g.number,g.description,g.join_mode,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?) FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id WHERE g.dissolved=0 AND (g.discoverable=1 OR EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?)) AND (CAST(g.number AS TEXT)=? OR c.name LIKE ? ESCAPE '\') ORDER BY CAST(g.number AS TEXT)=? DESC,g.number LIMIT 30`, uid(r), uid(r), q, "%"+escapeLike(q)+"%", q)
+	rows, e := s.db.Query(`SELECT c.id,c.name,g.number,g.description,g.join_mode,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?),COALESCE((SELECT 'image:'||id FROM avatar_images WHERE scope='group:'||c.id),'group') FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id WHERE g.dissolved=0 AND (g.discoverable=1 OR EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?)) AND (CAST(g.number AS TEXT)=? OR c.name LIKE ? ESCAPE '\') ORDER BY CAST(g.number AS TEXT)=? DESC,g.number LIMIT 30`, uid(r), uid(r), q, "%"+escapeLike(q)+"%", q)
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -169,14 +170,14 @@ func (s *Server) searchGroups(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, name, number, description, mode string
+		var id, name, number, description, mode, avatar string
 		var count int
 		var joined bool
-		if e = rows.Scan(&id, &name, &number, &description, &mode, &count, &joined); e != nil {
+		if e = rows.Scan(&id, &name, &number, &description, &mode, &count, &joined, &avatar); e != nil {
 			s.dbError(w, e)
 			return
 		}
-		out = append(out, map[string]any{"id": id, "name": name, "number": number, "description": description, "joinMode": mode, "count": count, "joined": joined})
+		out = append(out, map[string]any{"id": id, "name": name, "number": number, "description": description, "joinMode": mode, "count": count, "joined": joined, "avatar": avatar})
 	}
 	if e = rows.Err(); e != nil {
 		s.dbError(w, e)

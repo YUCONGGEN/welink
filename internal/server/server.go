@@ -33,6 +33,7 @@ type Server struct {
 	logger         *log.Logger
 	meetings       meetingDirectory
 	qrLogins       qrLoginDirectory
+	avatarSlots    chan struct{}
 }
 type bucket struct {
 	count int
@@ -59,6 +60,7 @@ func New(cfg Config) (*Server, error) {
 	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux()}
 	s.routes()
 	s.meetings.rooms = map[string]*meetingRoom{}
+	s.avatarSlots = make(chan struct{}, 2)
 	s.qrLogins.items = map[string]*qrLogin{}
 	return s, nil
 }
@@ -113,6 +115,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"POST /api/me/avatar": s.uploadAvatar, "DELETE /api/me/avatar": s.resetAvatar,
+		"POST /api/groups/{id}/avatar": s.uploadAvatar, "DELETE /api/groups/{id}/avatar": s.resetAvatar, "GET /api/avatars/{image}": s.avatar,
 		"POST /api/contact-groups/order": s.orderContactGroups,
 		"GET /api/contact-groups":        s.listContactGroups, "POST /api/contact-groups": s.saveContactGroup, "PATCH /api/contact-groups/{id}": s.saveContactGroup, "DELETE /api/contact-groups/{id}": s.deleteContactGroup,
 		"GET /api/contacts/{user}": s.contactDetail, "PATCH /api/contacts/{user}": s.updateContact, "DELETE /api/contacts/{user}": s.deleteContact, "GET /api/contact-blocks": s.listBlocks, "POST /api/contact-blocks/{user}": s.blockContact, "DELETE /api/contact-blocks/{user}": s.unblockContact,

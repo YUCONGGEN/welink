@@ -45,6 +45,7 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			c["avatar"] = u.Avatar
 		} else if g, e := readGroup(s.db, cid, uid(r)); e == nil {
 			c["group"] = g
+			c["avatar"] = g.Avatar
 			c["mentionCount"], c["firstMentionId"] = s.unreadMentions(cid, uid(r))
 		}
 		last, e := scanMessage(s.db.QueryRow(messageQuery+"WHERE m.conversation_id=? AND "+messageVisible+"ORDER BY m.seq DESC LIMIT 1", cid, uid(r)))

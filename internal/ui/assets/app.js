@@ -19,6 +19,240 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/avatars.js
+  function createAvatars({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, av: av2, refresh: refresh2, renderMessages: renderMessages2, renderMain: renderMain2, updateRail: updateRail2, profile: profile2, groupDetail }) {
+    const $2 = (s) => document.querySelector(s);
+    let current = null;
+    const endpoint = (s) => s.scope === "user" ? "/api/me/avatar" : "/api/groups/" + s.target + "/avatar";
+    function release() {
+      var _a, _b;
+      (_b = (_a = current == null ? void 0 : current.image) == null ? void 0 : _a.close) == null ? void 0 : _b.call(_a);
+      current = null;
+    }
+    function finish(changed2 = false) {
+      var _a;
+      const s = current;
+      if (!s) return;
+      release();
+      closeModal2();
+      (_a = s.back) == null ? void 0 : _a.call(s, changed2);
+    }
+    function choose() {
+      var _a;
+      const s = current;
+      if (!s) return;
+      modal2(s.scope === "user" ? "个人头像" : "群头像", '<div class="avatar-selection"><div>'.concat(av2(s.info, "large"), "</div><h4>").concat(esc2(s.info.name || "更换头像"), '</h4><p>选择照片后可移动、缩放和旋转裁剪。</p><button class="primary" data-avatar="pick">选择图片</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden><small>最多 8 MB，4096 × 4096 像素；保存为静态头像</small>').concat(((_a = s.info.avatar) == null ? void 0 : _a.startsWith("image:")) ? '<button class="avatar-reset" data-avatar="reset">恢复默认头像</button>' : "", "</div>"), '<button class="secondary" data-avatar="cancel">返回</button>');
+      $2("#avatar-file").onchange = (e) => {
+        if (e.target.files[0]) load(e.target.files[0]);
+      };
+    }
+    async function load(file) {
+      var _a, _b, _c, _d;
+      const s = current;
+      if (!s) return;
+      if (file.size > 8 * 1024 * 1024) {
+        toast2("图片不能超过 8 MB");
+        return;
+      }
+      let img, url;
+      try {
+        if (window.createImageBitmap) img = await createImageBitmap(file, { imageOrientation: "from-image" });
+        else {
+          url = URL.createObjectURL(file);
+          img = new Image();
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+            img.src = url;
+          });
+        }
+        if (current !== s) {
+          (_a = img.close) == null ? void 0 : _a.call(img);
+          return;
+        }
+        if (img.width > 4096 || img.height > 4096 || img.width * img.height > 16 * 1024 * 1024) {
+          (_b = img.close) == null ? void 0 : _b.call(img);
+          throw Error("请选择不超过 4096 × 4096 像素的图片");
+        }
+        (_d = (_c = s.image) == null ? void 0 : _c.close) == null ? void 0 : _d.call(_c);
+        s.image = img;
+        s.angle = 0;
+        s.zoom = 1;
+        s.x = s.y = 0;
+        editor();
+      } catch (e) {
+        toast2((e == null ? void 0 : e.message) || "无法读取图片，请选择 JPEG、PNG、WebP 或 GIF");
+      } finally {
+        if (url) URL.revokeObjectURL(url);
+      }
+    }
+    function geometry(s) {
+      const rotated = s.angle % 180 !== 0, w = rotated ? s.image.height : s.image.width, h = rotated ? s.image.width : s.image.height, scale = Math.max(512 / w, 512 / h) * s.zoom;
+      return { scale, wide: w * scale, tall: h * scale };
+    }
+    function draw() {
+      const s = current, canvas = $2("#avatar-canvas");
+      if (!(s == null ? void 0 : s.image) || !canvas) return;
+      const g = geometry(s);
+      s.x = Math.max(-(g.wide - 512) / 2, Math.min((g.wide - 512) / 2, s.x));
+      s.y = Math.max(-(g.tall - 512) / 2, Math.min((g.tall - 512) / 2, s.y));
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.save();
+      ctx.translate(256 + s.x, 256 + s.y);
+      ctx.rotate(s.angle * Math.PI / 180);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(s.image, -s.image.width * g.scale / 2, -s.image.height * g.scale / 2, s.image.width * g.scale, s.image.height * g.scale);
+      ctx.restore();
+    }
+    function editor() {
+      const s = current;
+      if (!s) return;
+      modal2("裁剪头像", '<div id="avatar-editor"><p class="hint">拖动图片调整位置，缩放后选择头像区域</p><div class="avatar-crop-frame"><canvas id="avatar-canvas" width="512" height="512" role="img" aria-label="头像裁剪预览"></canvas><div class="avatar-crop-guide"></div></div><label class="avatar-zoom-label" for="avatar-zoom">缩放<input id="avatar-zoom" type="range" min="1" max="4" step="0.01" value="1"></label><div class="avatar-crop-actions"><button class="secondary" data-avatar="rotate">向右旋转</button><button class="secondary" data-avatar="reselect">重新选择</button></div></div>', '<button class="secondary" data-avatar="cancel">取消</button><button class="primary" data-avatar="save">保存头像</button>');
+      const canvas = $2("#avatar-canvas");
+      let drag = null;
+      canvas.onpointerdown = (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        drag = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: s.x, dy: s.y };
+      };
+      canvas.onpointermove = (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const scale = 512 / canvas.getBoundingClientRect().width;
+        s.x = drag.dx + (e.clientX - drag.x) * scale;
+        s.y = drag.dy + (e.clientY - drag.y) * scale;
+        draw();
+      };
+      canvas.onpointerup = canvas.onpointercancel = (e) => {
+        if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+        drag = null;
+      };
+      $2("#avatar-zoom").oninput = (e) => {
+        s.zoom = Number(e.target.value);
+        draw();
+      };
+      draw();
+    }
+    async function save(reset = false) {
+      var _a, _b, _c, _d;
+      const s = current;
+      if (!s || s.busy) return;
+      s.busy = true;
+      document.querySelectorAll(".modal button,.modal input").forEach((e) => e.disabled = true);
+      try {
+        let result;
+        if (reset) result = await api2(endpoint(s), { method: "DELETE" });
+        else {
+          const canvas = $2("#avatar-canvas");
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.94));
+          if (current !== s || ((_a = S2.user) == null ? void 0 : _a.id) !== s.actor) return;
+          if (!blob) throw Error("无法生成头像，请重新选择图片");
+          const body = new FormData();
+          body.append("file", blob, "avatar.jpg");
+          result = await api2(endpoint(s), { method: "POST", body });
+        }
+        if (current !== s || ((_b = S2.user) == null ? void 0 : _b.id) !== s.actor) return;
+        if (s.scope === "user") {
+          const user = await api2("/api/me");
+          if (current !== s || ((_c = S2.user) == null ? void 0 : _c.id) !== s.actor) return;
+          S2.user = user;
+        }
+        await refresh2();
+        if (current !== s || ((_d = S2.user) == null ? void 0 : _d.id) !== s.actor) return;
+        s.info.avatar = result.avatar;
+        toast2(reset ? "已恢复默认头像" : "头像已更新");
+        finish(true);
+      } catch (e) {
+        if (current === s) {
+          s.busy = false;
+          document.querySelectorAll(".modal button,.modal input").forEach((e2) => e2.disabled = false);
+          toast2(e.message);
+        }
+      }
+    }
+    function openUser() {
+      var _a, _b, _c, _d, _e;
+      const draft = { name: (_b = (_a = $2("#profile-name")) == null ? void 0 : _a.value) != null ? _b : S2.user.name, bio: (_d = (_c = $2("#profile-bio")) == null ? void 0 : _c.value) != null ? _d : S2.user.bio, avatar: ((_e = $2(".color-list .selected")) == null ? void 0 : _e.dataset.color) || S2.user.avatar };
+      release();
+      current = { scope: "user", actor: S2.user.id, target: S2.user.id, info: __spreadValues({}, S2.user), back: (changed2) => profile2(__spreadProps(__spreadValues({}, draft), { avatar: changed2 ? S2.user.avatar : draft.avatar })) };
+      choose();
+    }
+    async function openGroup(id) {
+      var _a, _b, _c;
+      const actor = (_a = S2.user) == null ? void 0 : _a.id;
+      try {
+        const c = await api2("/api/conversations/" + id);
+        if (((_b = S2.user) == null ? void 0 : _b.id) !== actor) return;
+        if (!["owner", "admin"].includes((_c = c.group) == null ? void 0 : _c.role)) throw Error("只有群主和管理员可以修改群头像");
+        release();
+        current = { scope: "group", actor, target: id, info: { name: c.name, kind: "group", avatar: c.group.avatar }, back: () => groupDetail(id) };
+        choose();
+      } catch (e) {
+        toast2(e.message);
+      }
+    }
+    function changed(d) {
+      if (!S2.user) return;
+      if (d.userId === S2.user.id) Object.assign(S2.user, { name: d.name, avatar: d.avatar, bio: d.bio });
+      for (const u of S2.friends) if (u.id === d.userId) Object.assign(u, { name: d.name, avatar: d.avatar, bio: d.bio });
+      for (const m of S2.messages) if (m.sender === d.userId) m.avatar = d.avatar;
+      document.querySelectorAll('.avatar[data-avatar-user="'.concat(d.userId, '"]')).forEach((node) => {
+        const online = !!node.querySelector(".dot"), size = node.classList.contains("large") ? "large" : node.classList.contains("small") ? "small" : "";
+        node.outerHTML = av2(__spreadProps(__spreadValues({}, d), { id: d.userId, online }), size, online);
+      });
+      updateRail2();
+      renderMessages2(true);
+      if (S2.tab === "profile") renderMain2();
+    }
+    document.addEventListener("error", (e) => {
+      var _a;
+      if ((_a = e.target.classList) == null ? void 0 : _a.contains("avatar-photo")) e.target.hidden = true;
+    }, true);
+    document.addEventListener("click", (e) => {
+      if (current && e.target.closest('[data-action="close-modal"]')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!current.busy) finish();
+      }
+    }, true);
+    document.addEventListener("click", (e) => {
+      var _a;
+      const b = e.target.closest("[data-avatar]");
+      if (!b) return;
+      const action2 = b.dataset.avatar;
+      if (action2 === "user") {
+        openUser();
+        return;
+      }
+      if (action2 === "group") {
+        openGroup(b.dataset.groupId);
+        return;
+      }
+      const s = current;
+      if (!s || s.busy) return;
+      if (action2 === "cancel") finish();
+      if (action2 === "pick") (_a = $2("#avatar-file")) == null ? void 0 : _a.click();
+      if (action2 === "reselect") choose();
+      if (action2 === "rotate") {
+        s.angle = (s.angle + 90) % 360;
+        s.x = s.y = 0;
+        s.zoom = 1;
+        $2("#avatar-zoom").value = "1";
+        draw();
+      }
+      if (action2 === "save") save();
+      if (action2 === "reset") {
+        modal2("恢复默认头像", "<p>确定移除当前照片，恢复默认头像？</p>", '<button class="secondary" data-avatar="cancel">取消</button><button class="primary" data-avatar="reset-confirm">确定</button>');
+      }
+      if (action2 === "reset-confirm") save(true);
+    });
+    new MutationObserver(() => {
+      if (current && !$2("#avatar-editor") && !$2("#avatar-file") && !document.querySelector('[data-avatar="reset-confirm"]')) release();
+    }).observe($2("#overlays"), { childList: true });
+    return { changed, reset: release };
+  }
+
   // internal/ui/src/mentions.js
   function createMentions({ S: S2, api: api2, esc: esc2, av: av2, toast: toast2, jump }) {
     const $2 = (s) => document.querySelector(s), drafts = /* @__PURE__ */ new Map();
@@ -510,7 +744,7 @@
       if (c.kind !== "group") return;
       detailState = c;
       const g = c.group, local = S2.conversations.find((x) => x.id === cid) || {}, me = c.members.find((x) => x.id === S2.user.id);
-      modal2("群聊设置", '<div class="group-summary">'.concat(av2({ kind: "group", avatar: "group", name: c.name }, "large"), "<div><h3>").concat(esc2(c.name), "</h3><p>群号 ").concat(esc2(g.number), ' <button class="group-link" data-group="copy-number">复制</button></p><small>').concat(g.count, " 人 · ").concat(roles[g.role], '</small></div></div><div class="group-member-grid">').concat(c.members.slice(0, 9).map((u) => '<button data-group-user="'.concat(u.id, '">').concat(av2(u), "<span>").concat(esc2(u.nickname || u.name), "</span>").concat(u.role !== "member" ? '<small class="group-role '.concat(u.role, '">').concat(roles[u.role], "</small>") : "", "</button>")).join("")).concat(manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : "", "</div>").concat(row("群聊成员", g.count + " 人", "members")).concat(row("群公告", esc2(((_a = c.announcement) == null ? void 0 : _a.slice(0, 24)) || "暂无公告"), "announcement")).concat(row("我的群名片", esc2((me == null ? void 0 : me.nickname) || (me == null ? void 0 : me.name) || ""), "my-card")).concat(manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : "").concat(row("查找聊天记录", "", "history"), '<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ').concat(local.muted ? "checked" : "", '></label><p class="hint">').concat(esc2(g.description || "暂无群介绍"), '</p><button class="group-danger" data-group="').concat(g.role === "owner" ? "dissolve" : "leave", '">').concat(g.role === "owner" ? "解散该群" : "退出该群", "</button>"), '<button class="primary" id="group-save-prefs">完成</button>', true);
+      modal2("群聊设置", '<div class="group-summary">'.concat(manager(g) ? '<button class="group-avatar-link" data-avatar="group" data-group-id="' + c.id + '" aria-label="更换群头像">' : "").concat(av2({ kind: "group", avatar: g.avatar || "group", name: c.name }, "large")).concat(manager(g) ? "</button>" : "", "<div><h3>").concat(esc2(c.name), "</h3><p>群号 ").concat(esc2(g.number), ' <button class="group-link" data-group="copy-number">复制</button></p><small>').concat(g.count, " 人 · ").concat(roles[g.role], '</small></div></div><div class="group-member-grid">').concat(c.members.slice(0, 9).map((u) => '<button data-group-user="'.concat(u.id, '">').concat(av2(u), "<span>").concat(esc2(u.nickname || u.name), "</span>").concat(u.role !== "member" ? '<small class="group-role '.concat(u.role, '">').concat(roles[u.role], "</small>") : "", "</button>")).join("")).concat(manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : "", "</div>").concat(row("群聊成员", g.count + " 人", "members")).concat(row("群公告", esc2(((_a = c.announcement) == null ? void 0 : _a.slice(0, 24)) || "暂无公告"), "announcement")).concat(row("我的群名片", esc2((me == null ? void 0 : me.nickname) || (me == null ? void 0 : me.name) || ""), "my-card")).concat(manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : "").concat(row("查找聊天记录", "", "history"), '<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ').concat(local.muted ? "checked" : "", '></label><p class="hint">').concat(esc2(g.description || "暂无群介绍"), '</p><button class="group-danger" data-group="').concat(g.role === "owner" ? "dissolve" : "leave", '">').concat(g.role === "owner" ? "解散该群" : "退出该群", "</button>"), '<button class="primary" id="group-save-prefs">完成</button>', true);
       bind("group-save-prefs", async () => {
         await api2("/api/conversations/" + cid, { method: "PATCH", body: { pinned: $2("#group-pin").checked, muted: $2("#group-notifications").checked } });
         closeModal2();
@@ -618,7 +852,7 @@
         try {
           const results = await api2("/api/groups?q=" + encodeURIComponent(query));
           if (searchVersion !== revision || request !== requestVersion || !document.contains(list)) return;
-          list.innerHTML = results.map((g) => '<article class="group-search-result">'.concat(av2({ kind: "group", avatar: "group" }), "<div><b>").concat(esc2(g.name), "</b><p>群号 ").concat(esc2(g.number), " · ").concat(g.count, ' 人</p><p class="hint">').concat(esc2(g.description), "</p><small>").concat(modes[g.joinMode], '</small></div><button class="').concat(g.joined ? "secondary" : "primary", '" data-group-join="').concat(g.id, '" data-joined="').concat(g.joined, '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(g.joined ? "发消息" : "加入", "</button></article>")).join("") || '<p class="hint">没有找到群聊</p>';
+          list.innerHTML = results.map((g) => '<article class="group-search-result">'.concat(av2({ kind: "group", avatar: g.avatar || "group" }), "<div><b>").concat(esc2(g.name), "</b><p>群号 ").concat(esc2(g.number), " · ").concat(g.count, ' 人</p><p class="hint">').concat(esc2(g.description), "</p><small>").concat(modes[g.joinMode], '</small></div><button class="').concat(g.joined ? "secondary" : "primary", '" data-group-join="').concat(g.id, '" data-joined="').concat(g.joined, '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(g.joined ? "发消息" : "加入", "</button></article>")).join("") || '<p class="hint">没有找到群聊</p>';
         } catch (e2) {
           if (request === requestVersion && document.contains(list)) list.textContent = e2.message;
         }
@@ -2351,7 +2585,10 @@
   var paths = { chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
   var icon = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'.concat(paths[n] || paths.chat, '"/></svg>');
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
-  var av = (u = {}, size = "", online = false) => '<span class="avatar '.concat(esc(u.avatar || "blue"), " ").concat(size, '">').concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
+  var av = (u = {}, size = "", online = false) => {
+    const photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
+    return '<span class="avatar '.concat(photo ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo ? '<img class="avatar-photo" src="/api/avatars/' + u.avatar.slice(6) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
+  };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
   var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
@@ -2397,9 +2634,10 @@
     (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
     $("#overlays").innerHTML = '<div class="modal-backdrop"><section class="modal '.concat(wide ? "wide" : "", '" role="dialog" aria-modal="true" aria-label="').concat(esc(title), '"><header class="modal-head"><h3>').concat(esc(title), "</h3>").concat(btn("close", "关闭", "close-modal"), '</header><div class="modal-body">').concat(body, '<div class="form-error" id="modal-error"></div></div>').concat(footer ? '<footer class="modal-footer">'.concat(footer, "</footer>") : "", "</section></div>");
     modalHandler = null;
+    const dialog = $(".modal");
     setTimeout(() => {
       var _a2;
-      return (_a2 = $(".modal input:not([type=checkbox])")) == null ? void 0 : _a2.focus();
+      if ((dialog == null ? void 0 : dialog.isConnected) && !dialog.contains(document.activeElement)) (_a2 = dialog.querySelector("input:not([type=checkbox]):not([type=file]):not([type=range])")) == null ? void 0 : _a2.focus();
     }, 40);
   }
   var modalError = (e) => {
@@ -2497,7 +2735,7 @@
     return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
   }
   function conversationRow(c) {
-    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
+    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);
@@ -2846,6 +3084,9 @@
           document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
         }
         queueRefresh();
+      } else if (event.type === "profile") {
+        Avatars.changed(d);
+        queueRefresh();
       } else if (event.type === "recall") {
         applyRecall(d);
       } else if (event.type === "message-deleted") {
@@ -2895,6 +3136,7 @@
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
+    Avatars.reset();
     Mentions.reset();
     S.drafts = {};
     try {
@@ -3021,11 +3263,12 @@
       toast(e.message);
     }
   }
-  function profile() {
-    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px">'.concat(av(S.user, "large"), '</div><label>昵称</label><input id="profile-name" value="').concat(esc(S.user.name), '" maxlength="32"><label>个性签名</label><input id="profile-bio" value="').concat(esc(S.user.bio), '" maxlength="150" placeholder="分享此刻的心情"><label>头像颜色</label><div class="color-list">').concat(["blue", "pink", "purple", "orange", "green", "cyan"].map((color) => '<button data-color="'.concat(color, '" class="').concat(color === S.user.avatar ? "selected" : "", '" aria-label="').concat(color, '">').concat(av(__spreadProps(__spreadValues({}, S.user), { avatar: color }), "small"), "</button>")).join(""), "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+  function profile(initial = {}) {
+    const user = __spreadValues(__spreadValues({}, S.user), initial);
+    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><label>昵称</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><label>头像颜色</label><div class="color-list">').concat(["blue", "pink", "purple", "orange", "green", "cyan"].map((color) => '<button data-color="'.concat(color, '" class="').concat(color === user.avatar ? "selected" : "", '" aria-label="').concat(color, '">').concat(av(__spreadProps(__spreadValues({}, S.user), { avatar: color }), "small"), "</button>")).join(""), "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       var _a;
-      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, avatar: ((_a = $(".color-list .selected")) == null ? void 0 : _a.dataset.color) || "blue" } });
+      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, avatar: ((_a = $(".color-list .selected")) == null ? void 0 : _a.dataset.color) || user.avatar } });
       closeModal();
       updateRail();
       if (S.tab === "profile") renderMyPage();
@@ -3743,6 +3986,7 @@
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload });
+  var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });

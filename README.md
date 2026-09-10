@@ -9,6 +9,7 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 - Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
 - Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
 - 注册时填写昵称和密码，登录别名可留空。系统分配永久数字 WeLink 号码，用该号码登录、搜索和添加好友。
+- “编辑资料 → 更换头像”可选照片、拖动裁剪、缩放、旋转或恢复默认；照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
 - 桌面登录页点击“使用二维码登录”；安卓登录后从消息页“+ → 扫一扫”或“我的 → 扫一扫 · 电脑登录”扫描。手机核对数字后确认，电脑自动登录。二维码 3 分钟有效、单次使用；也支持选择二维码图片。
 - 消息右键（Windows）或长按（Android）可引用、复制文字、收藏、删除，自己发送的消息可在两分钟内撤回。删除同步到本账号的所有设备，不影响对方记录或独立保存的收藏；撤回会同步清除引用中的原文。
 - 右键 / 长按消息可转发，或进入多选后逐条转发、合并转发、批量删除。可同时选择好友和群，附带留言；合并记录支持查看详情、图片、文件和嵌套记录。转发保留独立副本，原聊天后续删除 / 撤回不会修改已转发的内容。
@@ -71,6 +72,7 @@ node scripts/media-test.mjs --long-recording
 node scripts/groups-test.mjs
 node scripts/contacts-test.mjs
 node scripts/mentions-test.mjs
+node scripts/avatars-test.mjs
 ```
 
 界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。
