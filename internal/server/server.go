@@ -1,0 +1,327 @@
+package server
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"github.com/gorilla/websocket"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+)
+
+type Config struct {
+	DataDir, DownloadsDir string
+	Logger                *log.Logger
+}
+type Server struct {
+	db             *sql.DB
+	dir, downloads string
+	mux            *http.ServeMux
+	mu             sync.Mutex
+	clients        map[string]map[*socket]bool
+	rooms          map[string]map[string]*socket
+	limits         map[string]*bucket
+	logger         *log.Logger
+	meetings       meetingDirectory
+	qrLogins       qrLoginDirectory
+}
+type bucket struct {
+	count int
+	until time.Time
+}
+type socket struct {
+	c    *websocket.Conn
+	send chan []byte
+	done chan struct{}
+	once sync.Once
+}
+type userKey struct{}
+
+func New(cfg Config) (*Server, error) {
+	db, err := openStore(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = log.New(os.Stderr, "welink ", log.LstdFlags)
+	}
+	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux()}
+	s.routes()
+	s.meetings.rooms = map[string]*meetingRoom{}
+	s.qrLogins.items = map[string]*qrLogin{}
+	return s, nil
+}
+func (s *Server) Close() error {
+	s.meetings.Lock()
+	for _, room := range s.meetings.rooms {
+		for _, p := range room.Peers {
+			p.socket.close()
+		}
+	}
+	s.meetings.rooms = map[string]*meetingRoom{}
+	s.meetings.Unlock()
+	s.mu.Lock()
+	for _, clients := range s.clients {
+		for c := range clients {
+			c.close()
+		}
+	}
+	for _, room := range s.rooms {
+		for _, c := range room {
+			c.close()
+		}
+	}
+	s.mu.Unlock()
+	return s.db.Close()
+}
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cache-Control", "no-store")
+		defer func() {
+			if e := recover(); e != nil {
+				s.logger.Printf("handler panic: %v", e)
+				fail(w, 500, "服务暂时不可用")
+			}
+		}()
+		s.mux.ServeHTTP(w, r)
+	})
+}
+func (s *Server) routes() {
+	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.db.PingContext(r.Context()); err != nil {
+			fail(w, 503, "数据库不可用")
+			return
+		}
+		ok(w, map[string]any{"ok": true, "version": "0.1.0", "time": now()})
+	})
+	s.mux.HandleFunc("POST /api/auth/register", s.register)
+	s.mux.HandleFunc("POST /api/auth/login", s.login)
+	s.mux.HandleFunc("POST /api/auth/qr", s.createQRLogin)
+	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
+	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
+	for pattern, h := range map[string]http.HandlerFunc{
+		"POST /api/auth/qr/scan": s.scanQRLogin, "POST /api/auth/qr/confirm": s.confirmQRLogin,
+		"POST /api/meetings": s.createMeeting, "GET /api/meetings": s.listMeetings, "POST /api/meetings/{code}/invite": s.inviteMeeting, "POST /api/meetings/{code}/end": s.endMeeting, "GET /api/meetings/{code}/ws": s.meetingSocket,
+		"POST /api/auth/logout": s.logout, "GET /api/me": s.me, "PATCH /api/me": s.updateMe,
+		"GET /api/users": s.users, "GET /api/friends": s.friends, "GET /api/requests": s.requests, "POST /api/requests": s.addRequest, "POST /api/requests/{id}": s.resolveRequest,
+		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
+		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
+		"POST /api/messages/{id}/recall": s.recall, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
+		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
+		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
+	} {
+		s.mux.Handle(pattern, s.auth(h))
+	}
+	s.mux.HandleFunc("GET /", s.landing)
+}
+func ok(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(v)
+}
+func fail(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	d := json.NewDecoder(r.Body)
+	if err := d.Decode(v); err != nil {
+		fail(w, 400, "请求格式错误")
+		return false
+	}
+	return true
+}
+func uid(r *http.Request) string { return r.Context().Value(userKey{}).(string) }
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+func (s *Server) auth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if token == "" {
+			if c, e := r.Cookie("welink_session"); e == nil {
+				token = c.Value
+			}
+		}
+		var id string
+		if len(token) != 64 || s.db.QueryRow("SELECT user_id FROM sessions WHERE token=? AND expires>?", hashToken(token), now()).Scan(&id) != nil {
+			fail(w, 401, "请重新登录")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, id)))
+	})
+}
+func (s *Server) rate(r *http.Request, key string, limit int, d time.Duration) bool {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key = host + ":" + key
+	if len(s.limits) > 10000 {
+		for k, b := range s.limits {
+			if time.Now().After(b.until) {
+				delete(s.limits, k)
+			}
+		}
+	}
+	b := s.limits[key]
+	if b == nil || time.Now().After(b.until) {
+		b = &bucket{until: time.Now().Add(d)}
+		s.limits[key] = b
+	}
+	b.count++
+	return b.count <= limit
+}
+func validText(v string, max int) bool {
+	return utf8.ValidString(v) && utf8.RuneCountInString(v) <= max && !strings.ContainsRune(v, 0)
+}
+func (s *Server) member(cid, user string) bool {
+	var n int
+	return s.db.QueryRow("SELECT 1 FROM members WHERE conversation_id=? AND user_id=?", cid, user).Scan(&n) == nil
+}
+func (s *Server) requireMember(w http.ResponseWriter, r *http.Request) bool {
+	if !s.member(r.PathValue("id"), uid(r)) {
+		fail(w, 403, "无法访问该会话")
+		return false
+	}
+	return true
+}
+func (s *Server) online(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.clients[id]) > 0
+}
+func (s *Server) user(id string) (u User, err error) {
+	err = s.db.QueryRow("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id=?", id).Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number)
+	u.Online = s.online(id)
+	return
+}
+func (s *Server) push(users []string, kind string, data any) {
+	raw, _ := json.Marshal(map[string]any{"type": kind, "data": data})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range users {
+		for c := range s.clients[id] {
+			select {
+			case c.send <- raw:
+			default:
+				c.close()
+			}
+		}
+	}
+}
+func (s *Server) audience(cid string) []string {
+	rows, err := s.db.Query("SELECT user_id FROM members WHERE conversation_id=?", cid)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+func (s *Server) pushConversation(cid, kind string, data any) { s.push(s.audience(cid), kind, data) }
+func (s *Server) dbError(w http.ResponseWriter, err error) {
+	s.logger.Printf("storage: %v", err)
+	fail(w, 500, "保存失败，请重试")
+}
+func isMissing(err error) bool { return errors.Is(err, sql.ErrNoRows) }
+func (c *socket) close()       { c.once.Do(func() { close(c.done); _ = c.c.Close() }) }
+
+var upgrader = websocket.Upgrader{ReadBufferSize: 4096, WriteBufferSize: 4096, CheckOrigin: func(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	return origin == "" || origin == "https://"+r.Host || origin == "http://"+r.Host
+}}
+
+func (s *Server) events(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	id := uid(r)
+	c := &socket{c: conn, send: make(chan []byte, 128), done: make(chan struct{})}
+	s.mu.Lock()
+	if s.clients[id] == nil {
+		s.clients[id] = map[*socket]bool{}
+	}
+	s.clients[id][c] = true
+	s.mu.Unlock()
+	s.notifyPresence(id, true)
+	defer func() {
+		c.close()
+		s.mu.Lock()
+		delete(s.clients[id], c)
+		last := len(s.clients[id]) == 0
+		if last {
+			delete(s.clients, id)
+		}
+		s.mu.Unlock()
+		if last {
+			s.notifyPresence(id, false)
+		}
+	}()
+	go func() {
+		t := time.NewTicker(25 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-c.done:
+				return
+			case raw := <-c.send:
+				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if conn.WriteMessage(websocket.TextMessage, raw) != nil {
+					c.close()
+					return
+				}
+			case <-t.C:
+				if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
+					c.close()
+					return
+				}
+			}
+		}
+	}()
+	conn.SetReadLimit(8192)
+	_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
+	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(70 * time.Second)) })
+	for {
+		var p struct{ Type, ConversationID string }
+		if conn.ReadJSON(&p) != nil {
+			return
+		}
+		if p.Type == "typing" && s.rate(r, "typing:"+id, 90, time.Minute) && s.member(p.ConversationID, id) {
+			s.pushConversation(p.ConversationID, "typing", map[string]string{"userId": id, "conversationId": p.ConversationID})
+		}
+	}
+}
+func (s *Server) notifyPresence(id string, online bool) {
+	rows, e := s.db.Query("SELECT peer_id FROM friends WHERE user_id=?", id)
+	if e != nil {
+		return
+	}
+	ids := []string{}
+	for rows.Next() {
+		var peer string
+		_ = rows.Scan(&peer)
+		ids = append(ids, peer)
+	}
+	rows.Close()
+	s.push(ids, "presence", map[string]any{"userId": id, "online": online})
+}

@@ -1,0 +1,152 @@
+package server
+
+import (
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	_ "modernc.org/sqlite"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+const schema = `
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+PRAGMA busy_timeout=5000;
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password BLOB NOT NULL, avatar TEXT NOT NULL DEFAULT 'blue', bio TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS user_numbers(number INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT UNIQUE REFERENCES users(id));
+INSERT INTO sqlite_sequence(name,seq) SELECT 'user_numbers',100000000 WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='user_numbers');
+CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS friends(user_id TEXT NOT NULL REFERENCES users(id), peer_id TEXT NOT NULL REFERENCES users(id), remark TEXT NOT NULL DEFAULT '', PRIMARY KEY(user_id,peer_id));
+CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, sender TEXT NOT NULL REFERENCES users(id), recipient TEXT NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS request_pending ON requests(sender,recipient) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, owner TEXT NOT NULL REFERENCES users(id), direct_key TEXT UNIQUE, announcement TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS members(conversation_id TEXT NOT NULL REFERENCES conversations(id), user_id TEXT NOT NULL REFERENCES users(id), read_seq INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0, muted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(conversation_id,user_id));
+CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, conversation_id TEXT NOT NULL REFERENCES conversations(id), sender TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL, text TEXT NOT NULL, attachment_id TEXT NOT NULL DEFAULT '', reply_id TEXT NOT NULL DEFAULT '', client_id TEXT NOT NULL, recalled INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL, UNIQUE(sender,client_id));
+CREATE INDEX IF NOT EXISTS message_history ON messages(conversation_id,seq);
+CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), conversation_id TEXT NOT NULL REFERENCES conversations(id), name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS favorites(user_id TEXT NOT NULL REFERENCES users(id), message_id TEXT NOT NULL REFERENCES messages(id), created INTEGER NOT NULL, PRIMARY KEY(user_id,message_id));
+CREATE TABLE IF NOT EXISTS remotes(id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), requester TEXT NOT NULL REFERENCES users(id), recipient TEXT NOT NULL REFERENCES users(id), host TEXT NOT NULL REFERENCES users(id), mode TEXT NOT NULL, state TEXT NOT NULL, device_id TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, updated INTEGER NOT NULL);
+`
+
+func openStore(dir string) (*sql.DB, error) {
+	if err := os.MkdirAll(filepath.Join(dir, "uploads"), 0700); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dir, "welink.db"))
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if _, err = db.Exec(schema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = migrateNumbers(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// Assigned numbers are permanent and separate from editable profile names.
+// Reserving skipped values keeps legacy numeric aliases unambiguous at login.
+func assignNumber(tx *sql.Tx, id string) error {
+	for {
+		result, err := tx.Exec("INSERT INTO user_numbers(user_id) VALUES(NULL)")
+		if err != nil {
+			return err
+		}
+		number, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		var taken int
+		if err = tx.QueryRow("SELECT COUNT(*) FROM users WHERE account=CAST(? AS TEXT)", number).Scan(&taken); err != nil {
+			return err
+		}
+		if taken != 0 {
+			continue
+		}
+		_, err = tx.Exec("UPDATE user_numbers SET user_id=? WHERE number=?", id, number)
+		return err
+	}
+}
+func migrateNumbers(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query("SELECT id FROM users WHERE id NOT IN (SELECT user_id FROM user_numbers WHERE user_id IS NOT NULL) ORDER BY created,id")
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, id := range ids {
+		if err = assignNumber(tx, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+func newID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b[:])
+}
+func now() int64 { return time.Now().UnixMilli() }
+
+type User struct {
+	ID      string `json:"id"`
+	Number  string `json:"number"`
+	Account string `json:"account"`
+	Name    string `json:"name"`
+	Avatar  string `json:"avatar"`
+	Bio     string `json:"bio"`
+	Online  bool   `json:"online"`
+	Remark  string `json:"remark,omitempty"`
+}
+type Message struct {
+	Seq            int64  `json:"seq"`
+	ID             string `json:"id"`
+	ConversationID string `json:"conversationId"`
+	Sender         string `json:"sender"`
+	Kind           string `json:"kind"`
+	Text           string `json:"text"`
+	AttachmentID   string `json:"attachmentId"`
+	ReplyID        string `json:"replyId"`
+	ClientID       string `json:"clientId"`
+	Recalled       bool   `json:"recalled"`
+	Created        int64  `json:"created"`
+	Name           string `json:"name"`
+	Avatar         string `json:"avatar"`
+	FileName       string `json:"fileName,omitempty"`
+	FileSize       int64  `json:"fileSize,omitempty"`
+	MIME           string `json:"mime,omitempty"`
+}
+
+const messageQuery = `SELECT m.seq,m.id,m.conversation_id,m.sender,m.kind,m.text,m.attachment_id,m.reply_id,m.client_id,m.recalled,m.created,u.name,u.avatar,COALESCE(a.name,''),COALESCE(a.size,0),COALESCE(a.mime,'') FROM messages m JOIN users u ON u.id=m.sender LEFT JOIN attachments a ON a.id=m.attachment_id `
+
+type scanner interface{ Scan(...any) error }
+
+func scanMessage(s scanner) (m Message, err error) {
+	err = s.Scan(&m.Seq, &m.ID, &m.ConversationID, &m.Sender, &m.Kind, &m.Text, &m.AttachmentID, &m.ReplyID, &m.ClientID, &m.Recalled, &m.Created, &m.Name, &m.Avatar, &m.FileName, &m.FileSize, &m.MIME)
+	return
+}

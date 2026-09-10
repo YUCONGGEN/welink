@@ -1,0 +1,23 @@
+import {chromium} from 'playwright';
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:18246',password='WeLink-test-only-2026!';
+for(let n=0;n<40;n++){try{const health=await fetch(base+'/health');if(health.ok)break}catch{}if(n===39)throw Error('test API not ready');await new Promise(r=>setTimeout(r,250))}
+const entry=(await fs.readFile('.local/dev-client/client.url','utf8')).trim();
+const errors=[];const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
+async function account(name){const r=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account:name,password})});assert.equal(r.status,200);return r.json()}
+const people=await Promise.all(['qa_alice','qa_bob','qa_carol'].map(account));let code='';
+async function login(a){const ctx=await browser.newContext({viewport:{width:1280,height:800},permissions:['camera','microphone']});await ctx.addInitScript(()=>{const Original=RTCPeerConnection;window.testPeers=[];window.RTCPeerConnection=class extends Original{constructor(...args){super(...args);window.testPeers.push(this)}}});const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(entry);await p.getByLabel('账号',{exact:true}).fill(a.user.number);await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录',exact:true}).click();await p.locator('.rail').waitFor();return p}
+try{
+ const [a,b,c]=await Promise.all(people.map(login));
+ await a.locator('[data-nav=meetings]').click();await a.getByRole('button',{name:'发起会议',exact:false}).click();await a.locator('#meeting-title').fill('WeLink 三人音视频联调');await a.locator('#meeting-create-submit').click();await a.locator('#meeting-count').getByText('1',{exact:true}).waitFor();code=(await a.locator('#meeting-copy').textContent()).replace(/\D/g,'');assert.match(code,/^[1-9]\d{8}$/);
+ for(const p of [b,c]){await p.locator('[data-nav=meetings]').click();await p.locator('[data-action=meeting-join]').click();await p.locator('#meeting-code').fill(code);await p.locator('#meeting-camera').check();await p.locator('#meeting-join-submit').click();}
+ await Promise.all([a,b,c].map(p=>p.waitForFunction(()=>document.querySelector('#meeting-count')?.textContent==='3'&&window.testPeers.filter(p=>p.connectionState==='connected').length===2,{},{timeout:45000})));
+ await Promise.all([a,b,c].map(p=>p.waitForFunction(async()=>{let audio=0,video=0;for(const pc of window.testPeers)for(const r of (await pc.getStats()).values())if(r.type==='inbound-rtp'){if(r.kind==='audio')audio+=r.bytesReceived||0;if(r.kind==='video')video+=r.bytesReceived||0}return audio>0&&video>0&&[...document.querySelectorAll('.meeting-tile video')].every(v=>v.videoWidth>0)},{},{timeout:15000})));
+ const media=[];for(const p of [a,b,c]){media.push(await p.evaluate(async()=>{const stats=await Promise.all(window.testPeers.map(p=>p.getStats()));let audio=0,video=0;for(const s of stats)for(const r of s.values())if(r.type==='inbound-rtp'){if(r.kind==='audio')audio+=r.bytesReceived||0;if(r.kind==='video')video+=r.bytesReceived||0}return {audio,video}}))}console.log(JSON.stringify({media}));for(const m of media){assert.ok(m.audio>0,'missing inbound audio');assert.ok(m.video>0,'missing inbound video')}
+ for(const p of [a,b,c])await p.locator('#meeting-video').click();await a.waitForFunction(()=>document.querySelectorAll('.meeting-tile.has-video').length===0);await a.screenshot({path:'docs/screenshots/windows-meeting.png'});
+ await a.locator(`[data-meeting-mute="${people[1].user.id}"]`).click();await b.waitForFunction(()=>!document.querySelector('#meeting-audio').classList.contains('on'));
+ await a.locator(`[data-meeting-transfer="${people[1].user.id}"]`).click();await b.locator('#meeting-end').waitFor({state:'visible'});await a.locator('#meeting-end').waitFor({state:'hidden'});
+ await b.locator('#meeting-end').click();await b.locator('#meeting-confirm-leave').click();await Promise.all([a,b,c].map(p=>p.locator('.meeting-room').waitFor({state:'detached'})));
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,participants:3,loginByWeLinkNumber:true,media,hostMute:true,hostTransfer:true,endForAll:true},null,2));
+}finally{if(code){for(const a of people)await fetch(base+`/api/meetings/${code}/end`,{method:'POST',headers:{Authorization:'Bearer '+a.token}}).catch(()=>{})}await browser.close()}

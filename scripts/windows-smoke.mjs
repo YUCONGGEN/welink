@@ -1,0 +1,13 @@
+import {spawn} from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const exe=path.resolve('dist/WeLink-Windows.exe'),data=path.resolve('.local/windows-smoke'),report=path.join(data,'native-diagnostic.json');
+await fs.mkdir(data,{recursive:true});await fs.unlink(report).catch(()=>{});
+const p=spawn(exe,['-data',data,'-listen','127.0.0.1:18748'],{windowsHide:true,stdio:'ignore',env:{...process.env,WELINK_DEBUG:'1'}});
+try{
+ let result;
+ for(let i=0;i<100;i++){try{result=JSON.parse(await fs.readFile(report,'utf8'));break}catch{}if(p.exitCode!==null)throw Error('Native process exited before rendering');await new Promise(r=>setTimeout(r,250))}
+ assert.ok(result,'WebView2 did not report rendered UI');assert.equal(result.ready,true);assert.equal(result.server,'http://223.166.147.252:8250');assert.equal(result.status,401);assert.equal(result.registration,true);assert.ok(result.width>=760&&result.height>=540);
+ console.log(JSON.stringify({ok:true,nativeWindow:'WebView2',...result},null,2));
+}finally{if(p.exitCode===null)p.kill()}

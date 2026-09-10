@@ -1,0 +1,13 @@
+{
+  "name": "welink-verification",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:ui": "node scripts/ui-test.mjs",
+    "build:ui": "node scripts/build-ui.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0"
+  }
+}

@@ -1,0 +1,40 @@
+plugins { id 'com.android.application' }
+
+def generatedUiAssets=layout.buildDirectory.dir('generated/welink-ui-assets')
+tasks.register('copyWeLinkUi', Sync) {
+    from(rootProject.file('../../internal/ui/assets')) { into 'ui' }
+    into generatedUiAssets
+}
+
+android {
+    namespace 'cn.welink.app'
+    compileSdk 35
+    ndkVersion '27.3.13750724'
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId 'cn.welink.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0-preview'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        debug { debuggable true }
+        release { minifyEnabled false }
+    }
+    packaging { jniLibs { useLegacyPackaging = true } }
+    sourceSets.main.assets.srcDir generatedUiAssets
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+tasks.named('preBuild') { dependsOn 'copyWeLinkUi' }
+dependencies {
+    def localZxing = file('libs/zxing-core-3.5.3.jar')
+    implementation(localZxing.exists() ? files(localZxing) : 'com.google.zxing:core:3.5.3')
+    implementation files('libs/welink-core.aar')
+    def localWebrtc = file('libs/webrtc-local.aar')
+    implementation(localWebrtc.exists() ? files(localWebrtc) : 'io.github.webrtc-sdk:android:150.7871.01')
+}

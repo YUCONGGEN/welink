@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.syso binary
+third_party/YUDESK_NOTICES.txt -whitespace
+internal/ui/assets/licenses.txt -whitespace

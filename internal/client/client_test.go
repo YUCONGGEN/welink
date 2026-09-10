@@ -1,0 +1,62 @@
+package client
+
+import (
+	"net/http"
+	"net/http/cookiejar"
+	"testing"
+)
+
+func TestLocalServerRequiresSecretAndRejectsForeignOrigin(t *testing.T) {
+	c, e := New(Options{Directory: t.TempDir(), Listen: "127.0.0.1:0", Server: "http://127.0.0.1:9"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	base := "http://" + c.host
+	resp, e := http.Get(base + "/local/config")
+	if e != nil {
+		t.Fatal(e)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatal("local API exposed without token")
+	}
+	jar, _ := cookiejar.New(nil)
+	browser := &http.Client{Jar: jar}
+	resp, e = browser.Get(c.URL())
+	if e != nil {
+		t.Fatal(e)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("bootstrap failed %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("POST", base+"/local/remote/stop", nil)
+	req.Header.Set("Origin", "https://attacker.invalid")
+	resp, e = browser.Do(req)
+	if e != nil {
+		t.Fatal(e)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatal("foreign origin reached local control")
+	}
+	resp, e = browser.Get(base + "/local/config")
+	if e != nil {
+		t.Fatal(e)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatal("authorized local API failed")
+	}
+}
+func TestServerConfigRejectsUnsafeAddress(t *testing.T) {
+	for _, s := range []string{"ftp://example.com", "https://user:pass@example.com", "https://example.com/?token=secret", "file:///tmp/data"} {
+		if _, e := validateConfig(Config{Server: s}); e == nil {
+			t.Fatalf("accepted unsafe address %s", s)
+		}
+	}
+	if _, e := validateConfig(Config{Server: "https://example.com", Fingerprint: "wrong"}); e == nil {
+		t.Fatal("accepted invalid fingerprint")
+	}
+}
