@@ -57,6 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Native WebRTC mesh meeting. Direct links and TURN relays both carry DTLS/SRTP encrypted media. */
@@ -74,19 +75,18 @@ final class ConferenceController {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService reader=Executors.newSingleThreadExecutor(r->new Thread(r,"WeLink-conference-read"));
     private final ExecutorService writer=Executors.newSingleThreadExecutor(r->new Thread(r,"WeLink-conference-write"));
+    private final ScheduledExecutorService audioScheduler=Executors.newSingleThreadScheduledExecutor(r->new Thread(r,"WeLink-audio-check"));
     private final Map<String,Participant> participants=new LinkedHashMap<>();
     private final Map<String,Peer> peers=new LinkedHashMap<>();
-    private final EglBase egl;
-    private final PeerConnectionFactory factory;
-    private final org.webrtc.audio.JavaAudioDeviceModule audioDevice;
-    private volatile float capturedMicrophoneLevel;
-    private volatile long microphoneSampleTime;
-    private float displayedMicrophoneLevel;
-    private final Runnable microphoneMeter=new Runnable(){public void run(){if(closed)return;boolean enabled=audioTrack!=null&&audioTrack.enabled();float level=enabled&&android.os.SystemClock.elapsedRealtime()-microphoneSampleTime<500?capturedMicrophoneLevel:0;displayedMicrophoneLevel=enabled?Math.max(level,displayedMicrophoneLevel*.65f):0;presentation.setMicrophoneLevel(displayedMicrophoneLevel);main.postDelayed(this,100);}};
-    private final ConferenceUi presentation;
-    private final AudioManager audioManager;
-    private final int oldAudioMode;
-    private final boolean oldSpeaker;
+    private EglBase egl;
+    private PeerConnectionFactory factory;
+    private org.webrtc.audio.JavaAudioDeviceModule audioDevice;
+    private volatile MicrophoneInput microphoneInput;
+    private final Runnable microphoneMeter=new Runnable(){public void run(){if(closed)return;MicrophoneInput input=microphoneInput;presentation.setMicrophoneLevel(input==null?0:input.level(android.os.SystemClock.elapsedRealtime()));main.postDelayed(this,100);}};
+    private ConferenceUi presentation;
+    private AudioManager audioManager;
+    private int oldAudioMode;
+    private boolean oldSpeaker, audioModeSaved;
     private AudioSource audioSource;
     private AudioTrack audioTrack;
     private VideoSource cameraSource, screenSource;
@@ -95,7 +95,8 @@ final class ConferenceController {
     private ScreenCapturerAndroid screenCapturer;
     private SurfaceTextureHelper cameraTexture, screenTexture;
     private String selfID="", hostID="";
-    private boolean closed, intentional, screenSharing, recording;
+    private volatile boolean closed;
+    private boolean intentional, screenSharing, recording;
     private boolean frontCamera=true;
     private MediaRecorder recorder;
     private MediaProjection recordProjection;
@@ -105,15 +106,29 @@ final class ConferenceController {
 
     ConferenceController(MeetingActivity activity, Conference channel, String code, String name, boolean host, boolean microphone, boolean camera, String callMode, String peerName) throws Exception {
         this.activity=activity;this.channel=channel;this.code=code;this.localName=name;this.requestedHost=host;this.callMode=!callMode.isEmpty();
+        try { initialize(name,host,microphone,camera,callMode,peerName); }
+        catch (Exception | LinkageError failure) { releaseResources(); throw failure; }
+    }
+
+    private void initialize(String name,boolean host,boolean microphone,boolean camera,String callMode,String peerName) throws Exception {
         initializeWebRTC(activity.getApplicationContext());
         egl=EglBase.create();
-        audioDevice=org.webrtc.audio.JavaAudioDeviceModule.builder(activity.getApplicationContext()).setAudioFormat(android.media.AudioFormat.ENCODING_PCM_16BIT).setSamplesReadyCallback(samples->{capturedMicrophoneLevel=MicrophoneLevel.pcm16(samples.getData());microphoneSampleTime=android.os.SystemClock.elapsedRealtime();}).createAudioDeviceModule();
+        audioDevice=org.webrtc.audio.JavaAudioDeviceModule.builder(activity.getApplicationContext())
+                .setScheduler(audioScheduler)
+                .setAudioFormat(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                .setSamplesReadyCallback(samples->{MicrophoneInput input=microphoneInput;if(input!=null)input.samples(samples.getData(),android.os.SystemClock.elapsedRealtime());})
+                .setAudioRecordErrorCallback(new org.webrtc.audio.JavaAudioDeviceModule.AudioRecordErrorCallback(){
+                    public void onWebRtcAudioRecordInitError(String error){main.post(ConferenceController.this::microphoneFailed);}
+                    public void onWebRtcAudioRecordStartError(org.webrtc.audio.JavaAudioDeviceModule.AudioRecordStartErrorCode code,String error){main.post(ConferenceController.this::microphoneFailed);}
+                    public void onWebRtcAudioRecordError(String error){main.post(ConferenceController.this::microphoneFailed);}
+                }).createAudioDeviceModule();
+        microphoneInput=new MicrophoneInput(new WebRtcMicrophoneDevice(audioDevice));
         factory=PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioDevice)
                 .setVideoEncoderFactory(new DefaultVideoEncoderFactory(egl.getEglBaseContext(),true,true))
                 .setVideoDecoderFactory(new DefaultVideoDecoderFactory(egl.getEglBaseContext()))
                 .createPeerConnectionFactory();
-        audioManager=(AudioManager)activity.getSystemService(Context.AUDIO_SERVICE);oldAudioMode=audioManager.getMode();oldSpeaker=audioManager.isSpeakerphoneOn();audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);audioManager.setSpeakerphoneOn(true);
+        audioManager=(AudioManager)activity.getSystemService(Context.AUDIO_SERVICE);oldAudioMode=audioManager.getMode();oldSpeaker=audioManager.isSpeakerphoneOn();audioModeSaved=true;audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);audioManager.setSpeakerphoneOn(true);
         presentation=new ConferenceUi(activity,code,callMode,peerName,egl.getEglBaseContext(),new ConferenceUi.Actions(){
             @Override public void invite(){activity.requestConferenceInvite();}
             @Override public void copyInvitation(){activity.copyMeetingInvitation();}
@@ -137,7 +152,7 @@ final class ConferenceController {
     boolean isHost(){return !selfID.isEmpty()&&selfID.equals(hostID);}
     boolean isClosed(){return closed;}
 
-    private static void initializeWebRTC(Context context){if(WEBRTC_INITIALIZED.compareAndSet(false,true)){PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).setFieldTrials("WebRTC-H264HighProfile/Enabled/").createInitializationOptions());}}
+    private static synchronized void initializeWebRTC(Context context){if(!WEBRTC_INITIALIZED.get()){PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).setFieldTrials("WebRTC-H264HighProfile/Enabled/").createInitializationOptions());WEBRTC_INITIALIZED.set(true);}}
 
     private void readLoop(){try{while(!closed){String raw=channel.read();JSONObject message=new JSONObject(raw);main.post(()->handle(message));}}catch(Exception failure){main.post(()->{if(!closed)finish("会议连接已断开，请检查网络后重新加入",true);});}}
 
@@ -149,7 +164,7 @@ final class ConferenceController {
         case "host": changeHost(message.optString("host"));break;
         case "signal": signal(message);break;
         case "ended": finish(message.optString("message","主持人已结束会议"),false);break;
-        case "mute": if(audioTrack!=null){audioTrack.setEnabled(false);local().microphone=false;sendState();render();notice("主持人已将麦克风静音");}break;
+        case "mute": if(audioTrack!=null){setMicrophoneEnabled(false);sendState();render();notice("主持人已将麦克风静音");}break;
         case "call-state": callStarted=message.optLong("started");break;
         case "pong": break;
         default: break;
@@ -208,10 +223,35 @@ final class ConferenceController {
     }
     private void sendSignal(String to,String type,String sdp,IceCandidate candidate){try{JSONObject message=new JSONObject().put("type","signal").put("to",to).put("signal",type);if(sdp!=null)message.put("sdp",sdp);if(candidate!=null){JSONObject c=new JSONObject().put("sdpMid",candidate.sdpMid).put("sdpMLineIndex",candidate.sdpMLineIndex).put("candidate",candidate.sdp);message.put("candidate",c.toString());}send(message);}catch(Exception failure){connectionProblem(failure.getMessage());}}
 
-    private void createMicrophone(){if(audioTrack!=null)return;audioSource=factory.createAudioSource(new MediaConstraints());audioTrack=factory.createAudioTrack("welink-audio",audioSource);audioTrack.setEnabled(true);}
-    private void createCamera() throws Exception {if(cameraTrack!=null){cameraTrack.setEnabled(true);return;}CameraEnumerator enumerator=new Camera2Enumerator(activity);String selected=null;for(String id:enumerator.getDeviceNames())if(enumerator.isFrontFacing(id)){selected=id;break;}if(selected==null&&enumerator.getDeviceNames().length>0)selected=enumerator.getDeviceNames()[0];if(selected==null)throw new IllegalStateException("没有找到可用摄像头");frontCamera=enumerator.isFrontFacing(selected);cameraCapturer=enumerator.createCapturer(selected,null);if(cameraCapturer==null)throw new IllegalStateException("摄像头正在被其他应用使用");cameraSource=factory.createVideoSource(false);cameraTexture=SurfaceTextureHelper.create("WeLink-camera",egl.getEglBaseContext());cameraCapturer.initialize(cameraTexture,activity,cameraSource.getCapturerObserver());cameraCapturer.startCapture(1280,720,24);cameraTrack=factory.createVideoTrack("welink-camera",cameraSource);cameraTrack.setEnabled(true);}
+    private void createMicrophone(){if(audioTrack!=null)return;audioSource=factory.createAudioSource(new MediaConstraints());audioTrack=factory.createAudioTrack("welink-audio",audioSource);setMicrophoneEnabled(true);}
+    private void setMicrophoneEnabled(boolean enabled){
+        if(audioTrack==null)return;
+        if(!enabled)audioTrack.setEnabled(false);
+        try{microphoneInput.setEnabled(enabled);if(enabled)audioTrack.setEnabled(true);}
+        catch(RuntimeException|LinkageError failure){audioTrack.setEnabled(false);throw failure;}
+        finally{Participant local=local();if(local!=null)local.microphone=audioTrack.enabled()&&microphoneInput.enabled();if(!enabled&&presentation!=null)presentation.setMicrophoneLevel(0);}
+    }
+    private void microphoneFailed(){
+        if(closed||microphoneInput==null||!microphoneInput.enabled())return;
+        cleanup("microphone failure",()->setMicrophoneEnabled(false));sendState();render();
+        notice("麦克风采集失败，请检查权限或其他应用的占用后重新开启");
+    }
+    private void createCamera() throws Exception {
+        if(cameraTrack!=null){cameraTrack.setEnabled(true);return;}
+        try{
+            CameraEnumerator enumerator=new Camera2Enumerator(activity);String selected=null;
+            for(String id:enumerator.getDeviceNames())if(enumerator.isFrontFacing(id)){selected=id;break;}
+            if(selected==null&&enumerator.getDeviceNames().length>0)selected=enumerator.getDeviceNames()[0];
+            if(selected==null)throw new IllegalStateException("没有找到可用摄像头");
+            frontCamera=enumerator.isFrontFacing(selected);cameraCapturer=enumerator.createCapturer(selected,null);
+            if(cameraCapturer==null)throw new IllegalStateException("摄像头正在被其他应用使用");
+            cameraSource=factory.createVideoSource(false);cameraTexture=SurfaceTextureHelper.create("WeLink-camera",egl.getEglBaseContext());
+            cameraCapturer.initialize(cameraTexture,activity,cameraSource.getCapturerObserver());cameraCapturer.startCapture(1280,720,24);
+            cameraTrack=factory.createVideoTrack("welink-camera",cameraSource);cameraTrack.setEnabled(true);
+        }catch(Exception|LinkageError failure){releaseCamera();throw failure;}
+    }
 
-    private void toggleMicrophone(){if(closed)return;if(audioTrack==null&&activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){activity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQUEST_MICROPHONE);return;}try{if(audioTrack==null){createMicrophone();for(Peer peer:peers.values()){peer.audioSender=peer.pc.addTrack(audioTrack,Collections.singletonList("welink"));createOffer(peer);}}else audioTrack.setEnabled(!audioTrack.enabled());local().microphone=audioTrack.enabled();sendState();render();}catch(Exception failure){notice("麦克风开启失败："+failure.getMessage());}}
+    private void toggleMicrophone(){if(closed)return;if((audioTrack==null||!audioTrack.enabled())&&activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){activity.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQUEST_MICROPHONE);return;}try{if(audioTrack==null)createMicrophone();else setMicrophoneEnabled(!audioTrack.enabled());if(audioTrack.enabled())for(Peer peer:peers.values())if(peer.audioSender==null){peer.audioSender=peer.pc.addTrack(audioTrack,Collections.singletonList("welink"));createOffer(peer);}sendState();render();}catch(Exception|LinkageError failure){sendState();render();notice("麦克风开启失败，请检查权限后重试");}}
     private void toggleCamera(){if(closed)return;if(cameraTrack==null&&activity.checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){activity.requestPermissions(new String[]{Manifest.permission.CAMERA},REQUEST_CAMERA);return;}try{if(cameraTrack==null){createCamera();if(!screenSharing)replaceVideo(cameraTrack);presentation.attachVideo(selfID.isEmpty()?"local":selfID,cameraTrack,frontCamera);}else cameraTrack.setEnabled(!cameraTrack.enabled());local().camera=cameraTrack.enabled();sendState();render();}catch(Exception failure){notice("摄像头开启失败："+failure.getMessage());}}
     void mediaPermissionResult(int request,boolean granted){if(!granted){notice(request==REQUEST_MICROPHONE?"未获得麦克风权限":"未获得摄像头权限");return;}if(request==REQUEST_MICROPHONE)toggleMicrophone();else if(request==REQUEST_CAMERA)toggleCamera();}
     private void switchCamera(){if(closed)return;if(cameraCapturer instanceof CameraVideoCapturer)((CameraVideoCapturer)cameraCapturer).switchCamera(new CameraVideoCapturer.CameraSwitchHandler(){@Override public void onCameraSwitchDone(boolean front){main.post(()->{if(closed||cameraTrack==null)return;frontCamera=front;presentation.attachVideo(selfID,cameraTrack,front);});}@Override public void onCameraSwitchError(String error){main.post(()->{if(!closed)notice("切换摄像头失败："+error);});}});}
@@ -238,11 +278,45 @@ final class ConferenceController {
     private void notice(String message){activity.conferenceNotice(message);}
     private String safeName(String value){value=value==null?"":value.trim();return value.isEmpty()?"参会者":value;}
 
-    private void finish(String reason,boolean unexpected){if(closed)return;closed=true;main.removeCallbacks(callClock);main.removeCallbacks(microphoneMeter);ConferenceProjectionService.onStopped=null;
-        // Detach renderers while the local and remote tracks are still alive.
-        presentation.release();for(Peer peer:new ArrayList<>(peers.values()))peer.close();peers.clear();if(screenSharing||screenCapturer!=null)stopScreenShare();if(recording||recorder!=null)stopRecording(false);channel.close();reader.shutdownNow();writer.shutdown();if(cameraCapturer!=null){try{cameraCapturer.stopCapture();}catch(Exception ignored){}cameraCapturer.dispose();}if(cameraTrack!=null)cameraTrack.dispose();if(cameraSource!=null)cameraSource.dispose();if(cameraTexture!=null)cameraTexture.dispose();if(audioTrack!=null)audioTrack.dispose();if(audioSource!=null)audioSource.dispose();factory.dispose();audioDevice.release();egl.release();audioManager.setMode(oldAudioMode);audioManager.setSpeakerphoneOn(oldSpeaker);activity.onConferenceClosed(reason,unexpected&&!intentional);}
+    private void finish(String reason,boolean unexpected){if(closed)return;releaseResources();activity.onConferenceClosed(reason,unexpected&&!intentional);}
 
-    private final class Peer implements PeerConnection.Observer {final String id;PeerConnection pc;IcePathController route;RtpSender audioSender,videoSender;boolean remoteSet,makingOffer,needsOffer,ignoreOffer;int offerEpoch;final List<IceCandidate> candidates=new ArrayList<>();Peer(String id){this.id=id;}void close(){offerEpoch++;if(route!=null)route.close();if(pc!=null){pc.close();pc.dispose();pc=null;}}
+    void destroy(){releaseResources();}
+
+    private void releaseResources(){
+        if(closed)return;closed=true;
+        main.removeCallbacks(callClock);main.removeCallbacks(microphoneMeter);
+        if(ConferenceProjectionService.onStopped==projectionStopped)ConferenceProjectionService.onStopped=null;
+        // Detach renderers before tracks, and release the solo capture request before the factory.
+        if(presentation!=null)cleanup("renderers",presentation::release);
+        if(microphoneInput!=null)cleanup("microphone capture",microphoneInput::close);
+        for(Peer peer:new ArrayList<>(peers.values()))cleanup("peer",peer::close);
+        peers.clear();
+        cleanup("screen sharing",this::stopScreenShare);
+        cleanup("recording",()->stopRecording(false));
+        cleanup("conference channel",channel::close);
+        reader.shutdownNow();writer.shutdown();
+        releaseCamera();
+        if(audioTrack!=null)cleanup("audio track",audioTrack::dispose);
+        if(audioSource!=null)cleanup("audio source",audioSource::dispose);
+        if(factory!=null)cleanup("peer factory",factory::dispose);
+        if(audioDevice!=null)cleanup("audio device",audioDevice::release);
+        audioScheduler.shutdownNow();
+        if(egl!=null)cleanup("EGL",egl::release);
+        if(audioModeSaved){cleanup("audio mode",()->audioManager.setMode(oldAudioMode));cleanup("speaker",()->audioManager.setSpeakerphoneOn(oldSpeaker));}
+    }
+
+    private static void cleanup(String resource,Runnable action){try{action.run();}catch(RuntimeException|LinkageError failure){android.util.Log.w("WeLinkConference","Unable to release "+resource+" ("+failure.getClass().getSimpleName()+")");}}
+
+    private void releaseCamera(){
+        VideoCapturer capturer=cameraCapturer;VideoTrack track=cameraTrack;VideoSource source=cameraSource;SurfaceTextureHelper texture=cameraTexture;
+        cameraCapturer=null;cameraTrack=null;cameraSource=null;cameraTexture=null;
+        if(capturer!=null){cleanup("camera capture",()->{try{capturer.stopCapture();}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}});cleanup("camera",capturer::dispose);}
+        if(track!=null)cleanup("camera track",track::dispose);
+        if(source!=null)cleanup("camera source",source::dispose);
+        if(texture!=null)cleanup("camera texture",texture::dispose);
+    }
+
+    private final class Peer implements PeerConnection.Observer {final String id;PeerConnection pc;IcePathController route;RtpSender audioSender,videoSender;boolean remoteSet,makingOffer,needsOffer,ignoreOffer;int offerEpoch;final List<IceCandidate> candidates=new ArrayList<>();Peer(String id){this.id=id;}void close(){offerEpoch++;if(route!=null)cleanup("peer route",route::close);PeerConnection connection=pc;pc=null;if(connection!=null){cleanup("peer connection",connection::close);cleanup("peer connection handle",connection::dispose);}}
         @Override public void onSignalingChange(PeerConnection.SignalingState state){}
         @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state){main.post(()->{if(closed||pc==null||peers.get(id)!=this)return;if(route!=null)route.update();if(state==PeerConnection.IceConnectionState.FAILED||state==PeerConnection.IceConnectionState.DISCONNECTED)presentation.setConnection("部分成员网络不稳定",true);else if(state==PeerConnection.IceConnectionState.CONNECTED||state==PeerConnection.IceConnectionState.COMPLETED){renderConnection();if(callMode){try{send(new JSONObject().put("type","call-connected"));}catch(Exception ignored){}}}});}
         @Override public void onIceConnectionReceivingChange(boolean receiving){}

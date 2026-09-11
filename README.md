@@ -4,7 +4,9 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 
 ## 使用
 
-最新客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
+最新 Android 修复：[0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md)。Windows 当前为 0.1.4-preview。
+
+双端客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
 
 客户端修复记录：[0.1.3 · 同时重连的音视频协商修复](docs/MEDIA_NEGOTIATION_20260911.md)。[0.1.2 · 系统安全边距、麦克风波动、Windows 黑屏与托盘图标](docs/CLIENT_STABILITY_20260911.md) 的修复继续保留。
 
