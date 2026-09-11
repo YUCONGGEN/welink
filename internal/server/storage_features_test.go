@@ -247,7 +247,9 @@ func TestAdminDeletionRevokesAccessButPreservesChat(t *testing.T) {
 	f.request("POST", "/api/auth/login", "", map[string]string{"account": created.User.Number, "password": created.InitialPassword}, 200, &target)
 	cid := f.direct(ordinary, target)
 	f.request("POST", "/api/conversations/"+cid+"/messages", target.Token, map[string]string{"text": "历史保留", "clientId": "admin-retained-history"}, 200, nil)
-	status, raw := storageUpload(t, f, "/api/drive/files", target.Token, "private.txt", strings.NewReader("private"), "")
+	var folder driveFolder
+	f.request("POST", "/api/drive/folders", target.Token, map[string]string{"name": "账号文件夹"}, 200, &folder)
+	status, raw := storageUpload(t, f, "/api/drive/files?folder="+folder.ID, target.Token, "private.txt", strings.NewReader("private"), "")
 	if status != 200 {
 		t.Fatalf("%d %s", status, raw)
 	}

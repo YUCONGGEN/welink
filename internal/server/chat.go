@@ -140,7 +140,7 @@ func (s *Server) conversationDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var kind, name, owner, notice string
 	_ = s.db.QueryRow("SELECT kind,name,owner,announcement FROM conversations WHERE id=?", id).Scan(&kind, &name, &owner, &notice)
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number,CASE WHEN c.kind<>'group' THEN '' WHEN c.owner=u.id THEN 'owner' WHEN COALESCE(gm.admin,0)=1 THEN 'admin' ELSE 'member' END,COALESCE(gm.nickname,''),COALESCE(gm.mute_until,0) FROM users u JOIN members m ON u.id=m.user_id JOIN conversations c ON c.id=m.conversation_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN group_members gm ON gm.conversation_id=c.id AND gm.user_id=u.id WHERE m.conversation_id=? ORDER BY CASE WHEN c.owner=u.id THEN 0 WHEN COALESCE(gm.admin,0)=1 THEN 1 ELSE 2 END,u.name", id)
+	rows, e := s.db.Query("SELECT u.id,CAST(n.number AS TEXT),u.name,u.avatar,u.bio,n.number,CASE WHEN c.kind<>'group' THEN '' WHEN c.owner=u.id THEN 'owner' WHEN COALESCE(gm.admin,0)=1 THEN 'admin' ELSE 'member' END,COALESCE(gm.nickname,''),COALESCE(gm.mute_until,0) FROM users u JOIN members m ON u.id=m.user_id JOIN conversations c ON c.id=m.conversation_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN group_members gm ON gm.conversation_id=c.id AND gm.user_id=u.id WHERE m.conversation_id=? ORDER BY CASE WHEN c.owner=u.id THEN 0 WHEN COALESCE(gm.admin,0)=1 THEN 1 ELSE 2 END,u.name", id)
 	if e != nil {
 		s.dbError(w, e)
 		return

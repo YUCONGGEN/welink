@@ -23,12 +23,13 @@ CREATE INDEX IF NOT EXISTS drive_share_file ON drive_shares(file_id);
 `
 
 type driveFile struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Size    int64  `json:"size"`
-	MIME    string `json:"mime"`
-	Created int64  `json:"created"`
-	Updated int64  `json:"updated"`
+	ID       string `json:"id"`
+	FolderID string `json:"folderId"`
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	MIME     string `json:"mime"`
+	Created  int64  `json:"created"`
+	Updated  int64  `json:"updated"`
 }
 
 func driveUsage(q rowQuery, user string) (int64, int, error) {
@@ -55,7 +56,19 @@ func (s *Server) listDrive(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "搜索内容过长")
 		return
 	}
-	rows, err := s.db.Query("SELECT id,name,size,mime,created,updated FROM drive_files WHERE owner=? AND name LIKE ? ESCAPE '\\' ORDER BY created DESC,id LIMIT 101 OFFSET ?", uid(r), "%"+escapeLike(query)+"%", offset)
+	folderID := r.URL.Query().Get("folder")
+	path, err := driveFolderPath(s.db, uid(r), folderID)
+	if err != nil {
+		fail(w, 404, "文件夹不存在或已被删除")
+		return
+	}
+	folders, err := s.childDriveFolders(uid(r), folderID, query)
+	if err != nil {
+		s.dbError(w, err)
+		return
+	}
+	_, scoped := r.URL.Query()["folder"]
+	rows, err := s.db.Query("SELECT f.id,f.name,f.size,f.mime,f.created,f.updated,COALESCE(p.folder_id,'') FROM drive_files f LEFT JOIN drive_folder_files p ON p.file_id=f.id WHERE f.owner=? AND f.name LIKE ? ESCAPE '\\' AND (?=0 OR COALESCE(p.folder_id,'')=?) ORDER BY f.created DESC,f.id LIMIT 101 OFFSET ?", uid(r), "%"+escapeLike(query)+"%", scoped, folderID, offset)
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -64,7 +77,7 @@ func (s *Server) listDrive(w http.ResponseWriter, r *http.Request) {
 	files := []driveFile{}
 	for rows.Next() {
 		var f driveFile
-		if err = rows.Scan(&f.ID, &f.Name, &f.Size, &f.MIME, &f.Created, &f.Updated); err != nil {
+		if err = rows.Scan(&f.ID, &f.Name, &f.Size, &f.MIME, &f.Created, &f.Updated, &f.FolderID); err != nil {
 			s.dbError(w, err)
 			return
 		}
@@ -78,9 +91,14 @@ func (s *Server) listDrive(w http.ResponseWriter, r *http.Request) {
 	if more {
 		files = files[:100]
 	}
-	ok(w, map[string]any{"files": files, "used": used, "quota": s.settings.driveQuota(), "count": count, "hasMore": more, "storageAvailable": s.storageReady() == nil})
+	ok(w, map[string]any{"files": files, "folders": folders, "path": path, "folderId": folderID, "used": used, "quota": s.settings.driveQuota(), "count": count, "hasMore": more, "storageAvailable": s.storageReady() == nil})
 }
 func (s *Server) uploadDrive(w http.ResponseWriter, r *http.Request) {
+	folderID := r.URL.Query().Get("folder")
+	if _, err := driveFolderPath(s.db, uid(r), folderID); err != nil {
+		fail(w, 404, "目标文件夹不存在")
+		return
+	}
 	if !s.uploadSlot(w, r) {
 		return
 	}
@@ -157,6 +175,10 @@ func (s *Server) uploadDrive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	if _, err = driveFolderPath(tx, uid(r), folderID); err != nil {
+		fail(w, 409, "目标文件夹已删除，请重新选择上传目录")
+		return
+	}
 	used, count, err = driveUsage(tx, uid(r))
 	if err != nil {
 		s.dbError(w, err)
@@ -166,10 +188,16 @@ func (s *Server) uploadDrive(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "网盘容量不足，请删除文件后重试")
 		return
 	}
-	f := driveFile{ID: id, Name: name, Size: size, MIME: "application/octet-stream", Created: now(), Updated: now()}
+	f := driveFile{ID: id, FolderID: folderID, Name: name, Size: size, MIME: "application/octet-stream", Created: now(), Updated: now()}
 	if _, err = tx.Exec("INSERT INTO drive_files VALUES(?,?,?,?,?,?,?)", id, uid(r), name, size, f.MIME, f.Created, f.Updated); err != nil {
 		s.dbError(w, err)
 		return
+	}
+	if folderID != "" {
+		if _, err = tx.Exec("INSERT INTO drive_folder_files VALUES(?,?)", id, folderID); err != nil {
+			s.dbError(w, err)
+			return
+		}
 	}
 	if err = storeLocation(tx, "yunpan", uid(r), id, volume); err != nil {
 		s.dbError(w, err)
@@ -251,15 +279,8 @@ func (s *Server) downloadDrive(w http.ResponseWriter, r *http.Request) {
 	s.serveDriveFile(w, r, id, uid(r), name)
 }
 func (s *Server) shareDrive(w http.ResponseWriter, r *http.Request) {
-	var p struct{ Days int }
+	var p struct{}
 	if !decode(w, r, &p) {
-		return
-	}
-	if p.Days == 0 {
-		p.Days = 7
-	}
-	if p.Days < 1 || p.Days > 365 {
-		fail(w, 400, "分享有效期应为 1–365 天")
 		return
 	}
 	tx, err := s.db.Begin()
@@ -274,14 +295,23 @@ func (s *Server) shareDrive(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "文件不存在")
 		return
 	}
-	// Keep one current capability per file. Creating a new link revokes the old.
-	if _, err = tx.Exec("DELETE FROM drive_shares WHERE file_id=?", id); err != nil {
+	var token string
+	err = tx.QueryRow("SELECT token FROM drive_shares WHERE file_id=? AND (expires=0 OR expires>?) LIMIT 1", id, now()).Scan(&token)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.dbError(w, err)
 		return
 	}
-	token := newID() + newID()
-	expires := now() + int64(p.Days)*int64(24*time.Hour/time.Millisecond)
-	if _, err = tx.Exec("INSERT INTO drive_shares VALUES(?,?,?,?)", token, id, now(), expires); err != nil {
+	if token == "" {
+		token = newID() + newID()
+		if _, err = tx.Exec("DELETE FROM drive_shares WHERE file_id=?", id); err != nil {
+			s.dbError(w, err)
+			return
+		}
+		if _, err = tx.Exec("INSERT INTO drive_shares VALUES(?,?,?,0)", token, id, now()); err != nil {
+			s.dbError(w, err)
+			return
+		}
+	} else if _, err = tx.Exec("UPDATE drive_shares SET expires=0 WHERE token=?", token); err != nil {
 		s.dbError(w, err)
 		return
 	}
@@ -289,7 +319,7 @@ func (s *Server) shareDrive(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, err)
 		return
 	}
-	ok(w, map[string]any{"url": strings.TrimRight(s.settings.PublicURL, "/") + "/share/" + token, "expires": expires})
+	ok(w, map[string]any{"url": strings.TrimRight(s.settings.PublicURL, "/") + "/share/" + token, "expires": int64(0)})
 }
 func (s *Server) revokeDriveShare(w http.ResponseWriter, r *http.Request) {
 	result, err := s.db.Exec("DELETE FROM drive_shares WHERE file_id IN (SELECT id FROM drive_files WHERE id=? AND owner=?)", r.PathValue("id"), uid(r))
@@ -308,7 +338,7 @@ func (s *Server) publicDriveShare(w http.ResponseWriter, r *http.Request) {
 	}
 	var id, owner, name string
 	var size, expires int64
-	err := s.db.QueryRow("SELECT f.id,f.owner,f.name,f.size,s.expires FROM drive_shares s JOIN drive_files f ON f.id=s.file_id WHERE s.token=? AND s.expires>?", token, now()).Scan(&id, &owner, &name, &size, &expires)
+	err := s.db.QueryRow("SELECT f.id,f.owner,f.name,f.size,s.expires FROM drive_shares s JOIN drive_files f ON f.id=s.file_id WHERE s.token=? AND (s.expires=0 OR s.expires>?)", token, now()).Scan(&id, &owner, &name, &size, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.NotFound(w, r)
 		return
@@ -323,5 +353,9 @@ func (s *Server) publicDriveShare(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
-	fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeLink 网盘分享</title><style>body{margin:0;background:#f1f7ff;color:#31435a;font:16px system-ui;display:grid;min-height:100vh;place-items:center}main{box-sizing:border-box;background:white;border-radius:20px;padding:36px;width:min(92vw,520px)}h1{font-size:22px;overflow-wrap:anywhere}p{color:#8191a5}a{display:block;padding:14px;text-align:center;background:#0099ff;color:white;text-decoration:none;border-radius:8px}</style><main><b>WeLink 网盘</b><h1>%s</h1><p>%.2f MB · 链接有效至 %s</p><a href="?download=1">下载文件</a></main></html>`, template.HTMLEscapeString(name), float64(size)/(1<<20), time.UnixMilli(expires).Format("2006-01-02"))
+	validity := "永久有效"
+	if expires != 0 {
+		validity = "有效至 " + time.UnixMilli(expires).Format("2006-01-02")
+	}
+	fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeLink 网盘分享</title><style>body{margin:0;background:#f1f7ff;color:#31435a;font:16px system-ui;display:grid;min-height:100vh;place-items:center}main{box-sizing:border-box;background:white;border-radius:20px;padding:36px;width:min(92vw,520px)}h1{font-size:22px;overflow-wrap:anywhere}p{color:#8191a5}a{display:block;padding:14px;text-align:center;background:#0099ff;color:white;text-decoration:none;border-radius:8px}</style><main><b>WeLink 网盘</b><h1>%s</h1><p>%.2f MB · 链接%s</p><a href="?download=1">下载文件</a></main></html>`, template.HTMLEscapeString(name), float64(size)/(1<<20), validity)
 }

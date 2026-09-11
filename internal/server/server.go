@@ -171,11 +171,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"POST /api/drive/folders": s.createDriveFolder, "PATCH /api/drive/folders/{id}": s.renameDriveFolder, "DELETE /api/drive/folders/{id}": s.deleteDriveFolder, "POST /api/drive/files/{id}/move": s.moveDriveFile,
 		"GET /api/drive": s.listDrive, "POST /api/drive/files": s.uploadDrive, "GET /api/drive/files/{id}": s.downloadDrive, "PATCH /api/drive/files/{id}": s.renameDrive, "DELETE /api/drive/files/{id}": s.deleteDrive, "POST /api/drive/files/{id}/share": s.shareDrive, "DELETE /api/drive/files/{id}/share": s.revokeDriveShare,
 		"GET /api/spaces/{user}": s.listSpace, "PATCH /api/spaces/me/access": s.setSpaceAccess, "GET /api/spaces/{user}/documents/{id}": s.readSpaceDocument, "POST /api/spaces/me/documents": s.saveSpaceDocument, "PUT /api/spaces/me/documents/{id}": s.saveSpaceDocument, "DELETE /api/spaces/me/documents/{id}": s.deleteSpaceDocument,
 		"POST /api/admin/users/{id}/password": s.adminResetPassword,
 		"GET /api/admin/users":                s.adminUsers, "POST /api/admin/users": s.adminCreateUser, "DELETE /api/admin/users/{id}": s.adminDeleteUser,
 		"DELETE /api/conversations/{id}": s.hideConversation,
+		"GET /api/users/{id}":            s.userProfile,
 		"GET /api/config":                s.publicConfig,
 		"GET /api/meetings/{code}":       s.meetingInfo,
 		"PATCH /api/me/avatar":           s.selectCartoonAvatar,
@@ -200,7 +202,7 @@ func (s *Server) routes() {
 		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
 		"POST /api/conversations/{id}/messages/sync": s.syncCachedMessages,
-		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
+		"GET /api/favorites":                         s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {
 		s.mux.Handle(pattern, s.auth(h))
@@ -293,7 +295,10 @@ func (s *Server) online(id string) bool {
 	return len(s.clients[id]) > 0
 }
 func (s *Server) user(id string) (u User, err error) {
-	err = s.db.QueryRow("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id=?", id).Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number)
+	err = s.db.QueryRow("SELECT u.id,CAST(n.number AS TEXT),u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id=?", id).Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Number)
+	if err == nil {
+		err = s.fillProfileDetails(&u)
+	}
 	u.Online = s.online(id)
 	return
 }

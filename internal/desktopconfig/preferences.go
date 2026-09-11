@@ -9,6 +9,7 @@ import (
 
 type Preferences struct {
 	CloseToTray    bool   `json:"closeToTray"`
+	MessageSound   bool   `json:"messageSound"`
 	MessageAlerts  bool   `json:"messageAlerts"`
 	AutoStart      bool   `json:"autoStart"`
 	StartMinimized bool   `json:"startMinimized"`
@@ -18,7 +19,7 @@ type Preferences struct {
 }
 
 func Defaults() Preferences {
-	return Preferences{CloseToTray: true, MessageAlerts: true, StartMinimized: true, HotkeysEnabled: true, ShowHotkey: "Ctrl+Alt+W", CaptureHotkey: "Ctrl+Alt+A"}
+	return Preferences{CloseToTray: true, MessageAlerts: true, MessageSound: true, StartMinimized: true, HotkeysEnabled: true, ShowHotkey: "Ctrl+Alt+W", CaptureHotkey: "Ctrl+Alt+A"}
 }
 
 type Hotkey struct {

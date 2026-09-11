@@ -54,7 +54,7 @@ func TestCallsConsentSessionBindingSignalingAndHistory(t *testing.T) {
 	f.befriend(a, b)
 	cid := f.direct(a, b)
 	var b2 account
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": "call_bobby", "password": "test-password-937!"}, 200, &b2)
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": b.User.Number, "password": "test-password-937!"}, 200, &b2)
 	var c callResult
 	payload := map[string]string{"conversationId": cid, "mode": "video", "clientId": newID()}
 	f.request("POST", "/api/calls", a.Token, payload, 200, &c)
@@ -185,7 +185,7 @@ func TestCallsConcurrentAcceptAndServerRestart(t *testing.T) {
 	f.befriend(a, b)
 	cid := f.direct(a, b)
 	var b2 account
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": "race_call_bobby", "password": "test-password-937!"}, 200, &b2)
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": b.User.Number, "password": "test-password-937!"}, 200, &b2)
 	c := f.call(a, cid, "audio")
 	statuses := make(chan int, 2)
 	var wg sync.WaitGroup

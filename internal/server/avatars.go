@@ -225,7 +225,7 @@ func (s *Server) profileChanged(user string) {
 		}
 	}
 	rows.Close()
-	s.push(ids, "profile", map[string]string{"userId": u.ID, "name": u.Name, "avatar": u.Avatar, "bio": u.Bio})
+	s.push(ids, "profile", map[string]string{"userId": u.ID, "name": u.Name, "avatar": u.Avatar, "bio": u.Bio, "phone": u.Phone, "gender": u.Gender, "jobTitle": u.JobTitle})
 }
 
 func validateProfileAvatar(tx *sql.Tx, user string, value *string) error {

@@ -86,8 +86,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	var id string
 	var hash []byte
-	login := strings.ToLower(strings.TrimSpace(p.Account))
-	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE (u.account=? OR CAST(n.number AS TEXT)=? OR EXISTS(SELECT 1 FROM user_number_aliases a WHERE a.user_id=u.id AND CAST(a.number AS TEXT)=?)) AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login, login, login).Scan(&id, &hash)
+	login := strings.TrimSpace(p.Account)
+	if !regexp.MustCompile(`^[1-9][0-9]{5}$`).MatchString(login) {
+		fail(w, 401, "请输入正确的 6 位 WeLink 账号和密码")
+		return
+	}
+	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE CAST(n.number AS TEXT)=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login).Scan(&id, &hash)
 	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte(p.Password)) != nil {
 		fail(w, 401, "账号或密码不正确")
 		return
@@ -152,6 +156,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 	var p struct {
+		profileDetailsPatch
 		Name, Bio string
 		Avatar    *string
 	}
@@ -159,7 +164,7 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Name = strings.TrimSpace(p.Name)
-	if p.Name == "" || !validText(p.Name, 32) || !validText(p.Bio, 150) {
+	if !p.profileDetailsPatch.validate() || p.Name == "" || !validText(p.Name, 32) || !validText(p.Bio, 150) {
 		fail(w, 400, "个人资料格式错误")
 		return
 	}
@@ -177,6 +182,10 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
+	if e = p.profileDetailsPatch.save(tx, uid(r)); e != nil {
+		s.dbError(w, e)
+		return
+	}
 	if e = tx.Commit(); e != nil {
 		s.dbError(w, e)
 		return
@@ -191,7 +200,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		ok(w, out)
 		return
 	}
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND ((SELECT value FROM app_settings WHERE key='all_users')='1' OR NOT EXISTS(SELECT 1 FROM contact_privacy p WHERE p.user_id=u.id AND p.searchable=0) OR EXISTS(SELECT 1 FROM friends f WHERE f.user_id=? AND f.peer_id=u.id)) AND NOT EXISTS(SELECT 1 FROM contact_blocks b WHERE (b.user_id=? AND b.peer_id=u.id) OR (b.user_id=u.id AND b.peer_id=?)) AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id) AND (u.account=? OR CAST(n.number AS TEXT)=? OR u.id=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), uid(r), uid(r), uid(r), strings.ToLower(q), q, q, "%"+escapeLike(q)+"%")
+	rows, e := s.db.Query("SELECT u.id,CAST(n.number AS TEXT),u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND ((SELECT value FROM app_settings WHERE key='all_users')='1' OR NOT EXISTS(SELECT 1 FROM contact_privacy p WHERE p.user_id=u.id AND p.searchable=0) OR EXISTS(SELECT 1 FROM friends f WHERE f.user_id=? AND f.peer_id=u.id)) AND NOT EXISTS(SELECT 1 FROM contact_blocks b WHERE (b.user_id=? AND b.peer_id=u.id) OR (b.user_id=u.id AND b.peer_id=?)) AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id) AND (CAST(n.number AS TEXT)=? OR u.id=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), uid(r), uid(r), uid(r), q, q, "%"+escapeLike(q)+"%")
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -215,7 +224,7 @@ func escapeLike(s string) string {
 	return strings.ReplaceAll(s, "_", `\_`)
 }
 func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,COALESCE(f.remark,''),n.number,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM message_blocks b WHERE b.user_id=d.user_id AND b.peer_id=d.peer_id),EXISTS(SELECT 1 FROM contact_attention a WHERE a.user_id=d.user_id AND a.peer_id=d.peer_id) FROM directory_friends d JOIN users u ON u.id=d.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN friends f ON f.user_id=d.user_id AND f.peer_id=d.peer_id LEFT JOIN contact_preferences p ON p.user_id=d.user_id AND p.peer_id=d.peer_id WHERE d.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
+	rows, e := s.db.Query("SELECT u.id,CAST(n.number AS TEXT),u.name,u.avatar,u.bio,COALESCE(f.remark,''),n.number,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM message_blocks b WHERE b.user_id=d.user_id AND b.peer_id=d.peer_id),EXISTS(SELECT 1 FROM contact_attention a WHERE a.user_id=d.user_id AND a.peer_id=d.peer_id) FROM directory_friends d JOIN users u ON u.id=d.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN friends f ON f.user_id=d.user_id AND f.peer_id=d.peer_id LEFT JOIN contact_preferences p ON p.user_id=d.user_id AND p.peer_id=d.peer_id WHERE d.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return

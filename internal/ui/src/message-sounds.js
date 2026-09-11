@@ -1,0 +1,11 @@
+export function createMessageSounds({toast,native,hidden}) {
+ const key='welink_message_sound';let enabled=localStorage.getItem(key)!=='false',context=null,last=0;
+ const ready=native?window.welinkDesktopSettings().then(p=>{enabled=p.messageSound!==false;localStorage.setItem(key,String(enabled))}).catch(()=>{}):Promise.resolve();
+ function unlock(){if(!enabled)return;try{if(!context||context.state==='closed'){const Audio=window.AudioContext||window.webkitAudioContext;if(Audio)context=new Audio()}context?.resume().catch(()=>{})}catch{}}
+ async function set(value){if(native){const p=await window.welinkDesktopSettings();await window.welinkDesktopSave({...p,messageSound:value})}enabled=value;localStorage.setItem(key,String(value));if(!value){context?.close().catch(()=>{});context=null}else unlock()}
+ function notify(){if(!enabled||(native&&hidden())||Date.now()-last<1500)return;last=Date.now();unlock();if(!context)return;try{const oscillator=context.createOscillator(),gain=context.createGain(),at=context.currentTime;oscillator.frequency.value=660;gain.gain.setValueAtTime(.035,at);gain.gain.exponentialRampToValueAtTime(.001,at+.18);oscillator.connect(gain);gain.connect(context.destination);oscillator.start(at);oscillator.stop(at+.2);oscillator.onended=()=>{oscillator.disconnect();gain.disconnect()}}catch{}}
+ document.addEventListener('pointerdown',unlock,{once:true});
+ document.addEventListener('change',async e=>{if(e.target.id!=='pref-message-sound')return;const input=e.target,value=input.checked;input.disabled=true;try{await set(value);toast(value?'已开启消息提示音':'已关闭消息提示音')}catch(error){input.checked=enabled;toast(String(error))}finally{input.disabled=false}});
+ window.addEventListener('storage',e=>{if(e.key===key)enabled=e.newValue!=='false'});
+ return {ready,notify,enabled:()=>enabled,row:()=>'<label class="prefs-row" for="pref-message-sound"><span>消息提示音</span><input type="checkbox" id="pref-message-sound" '+(enabled?'checked':'')+'></label><p class="hint">立即生效，保存在本设备；关闭声音仍保留通知和未读标记。</p>',reset(){context?.close().catch(()=>{});context=null;last=0}};
+}

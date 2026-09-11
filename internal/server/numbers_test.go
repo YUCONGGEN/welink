@@ -72,7 +72,7 @@ func TestNumberMigrationPreservesExistingNumericAliases(t *testing.T) {
 	}
 }
 
-func TestSixDigitUpgradeKeepsIdentityAndOldLogin(t *testing.T) {
+func TestSixDigitUpgradeKeepsIdentityAndRequiresCurrentNumber(t *testing.T) {
 	f := setupCommunity(t)
 	a := f.register("preview_number")
 	if _, err := f.s.db.Exec("UPDATE user_numbers SET number=100000001 WHERE user_id=?", a.User.ID); err != nil {
@@ -90,9 +90,10 @@ func TestSixDigitUpgradeKeepsIdentityAndOldLogin(t *testing.T) {
 		t.Fatal("identity changed during six-digit upgrade")
 	}
 	var login account
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": "100000001", "password": "test-password-937!"}, 200, &login)
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": "100000001", "password": "test-password-937!"}, 401, nil)
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": user.Number, "password": "test-password-937!"}, 200, &login)
 	if login.User.ID != a.User.ID || login.User.Number != "100001" {
-		t.Fatal("old login no longer resolves to the same user")
+		t.Fatal("current number resolved to another user")
 	}
 	if _, err := f.s.db.Exec("UPDATE sqlite_sequence SET seq=999999 WHERE name='user_numbers'"); err != nil {
 		t.Fatal(err)

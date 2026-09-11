@@ -223,7 +223,7 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, stat.ModTime(), f)
 }
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT a.id,a.name,a.mime,a.size,a.created,c.name FROM attachments a JOIN members m ON m.conversation_id=a.conversation_id JOIN conversations c ON c.id=a.conversation_id WHERE m.user_id=? ORDER BY a.created DESC LIMIT 200", uid(r))
+	rows, e := s.db.Query("SELECT a.id,a.name,a.mime,a.size,m.created,c.name,m.id,c.id FROM messages m JOIN attachments a ON a.id=m.attachment_id JOIN members member ON member.conversation_id=m.conversation_id JOIN conversations c ON c.id=m.conversation_id WHERE member.user_id=? AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=m.id AND d.user_id=member.user_id) ORDER BY m.created DESC,m.seq DESC LIMIT 200", uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -231,10 +231,13 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, name, typ, conversation string
+		var id, name, typ, conversation, messageID, conversationID string
 		var size, created int64
-		_ = rows.Scan(&id, &name, &typ, &size, &created, &conversation)
-		out = append(out, map[string]any{"id": id, "name": name, "mime": typ, "size": size, "created": created, "conversation": conversation})
+		if e = rows.Scan(&id, &name, &typ, &size, &created, &conversation, &messageID, &conversationID); e != nil {
+			s.dbError(w, e)
+			return
+		}
+		out = append(out, map[string]any{"id": id, "name": name, "mime": typ, "size": size, "created": created, "conversation": conversation, "messageId": messageID, "conversationId": conversationID})
 	}
 	ok(w, out)
 }

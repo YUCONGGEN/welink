@@ -141,7 +141,7 @@ func TestNativeDesktopChatAndDuplicateProcess(t *testing.T) {
 		}
 		return nil, fmt.Errorf("unknown test control")
 	})
-	config, _ := json.Marshal(map[string]string{"conversation": cid, "account": "native_alice", "password": "WeLink-test-only-2026!"})
+	config, _ := json.Marshal(map[string]string{"conversation": cid, "account": a["user"].(map[string]any)["number"].(string), "password": "WeLink-test-only-2026!"})
 	script := strings.Replace(nativeChatScript, "__CONFIG__", string(config), 1)
 	h.view.Init(script)
 	h.view.Navigate(c.URL())
@@ -224,7 +224,7 @@ const nativeChatScript = `(async()=>{if(window.nativeChatStarted)return;window.n
  try{
  await wait(()=>document.querySelector('#auth-form'),'login');document.querySelector('[name=account]').value=cfg.account;document.querySelector('[name=password]').value=cfg.password;click('#auth-form button[type=submit]');await wait(()=>document.querySelector('.rail'),'authenticated');
  click('[data-conversation="'+cfg.conversation+'"]');await wait(()=>document.querySelector('#composer'),'chat');
- click('.rail [data-action=settings]');click('[data-desktop=settings]');await wait(()=>document.querySelector('#desktop-close-tray'),'desktop settings');
+ click('.rail [data-action=settings]');await wait(()=>document.querySelector('[data-desktop=settings]'),'settings page');click('#pref-message-sound');await wait(async()=>!(await window.welinkDesktopSettings()).messageSound,'sound preference persisted');click('[data-desktop=settings]');await wait(()=>document.querySelector('#desktop-close-tray'),'desktop settings');
  document.querySelector('#desktop-message-alerts').checked=false;click('#desktop-save');await wait(()=>!document.querySelector('#desktop-save'),'saved preferences');
  let state=await nativeTestControl('state');check(state.tray&&state.preferences.closeToTray&&!state.preferences.messageAlerts,'native settings persistence');
  click('[data-action=window-close]');await wait(()=>window.welinkNativeHidden===true,'native hidden event');state=await nativeTestControl('state');check(!state.visible&&state.tray,'real HWND hidden with tray');

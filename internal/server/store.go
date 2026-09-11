@@ -81,10 +81,16 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err = db.Exec(driveSchema + spaceSchema + adminSchema + conversationVisibilitySchema + storageSchema); err != nil {
+	if _, err = db.Exec(driveSchema + driveFolderSchema + profileDetailsSchema + spaceSchema + adminSchema + conversationVisibilitySchema + storageSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
+	// Existing, still-valid links become permanent; expired links stay expired.
+	if _, err = db.Exec("UPDATE drive_shares SET expires=0 WHERE expires>?", now()); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return db, nil
 }
 
@@ -166,6 +172,9 @@ func newID() string {
 func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
+	Phone          string `json:"phone,omitempty"`
+	Gender         string `json:"gender,omitempty"`
+	JobTitle       string `json:"jobTitle,omitempty"`
 	MessageBlocked bool   `json:"messageBlocked,omitempty"`
 	SpecialCare    bool   `json:"specialCare,omitempty"`
 	ID             string `json:"id"`

@@ -89,7 +89,7 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 	if err = tx.QueryRow("SELECT number FROM user_numbers WHERE user_id=?", id).Scan(&number); err != nil {
 		return User{}, err
 	}
-	user := User{ID: id, Account: alias, Name: name, Avatar: avatar, Number: number}
+	user := User{ID: id, Account: number, Name: name, Avatar: avatar, Number: number}
 	if beforeCommit != nil {
 		if err = beforeCommit(tx, user); err != nil {
 			return User{}, err
@@ -170,7 +170,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "搜索内容过长")
 		return
 	}
-	rows, err := s.db.Query("SELECT u.id,u.name,u.account,n.number,u.created FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id) AND (u.name LIKE ? ESCAPE '\\' OR u.account=? OR CAST(n.number AS TEXT)=? OR u.id=?) ORDER BY u.created DESC LIMIT 100", "%"+escapeLike(q)+"%", q, q, q)
+	rows, err := s.db.Query("SELECT u.id,u.name,u.account,n.number,u.created FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id) AND (u.name LIKE ? ESCAPE '\\' OR CAST(n.number AS TEXT)=? OR u.id=?) ORDER BY u.created DESC LIMIT 100", "%"+escapeLike(q)+"%", q, q)
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -184,7 +184,7 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 			s.dbError(w, err)
 			return
 		}
-		out = append(out, map[string]any{"id": id, "name": name, "account": alias, "number": number, "created": created, "admin": s.isAdmin(id)})
+		out = append(out, map[string]any{"id": id, "name": name, "account": number, "number": number, "created": created, "admin": s.isAdmin(id)})
 	}
 	if err = rows.Err(); err != nil {
 		s.dbError(w, err)
@@ -209,7 +209,7 @@ func (s *Server) adminCreateUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	u, err := createAccountInDB(s.db, p.Name, p.Account, p.Password, false, func(tx *sql.Tx, user User) error {
+	u, err := createAccountInDB(s.db, p.Name, "", p.Password, false, func(tx *sql.Tx, user User) error {
 		if err := adminSession(tx, r); err != nil {
 			return err
 		}
@@ -334,6 +334,8 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}{
 		{"DELETE FROM sessions WHERE user_id=?", []any{target}},
 		{"DELETE FROM drive_files WHERE owner=?", []any{target}},
+		{"DELETE FROM drive_folders WHERE owner=?", []any{target}},
+		{"DELETE FROM user_profile_details WHERE user_id=?", []any{target}},
 		{"DELETE FROM space_documents WHERE owner=?", []any{target}},
 		{"DELETE FROM space_profiles WHERE owner=?", []any{target}},
 		{"DELETE FROM space_readers WHERE owner=? OR reader=?", []any{target, target}},

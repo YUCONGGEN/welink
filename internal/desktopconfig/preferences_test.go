@@ -28,7 +28,7 @@ func TestOldPreferencesKeepNewDefaultsAndHotkeysCanBeDisabled(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"closeToTray":false,"messageAlerts":false}`), &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.CloseToTray || p.MessageAlerts || p.AutoStart || !p.HotkeysEnabled || p.ShowHotkey == "" {
+	if p.CloseToTray || p.MessageAlerts || !p.MessageSound || p.AutoStart || !p.HotkeysEnabled || p.ShowHotkey == "" {
 		t.Fatal("old desktop settings migration", p)
 	}
 	p.CaptureHotkey = "alt+ctrl+w"
@@ -39,5 +39,26 @@ func TestOldPreferencesKeepNewDefaultsAndHotkeysCanBeDisabled(t *testing.T) {
 	p, err := p.Normalize()
 	if err != nil || len(p.Shortcuts()) != 0 {
 		t.Fatal("disable shortcuts", err)
+	}
+}
+
+func TestMessageSoundPersistsIndependentlyOfNotifications(t *testing.T) {
+	p := Defaults()
+	if err := json.Unmarshal([]byte(`{"messageSound":false}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.MessageSound || !p.MessageAlerts {
+		t.Fatal("sound switch changed notifications")
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored := Defaults()
+	if err = json.Unmarshal(raw, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.MessageSound || !restored.MessageAlerts {
+		t.Fatal("sound preference did not persist")
 	}
 }

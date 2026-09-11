@@ -26,7 +26,9 @@
   },
   "drive": {
     "quota_gb": 100,
-    "max_files": 10000
+    "max_files": 10000,
+    "max_folders": 2000,
+    "max_folder_depth": 32
   },
   "spaces": {
     "max_document_bytes": 2097152,
@@ -45,7 +47,10 @@
     "enabled": false,
     "listen": ":8252",
     "public_address": "www.yucg.cn",
-    "urls": ["turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"],
+    "urls": [
+      "turn:www.yucg.cn:8252?transport=udp",
+      "turn:www.yucg.cn:8252?transport=tcp"
+    ],
     "secret_file": "/Users/yu/bin/welink/media-secret",
     "realm": "welink",
     "credential_seconds": 21600,

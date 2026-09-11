@@ -19,10 +19,299 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/message-sounds.js
+  function createMessageSounds({ toast: toast2, native, hidden }) {
+    const key = "welink_message_sound";
+    let enabled = localStorage.getItem(key) !== "false", context = null, last = 0;
+    const ready = native ? window.welinkDesktopSettings().then((p) => {
+      enabled = p.messageSound !== false;
+      localStorage.setItem(key, String(enabled));
+    }).catch(() => {
+    }) : Promise.resolve();
+    function unlock() {
+      if (!enabled) return;
+      try {
+        if (!context || context.state === "closed") {
+          const Audio = window.AudioContext || window.webkitAudioContext;
+          if (Audio) context = new Audio();
+        }
+        context == null ? void 0 : context.resume().catch(() => {
+        });
+      } catch (e) {
+      }
+    }
+    async function set(value) {
+      if (native) {
+        const p = await window.welinkDesktopSettings();
+        await window.welinkDesktopSave(__spreadProps(__spreadValues({}, p), { messageSound: value }));
+      }
+      enabled = value;
+      localStorage.setItem(key, String(value));
+      if (!value) {
+        context == null ? void 0 : context.close().catch(() => {
+        });
+        context = null;
+      } else unlock();
+    }
+    function notify() {
+      if (!enabled || native && hidden() || Date.now() - last < 1500) return;
+      last = Date.now();
+      unlock();
+      if (!context) return;
+      try {
+        const oscillator = context.createOscillator(), gain = context.createGain(), at = context.currentTime;
+        oscillator.frequency.value = 660;
+        gain.gain.setValueAtTime(0.035, at);
+        gain.gain.exponentialRampToValueAtTime(1e-3, at + 0.18);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(at);
+        oscillator.stop(at + 0.2);
+        oscillator.onended = () => {
+          oscillator.disconnect();
+          gain.disconnect();
+        };
+      } catch (e) {
+      }
+    }
+    document.addEventListener("pointerdown", unlock, { once: true });
+    document.addEventListener("change", async (e) => {
+      if (e.target.id !== "pref-message-sound") return;
+      const input = e.target, value = input.checked;
+      input.disabled = true;
+      try {
+        await set(value);
+        toast2(value ? "已开启消息提示音" : "已关闭消息提示音");
+      } catch (error) {
+        input.checked = enabled;
+        toast2(String(error));
+      } finally {
+        input.disabled = false;
+      }
+    });
+    window.addEventListener("storage", (e) => {
+      if (e.key === key) enabled = e.newValue !== "false";
+    });
+    return { ready, notify, enabled: () => enabled, row: () => '<label class="prefs-row" for="pref-message-sound"><span>消息提示音</span><input type="checkbox" id="pref-message-sound" ' + (enabled ? "checked" : "") + '></label><p class="hint">立即生效，保存在本设备；关闭声音仍保留通知和未读标记。</p>', reset() {
+      context == null ? void 0 : context.close().catch(() => {
+      });
+      context = null;
+      last = 0;
+    } };
+  }
+
+  // internal/ui/src/long-press.js
+  function bindLongPress(selector, onHold, { delay = 500, distance = 10 } = {}) {
+    let timer, start, held = false, ghostUntil = 0, target = null, started = 0;
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = null;
+    };
+    const key = (node) => (node == null ? void 0 : node.dataset.message) || (node == null ? void 0 : node.dataset.conversation) || (node == null ? void 0 : node.dataset.profile);
+    const fire = () => {
+      var _a;
+      const node = (_a = document.elementFromPoint(start.x, start.y)) == null ? void 0 : _a.closest(selector);
+      if (node && key(node) === key(target)) {
+        held = true;
+        onHold(node, start.x, start.y);
+      }
+    };
+    document.addEventListener("touchstart", (event) => {
+      cancel();
+      ghostUntil = 0;
+      held = false;
+      start = null;
+      target = null;
+      const node = event.target.closest(selector);
+      if (!node || event.touches.length !== 1) return;
+      const p = event.touches[0];
+      start = { x: p.clientX, y: p.clientY };
+      target = node;
+      started = Date.now();
+      timer = setTimeout(fire, delay);
+    }, { passive: true });
+    document.addEventListener("touchmove", (event) => {
+      const p = event.touches[0];
+      if (!p || !start || Math.hypot(p.clientX - start.x, p.clientY - start.y) > distance) cancel();
+    }, { passive: true });
+    document.addEventListener("touchend", () => {
+      if (timer && !held && Date.now() - started >= delay) fire();
+      cancel();
+      if (held) ghostUntil = Date.now() + 900;
+      held = false;
+    }, { passive: true });
+    document.addEventListener("touchcancel", () => {
+      cancel();
+      held = false;
+      ghostUntil = 0;
+    }, { passive: true });
+    document.addEventListener("click", (event) => {
+      var _a;
+      if ((held || Date.now() < ghostUntil) && event.detail !== 0 && ((_a = event.sourceCapabilities) == null ? void 0 : _a.firesTouchEvents) !== false) {
+        cancel();
+        held = false;
+        ghostUntil = 0;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  // internal/ui/src/navigation.js
+  function createNavigation({ getHandler, setHandler, beforeOpen, esc: esc2, icon: icon2, onPageBack, beforeBack }) {
+    const stack = [];
+    const host = () => document.getElementById("overlays");
+    const dialog = () => host().querySelector(".modal");
+    const focus = (node) => {
+      if (node == null ? void 0 : node.isConnected) node.focus({ preventScroll: true });
+    };
+    function clear() {
+      stack.length = 0;
+      host().innerHTML = "";
+      setHandler(null);
+    }
+    function open(title, body, footer = "", wide = false) {
+      var _a;
+      beforeOpen();
+      const current = dialog(), previousFocus = document.activeElement;
+      const transient = /截图|录音|视频预览|语音消息|远程协助|邀请|来电|登录 Windows/.test(title) || (current == null ? void 0 : current.querySelector("canvas,video,audio,.qr-confirm,.remote-invite"));
+      if (transient) stack.length = 0;
+      else if (current) {
+        const previous = stack.findIndex((item) => item.title === title);
+        if (previous >= 0) stack.splice(previous);
+        else if (current.getAttribute("aria-label") !== title) {
+          stack.push({ title: current.getAttribute("aria-label"), node: host().firstElementChild, handler: getHandler(), focus: previousFocus, scroll: ((_a = current.querySelector(".modal-body")) == null ? void 0 : _a.scrollTop) || 0 });
+          if (stack.length > 12) stack.shift();
+        }
+      } else stack.length = 0;
+      host().innerHTML = '<div class="modal-backdrop"><section class="modal '.concat(wide ? "wide" : "", '" role="dialog" aria-modal="true" aria-label="').concat(esc2(title), '"><header class="modal-head"><button type="button" class="dialog-back" data-action="modal-back" aria-label="返回').concat(stack.length ? "上一页" : "", '" title="').concat(stack.length ? "返回上一页" : "返回", '">').concat(icon2("back"), "<span>返回</span></button><h3>").concat(esc2(title), '</h3><button type="button" class="icon-btn" data-action="close-modal" aria-label="关闭" title="关闭">').concat(icon2("close"), '</button></header><div class="modal-body">').concat(body, '<div class="form-error" id="modal-error" role="alert"></div></div>').concat(footer ? '<footer class="modal-footer">'.concat(footer, "</footer>") : "", "</section></div>");
+      setHandler(null);
+      if (!matchMedia("(max-width:700px)").matches) {
+        const opened = dialog();
+        setTimeout(() => {
+          if ((opened == null ? void 0 : opened.isConnected) && !opened.contains(document.activeElement)) focus(opened.querySelector("input:not([type=checkbox]):not([type=file]):not([type=range])") || opened.querySelector(".dialog-back"));
+        }, 40);
+      }
+    }
+    function back() {
+      var _a, _b;
+      if (!host().firstElementChild) return false;
+      if (beforeBack == null ? void 0 : beforeBack()) return true;
+      const cancelAvatar = (_a = dialog()) == null ? void 0 : _a.querySelector("[data-avatar=cancel]");
+      if (cancelAvatar) {
+        cancelAvatar.click();
+        return true;
+      }
+      beforeOpen();
+      const prior = stack.pop();
+      if (prior) {
+        host().innerHTML = "";
+        host().appendChild(prior.node);
+        setHandler(prior.handler);
+        const body = (_b = dialog()) == null ? void 0 : _b.querySelector(".modal-body");
+        if (body) body.scrollTop = prior.scroll;
+        focus(prior.focus);
+      } else clear();
+      return true;
+    }
+    function handleBack() {
+      var _a;
+      const menu = document.querySelector(".context-menu,.popup");
+      if (menu) {
+        menu.remove();
+        return true;
+      }
+      if (back()) return true;
+      if (document.querySelector(".qr-auth")) {
+        (_a = document.querySelector("[data-action=login]")) == null ? void 0 : _a.click();
+        return true;
+      }
+      return onPageBack();
+    }
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab" || !dialog()) return;
+      const controls = [...dialog().querySelectorAll('button,input,textarea,select,a[href],[tabindex="0"]')].filter((node) => !node.disabled && node.getClientRects().length), first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        focus(last);
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        focus(first);
+      }
+    });
+    window.WeLinkGoBack = handleBack;
+    return { open, clear, back, handleBack };
+  }
+
+  // internal/ui/src/conversation-actions.js
+  function createConversationActions({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, contextMenu: contextMenu2, refresh: refresh2 }) {
+    const find = (id) => S2.conversations.find((c) => c.id === id);
+    function menu(id, x, y) {
+      const c = find(id);
+      if (!c) return;
+      contextMenu2(x, y, '<button data-conversation-action="pin" data-cid="'.concat(id, '">').concat(icon2("pin")).concat(c.pinned ? "取消置顶" : "置顶聊天", '</button><button data-conversation-action="mute" data-cid="').concat(id, '">').concat(icon2("mute")).concat(c.muted ? "开启消息提醒" : "消息免打扰", "</button>").concat(c.unread ? '<button data-conversation-action="read" data-cid="'.concat(id, '">').concat(icon2("check"), "标为已读</button>") : "", '<button class="destructive" data-conversation-action="remove" data-cid="').concat(id, '">').concat(icon2("trash"), "从消息列表移除</button>"));
+    }
+    function remove(id) {
+      const c = find(id);
+      if (!c) return;
+      modal2("从消息列表移除", "<p>移除与「".concat(esc2(c.name), '」的会话？</p><p class="hint">聊天记录会保留，下次收发消息时重新显示。').concat(c.kind === "group" ? "你仍在群内，不会退出群聊。" : "", "</p>"), '<button class="secondary" data-action="modal-back">取消</button><button class="primary" id="conversation-remove-confirm">移除会话</button>');
+      const confirm = document.getElementById("conversation-remove-confirm");
+      confirm.onclick = async () => {
+        confirm.disabled = true;
+        try {
+          await api2("/api/conversations/" + id, { method: "DELETE" });
+          closeModal2();
+          await refresh2();
+          toast2("已从消息列表移除，聊天记录保留");
+        } catch (error) {
+          if (confirm.isConnected) {
+            document.getElementById("modal-error").textContent = error.message;
+            confirm.disabled = false;
+          }
+        }
+      };
+    }
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-conversation-menu],[data-conversation-action]");
+      if (!button || !S2.user) return;
+      if (button.dataset.conversationMenu) {
+        const r = button.getBoundingClientRect();
+        menu(button.dataset.conversationMenu, r.right - 180, r.bottom);
+        return;
+      }
+      const id = button.dataset.cid, c = find(id);
+      if (!c) return;
+      try {
+        const action2 = button.dataset.conversationAction;
+        if (action2 === "remove") {
+          remove(id);
+          return;
+        }
+        button.disabled = true;
+        if (action2 === "read") await api2("/api/conversations/" + id + "/read", { method: "POST", body: {} });
+        else await api2("/api/conversations/" + id, { method: "PATCH", body: action2 === "pin" ? { pinned: !c.pinned } : { muted: !c.muted } });
+        await refresh2();
+      } catch (error) {
+        toast2(error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    document.addEventListener("contextmenu", (event) => {
+      const row = event.target.closest("[data-conversation]");
+      if (row) {
+        event.preventDefault();
+        menu(row.dataset.conversation, event.clientX, event.clientY);
+      }
+    });
+    bindLongPress("[data-conversation]", (row, x, y) => menu(row.dataset.conversation, x, y));
+    return { menu, remove };
+  }
+
   // internal/ui/src/cloud.js
-  function createCloud({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, bytes: bytes2, fullTime: fullTime2, upload: upload2, renderShell: renderShell2 }) {
+  function createCloud({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, bytes: bytes2, fullTime: fullTime2, upload: upload2 }) {
     const $2 = (s) => document.querySelector(s);
-    let drive = [], offset = 0, driveQuery = "", space = null, spaceOwner = "me", editor = null, revision = 0, driveGeneration = 0, spaceGeneration = 0;
+    let drive = [], folders = [], path = [], folderID = "", offset = 0, driveQuery = "", searchDraft = "", driveGeneration = 0, uploading = false;
     const owns = (token) => S2.user && S2.token === token && !S2.signingOut;
     const request = api2;
     api2 = async (...args) => {
@@ -31,47 +320,6 @@
       if (!owns(token)) throw Object.assign(Error("操作已结束"), { name: "AbortError" });
       return result;
     };
-    const drafts = /* @__PURE__ */ new Map();
-    let draftTimer;
-    const draftKey = (id) => "welink-space-draft:" + S2.user.id + ":" + (id || "new");
-    function readDraft(id) {
-      const key = draftKey(id);
-      if (drafts.has(key)) return drafts.get(key);
-      try {
-        return JSON.parse(localStorage.getItem(key) || "null");
-      } catch (e) {
-        return null;
-      }
-    }
-    function keepDraft(id, value) {
-      const key = draftKey(id);
-      drafts.set(key, value);
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-      } catch (e) {
-        const label = $2("#space-save-state");
-        if (label) label.textContent = "草稿保留在当前窗口，请保存文档后再关闭";
-      }
-    }
-    function clearDraft(id) {
-      const key = draftKey(id);
-      drafts.delete(key);
-      try {
-        localStorage.removeItem(key);
-      } catch (e) {
-      }
-    }
-    function flushDraft() {
-      clearTimeout(draftTimer);
-      if ((editor == null ? void 0 : editor.own) && S2.user && $2("#space-document-content")) {
-        const value = { title: $2("#space-document-title").value, content: $2("#space-document-content").value, revision };
-        if (value.title !== editor.title || value.content !== editor.content) keepDraft(editor.id, value);
-      }
-    }
-    document.addEventListener("click", (event) => {
-      if (event.target.closest("button,[data-nav]")) flushDraft();
-    }, true);
-    addEventListener("pagehide", flushDraft);
     async function copy(text) {
       try {
         await navigator.clipboard.writeText(text);
@@ -105,199 +353,201 @@
         }
       };
     }
+    const crumbs = (items, attr) => "<button ".concat(attr, '="">全部文件</button>') + items.map((f) => "<span> / </span><button ".concat(attr, '="').concat(f.id, '">').concat(esc2(f.name), "</button>")).join("");
+    function enter2(id) {
+      if ($2(".cloud-page")) $2(".cloud-page").scrollTop = 0;
+      folderID = id;
+      driveQuery = "";
+      searchDraft = "";
+      renderDrive().catch(fail);
+    }
     async function renderDrive(reset = true) {
+      var _a;
       const token = S2.token, g = ++driveGeneration;
+      let result;
       if (reset) offset = 0;
-      const result = await api2("/api/drive?q=" + encodeURIComponent(driveQuery) + "&offset=" + offset);
+      try {
+        result = await api2("/api/drive?folder=" + encodeURIComponent(folderID) + "&q=" + encodeURIComponent(driveQuery) + "&offset=" + offset);
+      } catch (error) {
+        if (g !== driveGeneration || S2.tab !== "drive") return;
+        if (error.status === 404 && folderID) {
+          toast2("文件夹已删除，已返回全部文件");
+          enter2("");
+          return;
+        }
+        throw error;
+      }
       if (!owns(token) || g !== driveGeneration || S2.tab !== "drive") return;
       drive = reset ? result.files : [...drive, ...result.files];
-      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>我的网盘</h2><p>文件随账号保存，随时取用和分享</p></div><button class="primary" id="drive-upload">'.concat(icon2("plus"), '上传文件</button><input type="file" multiple id="drive-file-input" hidden></header><div class="drive-capacity"><div><b>免费 ').concat(bytes2(result.quota), " 空间</b><span>").concat(bytes2(result.used), " / ").concat(bytes2(result.quota), '</span></div><progress value="').concat(result.used, '" max="').concat(result.quota, '"></progress><small>聊天附件不占用这份容量</small></div><div id="drive-upload-status" class="cloud-upload-status"></div><label class="cloud-search">').concat(icon2("search"), '<input id="drive-search" placeholder="搜索网盘文件" value="').concat(esc2(driveQuery), '"></label><div class="cloud-file-list">').concat(drive.map((f) => '<article class="cloud-file"><span class="cloud-file-icon">'.concat(icon2("file"), '</span><div class="cloud-file-name"><b>').concat(esc2(f.name), "</b><small>").concat(bytes2(f.size), " · ").concat(fullTime2(f.updated), '</small></div><div class="cloud-file-actions"><button data-drive="download" data-id="').concat(f.id, '" title="下载">').concat(icon2("download"), '</button><button data-drive="share" data-id="').concat(f.id, '" title="分享">').concat(icon2("copy"), '</button><button data-drive="rename" data-id="').concat(f.id, '" title="重命名">重命名</button><button data-drive="delete" data-id="').concat(f.id, '" title="删除">').concat(icon2("trash"), "</button></div></article>")).join("") || '<div class="cloud-empty">' + icon2("folder") + "<h3>把重要文件放在这里</h3><p>点击上传，或将文件拖到网盘页面</p></div>", "</div>").concat(result.hasMore ? '<button id="drive-more" class="secondary cloud-more">加载更多</button>' : "", "</section>");
+      folders = result.folders || [];
+      path = result.path || [];
+      const prior = $2("#drive-search"), focused = document.activeElement === prior, selection = focused ? [prior.selectionStart, prior.selectionEnd] : null, scroll = ((_a = $2(".cloud-page")) == null ? void 0 : _a.scrollTop) || 0;
+      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>我的网盘</h2><p>文件随账号保存，随时取用和分享</p></div><div class="drive-heading-actions"><button class="secondary" id="drive-new-folder">'.concat(icon2("folder"), '新建文件夹</button><button class="primary" id="drive-upload" ').concat(uploading ? "disabled" : "", ">").concat(icon2("plus")).concat(uploading ? "上传中…" : "上传文件", '</button></div><input type="file" multiple id="drive-file-input" hidden></header><div class="drive-capacity"><div><b>免费 ').concat(bytes2(result.quota), " 空间</b><span>").concat(bytes2(result.used), " / ").concat(bytes2(result.quota), '</span></div><progress value="').concat(result.used, '" max="').concat(result.quota, '"></progress><small>聊天附件不占用这份容量</small></div><div id="drive-upload-status" class="cloud-upload-status"></div><nav class="drive-breadcrumb" aria-label="网盘路径">').concat(crumbs(path, "data-drive-folder"), '</nav><label class="cloud-search">').concat(icon2("search"), '<input id="drive-search" placeholder="搜索当前文件夹" value="').concat(esc2(searchDraft), '"><button id="drive-search-submit" aria-label="搜索当前文件夹">搜索</button>').concat(driveQuery ? '<button id="drive-search-clear" aria-label="清除网盘搜索">' + icon2("close") + "</button>" : "", '</label><div class="cloud-file-list">').concat(folders.map((f) => '<article class="cloud-file cloud-folder"><button class="drive-folder-open" data-drive-folder="'.concat(f.id, '">').concat(icon2("folder"), "<span><b>").concat(esc2(f.name), '</b><small>文件夹</small></span></button><div class="cloud-file-actions"><button data-folder-action="rename" data-id="').concat(f.id, '">重命名</button><button data-folder-action="delete" data-id="').concat(f.id, '" aria-label="删除文件夹">').concat(icon2("trash"), "</button></div></article>")).join("")).concat(drive.map((f) => '<article class="cloud-file"><span class="cloud-file-icon">'.concat(icon2("file"), '</span><div class="cloud-file-name"><b>').concat(esc2(f.name), "</b><small>").concat(bytes2(f.size), " · ").concat(fullTime2(f.updated), '</small></div><div class="cloud-file-actions"><button data-drive="download" data-id="').concat(f.id, '" title="下载" aria-label="下载">').concat(icon2("download"), '</button><button data-drive="share" data-id="').concat(f.id, '" title="分享" aria-label="分享">').concat(icon2("copy"), '</button><button data-drive="move" data-id="').concat(f.id, '">移动</button><button data-drive="rename" title="重命名" data-id="').concat(f.id, '">重命名</button><button data-drive="delete" data-id="').concat(f.id, '" title="删除" aria-label="删除">').concat(icon2("trash"), "</button></div></article>")).join("")).concat(!drive.length && !folders.length ? '<div class="cloud-empty">' + icon2("folder") + "<h3>" + (driveQuery ? "没有匹配的文件或文件夹" : "这个文件夹还是空的") + "</h3><p>" + (driveQuery ? "换个关键词试试，或清除搜索" : "新建文件夹，或上传、拖入文件") + "</p></div>" : "", "</div>").concat(result.hasMore ? '<button id="drive-more" class="secondary cloud-more">加载更多</button>' : "", "</section>");
+      bind("drive-new-folder", () => editName());
       bind("drive-upload", () => $2("#drive-file-input").click());
       $2("#drive-file-input").onchange = (e) => {
         sendFiles([...e.target.files]);
         e.target.value = "";
       };
-      $2("#drive-search").onkeydown = (e) => {
-        if (e.key === "Enter") {
-          driveQuery = e.target.value;
-          renderDrive().catch(fail);
-        }
+      $2("#drive-search").oninput = (e) => {
+        searchDraft = e.target.value;
       };
+      const search = () => {
+        driveQuery = searchDraft.trim();
+        searchDraft = driveQuery;
+        return renderDrive();
+      };
+      $2("#drive-search").onkeydown = (e) => {
+        if (e.key === "Enter") search().catch(fail);
+      };
+      bind("drive-search-submit", search);
+      bind("drive-search-clear", () => {
+        driveQuery = "";
+        searchDraft = "";
+        return renderDrive();
+      });
       bind("drive-more", () => {
         offset = drive.length;
         return renderDrive(false);
       });
+      $2(".cloud-page").scrollTop = scroll;
+      if (focused) {
+        $2("#drive-search").focus({ preventScroll: true });
+        $2("#drive-search").setSelectionRange(...selection);
+      }
     }
     async function sendFiles(files) {
-      const token = S2.token;
-      for (const file of files) {
-        if (!owns(token)) return;
-        const display = (percent) => {
-          const target = $2("#drive-upload-status");
-          if (target) target.textContent = file.name + " · " + (percent === 100 ? "正在保存" : percent === null ? "正在上传" : "已上传 " + percent + "%");
-        };
-        try {
-          await upload2("/api/drive/files", file, {}, display);
-        } catch (error) {
-          fail(error);
-          break;
-        }
+      var _a;
+      if (!files.length) return;
+      if (uploading) {
+        toast2("正在上传，请稍后再添加文件");
+        return;
       }
-      if (owns(token) && S2.tab === "drive") await renderDrive().catch(fail);
+      const token = S2.token, targetFolder = folderID;
+      uploading = true;
+      (_a = $2("#drive-upload")) == null ? void 0 : _a.setAttribute("disabled", "");
+      try {
+        for (const file of files) {
+          if (!owns(token)) return;
+          const display = (percent) => {
+            const target = S2.tab === "drive" && folderID === targetFolder ? $2("#drive-upload-status") : null;
+            if (target) target.textContent = file.name + " · " + (percent === 100 ? "正在保存" : percent === null ? "正在上传" : "已上传 " + percent + "%");
+          };
+          await upload2("/api/drive/files?folder=" + encodeURIComponent(targetFolder), file, {}, display);
+        }
+        if (owns(token)) toast2("上传完成");
+      } catch (error) {
+        fail(error);
+      } finally {
+        uploading = false;
+        if (owns(token) && S2.tab === "drive") await renderDrive().catch(fail);
+      }
     }
     function downloadDrive(f) {
       var _a;
-      const path = "/api/drive/files/" + f.id;
       if ((_a = window.WeLinkAndroid) == null ? void 0 : _a.downloadDriveFile) {
         window.WeLinkAndroid.downloadDriveFile(f.id, f.name);
         return;
       }
       const a = document.createElement("a");
-      a.href = path;
+      a.href = "/api/drive/files/" + f.id;
       a.download = f.name;
       document.body.append(a);
       a.click();
       a.remove();
     }
     function share(f) {
-      modal2("分享文件", '<p class="hint">'.concat(esc2(f.name), '</p><label>链接有效期</label><select id="drive-share-days"><option value="7">7 天</option><option value="1">1 天</option><option value="30">30 天</option><option value="365">1 年</option></select><p class="hint">拿到链接的人可以下载这个文件。生成新链接会使旧链接失效。</p><div id="drive-share-result"></div>'), '<button class="secondary" id="drive-revoke">取消已有分享</button><button class="primary" id="drive-create-share">生成链接</button>');
+      modal2("分享文件", '<p class="hint">'.concat(esc2(f.name), '</p><p><b>永久有效</b></p><p class="hint">拿到链接的人可以下载这个文件。重复获取会使用同一链接；主动取消分享、删除文件或账号后失效。</p><div id="drive-share-result"></div>'), '<button class="secondary" id="drive-revoke">取消已有分享</button><button class="primary" id="drive-create-share">获取分享链接</button>');
+      const host = $2("#drive-share-result");
       bind("drive-create-share", async () => {
-        const result = await api2("/api/drive/files/" + f.id + "/share", { method: "POST", body: { days: Number($2("#drive-share-days").value) } });
-        $2("#drive-share-result").innerHTML = '<textarea id="drive-share-url" readonly>' + esc2(result.url) + '</textarea><button class="secondary" id="drive-copy-share">复制分享链接</button>';
+        const result = await api2("/api/drive/files/" + f.id + "/share", { method: "POST", body: {} });
+        if (!host.isConnected) return;
+        host.innerHTML = '<textarea id="drive-share-url" readonly>' + esc2(result.url) + '</textarea><button class="secondary" id="drive-copy-share">复制分享链接</button>';
         bind("drive-copy-share", () => copy(result.url));
       });
       bind("drive-revoke", async () => {
         await api2("/api/drive/files/" + f.id + "/share", { method: "DELETE" });
-        closeModal2();
+        if (host.isConnected) closeModal2();
         toast2("分享链接已失效");
       });
     }
-    async function renderSpace(owner = "me") {
-      const token = S2.token, g = ++spaceGeneration;
-      spaceOwner = owner;
-      const result = await api2("/api/spaces/" + encodeURIComponent(owner));
-      if (!owns(token) || g !== spaceGeneration || S2.tab !== "space") return;
-      space = result;
-      editor = null;
-      const own = result.owner === S2.user.id;
-      const person = own ? S2.user : S2.friends.find((u) => u.id === result.owner) || { name: "用户" };
-      $2("#main-content").innerHTML = '<section class="cloud-page space-page"><header class="cloud-heading"><div><h2>'.concat(own ? "我的空间" : esc2(person.name) + "的空间", "</h2><p>").concat(own ? "用 Markdown 记录想法，自己决定谁能看到" : "阅读分享的文档", "</p></div>").concat(own ? '<button class="primary" id="space-new">' + icon2("plus") + "新建文档</button>" : "", '</header><div class="space-access"><span>').concat(icon2("shield")).concat({ public: "公开空间", private: "仅自己可见", selected: "指定用户可见" }[result.visibility], "</span>").concat(own ? '<button class="secondary" id="space-access">设置可见范围</button>' : "").concat(result.visibility === "public" ? '<button class="secondary" id="space-copy">复制空间链接</button>' : "", '</div><div class="space-documents">').concat(result.documents.map((d) => '<button class="space-document" data-space="open" data-id="'.concat(d.id, '">').concat(icon2("file"), "<b>").concat(esc2(d.title), "</b><small>").concat(fullTime2(d.updated), " · ").concat(bytes2(d.size), "</small><span>打开文档 →</span></button>")).join("") || '<div class="cloud-empty">' + icon2("file") + "<h3>从第一篇文档开始</h3><p>支持 Markdown 标题、列表、引用和代码</p></div>", "</div></section>");
-      bind("space-new", () => editDocument(null));
-      bind("space-access", access);
-      bind("space-copy", () => copy(result.publicURL));
-    }
-    async function access() {
-      modal2("空间可见范围", '<p class="hint">设置应用到整个空间及其中所有文档。</p><label>谁可以看到</label><select id="space-visibility"><option value="private">仅自己可见</option><option value="public">公开，任何人可以阅读</option><option value="selected">指定用户可见</option></select><div id="space-viewers" class="member-select">'.concat(S2.friends.map((u) => '<label class="check-row">'.concat(esc2(u.remark || u.name), " · ").concat(esc2(u.number), '<input type="checkbox" value="').concat(u.id, '" ').concat(space.viewers.includes(u.id) ? "checked" : "", "></label>")).join(""), "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="space-save-access">保存</button>');
-      $2("#space-visibility").value = space.visibility;
-      const update = () => $2("#space-viewers").hidden = $2("#space-visibility").value !== "selected";
-      $2("#space-visibility").onchange = update;
-      update();
-      bind("space-save-access", async () => {
-        await api2("/api/spaces/me/access", { method: "PATCH", body: { visibility: $2("#space-visibility").value, viewers: [...document.querySelectorAll("#space-viewers input:checked")].map((n) => n.value) } });
-        closeModal2();
-        await renderSpace();
+    function editName(f, isFolder = true) {
+      const creating = !f, parentID = folderID;
+      modal2(creating ? "新建文件夹" : isFolder ? "重命名文件夹" : "重命名文件", '<label>名称</label><input id="drive-rename" maxlength="240" value="' + esc2((f == null ? void 0 : f.name) || "") + '" placeholder="' + (isFolder ? "文件夹名称" : "文件名") + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-save-name">' + (creating ? "创建" : "保存") + "</button>");
+      const input = $2("#drive-rename");
+      bind("drive-save-name", async () => {
+        const name = input.value.trim();
+        if (!name) throw Error("请输入名称");
+        await api2(creating ? "/api/drive/folders" : "/api/drive/" + (isFolder ? "folders/" : "files/") + f.id, { method: creating ? "POST" : "PATCH", body: creating ? { name, parentId: parentID } : { name } });
+        if (input.isConnected) closeModal2();
+        await renderDrive();
       });
-    }
-    function markdown(raw) {
-      let code = false;
-      return raw.split("\n").map((line) => {
-        if (line.startsWith("```")) {
-          code = !code;
-          return code ? "<pre><code>" : "</code></pre>";
+      input.onkeydown = (e) => {
+        var _a;
+        if (e.key === "Enter" && !e.isComposing) {
+          e.preventDefault();
+          (_a = $2("#drive-save-name")) == null ? void 0 : _a.click();
         }
-        ;
-        if (code) return esc2(line) + "\n";
-        const safe = esc2(line).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
-        const heading = safe.match(/^(#{1,6})\s+(.*)$/);
-        if (heading) return "<h" + heading[1].length + ">" + heading[2] + "</h" + heading[1].length + ">";
-        if (/^&gt;\s?/.test(safe)) return "<blockquote>" + safe.replace(/^&gt;\s?/, "") + "</blockquote>";
-        if (/^[-*]\s/.test(safe)) return '<p class="md-list">• ' + safe.slice(2) + "</p>";
-        return "<p>" + safe + "</p>";
-      }).join("") + (code ? "</code></pre>" : "");
-    }
-    async function editDocument(id) {
-      var _a, _b, _c;
-      flushDraft();
-      const token = S2.token, owner = spaceOwner, g = ++spaceGeneration;
-      const d = id ? await api2("/api/spaces/" + owner + "/documents/" + id) : { id: "", title: "", content: "", revision: 0 };
-      if (!owns(token) || S2.tab !== "space" || g !== spaceGeneration || owner !== spaceOwner) return;
-      const own = space.owner === S2.user.id, draft = own ? readDraft(id) : null;
-      editor = __spreadProps(__spreadValues({}, d), { own });
-      revision = (_a = draft == null ? void 0 : draft.revision) != null ? _a : d.revision;
-      const title = (_b = draft == null ? void 0 : draft.title) != null ? _b : d.title, content = (_c = draft == null ? void 0 : draft.content) != null ? _c : d.content;
-      $2("#main-content").innerHTML = '<section class="cloud-page markdown-page"><header class="cloud-heading"><button class="secondary" id="space-back">← 返回空间</button><div class="markdown-actions">' + (own ? '<button class="secondary" id="space-delete">删除</button><button class="primary" id="space-save">保存文档</button>' : "") + '</div></header><input id="space-document-title" class="markdown-title" placeholder="给文档起个名字.md" maxlength="120" value="' + esc2(title) + '" ' + (own ? "" : "readonly") + '><div class="markdown-editor ' + (own ? "" : "readonly") + '">' + (own ? '<textarea id="space-document-content" aria-label="Markdown 内容" placeholder="# 从这里开始记录">' + esc2(content) + "</textarea>" : "") + '<article id="space-preview" class="markdown-preview">' + markdown(content) + '</article></div><div id="space-save-state" role="status">' + (draft ? "已恢复本机草稿 · 尚未保存到空间" : own ? "内容保存到你的空间 · " + { private: "仅自己可见", selected: "指定用户可见", public: "公开可见" }[space.visibility] : "") + "</div></section>";
-      bind("space-back", () => renderSpace(owner));
-      if (!own) return;
-      const changed = () => {
-        $2("#space-preview").innerHTML = markdown($2("#space-document-content").value);
-        $2("#space-save-state").textContent = "尚未保存 · 本机草稿";
-        clearTimeout(draftTimer);
-        draftTimer = setTimeout(flushDraft, 250);
       };
-      $2("#space-document-content").oninput = changed;
-      $2("#space-document-title").oninput = changed;
-      bind("space-save", async () => {
-        const current = editor, body = { title: $2("#space-document-title").value, content: $2("#space-document-content").value, revision };
-        const saved = await api2("/api/spaces/me/documents" + (current.id ? "/" + current.id : ""), { method: current.id ? "PUT" : "POST", body });
-        clearDraft(current.id);
-        if (editor !== current || S2.tab !== "space" || g !== spaceGeneration) return;
-        editor = __spreadProps(__spreadValues({}, saved), { own: true });
-        revision = saved.revision;
-        if ($2("#space-document-title").value !== body.title || $2("#space-document-content").value !== body.content) {
-          flushDraft();
-          $2("#space-save-state").textContent = "已保存上一版本 · 新修改尚未保存";
-        } else $2("#space-save-state").textContent = "已保存 · " + fullTime2(saved.updated);
-      });
-      bind("space-delete", () => {
-        const current = editor;
-        if (!current.id) {
-          clearDraft("");
-          return renderSpace(owner);
+    }
+    async function move(f) {
+      modal2("移动文件", '<p class="hint">选择目标文件夹：' + esc2(f.name) + '</p><div id="drive-move-folders"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-move-confirm" disabled>移动到这里</button>');
+      const host = $2("#drive-move-folders"), confirm = $2("#drive-move-confirm");
+      let target = f.folderId || "", generation = 0;
+      async function load(id) {
+        const g = ++generation;
+        confirm.disabled = true;
+        try {
+          const result = await api2("/api/drive?folder=" + encodeURIComponent(id));
+          if (!host.isConnected || g !== generation) return;
+          target = id;
+          host.innerHTML = '<nav class="drive-breadcrumb">' + crumbs(result.path || [], "data-move-folder") + '</nav><div class="drive-picker-list">' + (result.folders || []).map((item) => '<button data-move-folder="' + item.id + '">' + icon2("folder") + "<span>" + esc2(item.name) + "</span>" + icon2("chevron") + "</button>").join("") + "</div>";
+          confirm.disabled = target === (f.folderId || "");
+        } catch (error) {
+          if (host.isConnected && g === generation) fail(error);
         }
-        modal2("删除空间文档", "<p>确定删除 " + esc2(current.title) + "？</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="space-confirm-delete">删除</button>');
-        bind("space-confirm-delete", async () => {
-          await api2("/api/spaces/me/documents/" + current.id, { method: "DELETE" });
-          clearDraft(current.id);
-          closeModal2();
-          if (S2.tab === "space") await renderSpace(owner);
-        });
+      }
+      host.onclick = (e) => {
+        const button = e.target.closest("[data-move-folder]");
+        if (button) load(button.dataset.moveFolder);
+      };
+      bind("drive-move-confirm", async () => {
+        await api2("/api/drive/files/" + f.id + "/move", { method: "POST", body: { folderId: target } });
+        if (host.isConnected) closeModal2();
+        toast2("已移动");
+        await renderDrive();
       });
+      await load(target);
     }
     document.addEventListener("click", async (event) => {
-      const button = event.target.closest("[data-drive],[data-space],[data-open-space]");
-      if (!button || !S2.user) return;
+      if (!S2.user || S2.tab !== "drive") return;
+      const open = event.target.closest("[data-drive-folder]");
+      if (open) {
+        enter2(open.dataset.driveFolder);
+        return;
+      }
+      const button = event.target.closest("[data-drive],[data-folder-action]");
+      if (!button) return;
       try {
-        if (button.dataset.openSpace) {
-          S2.spaceUser = button.dataset.openSpace;
-          S2.tab = "space";
-          renderShell2();
-          return;
-        }
-        if (button.dataset.space === "open") {
-          await editDocument(button.dataset.id);
-          return;
-        }
-        const f = drive.find((f2) => f2.id === button.dataset.id);
+        const isFolder = !!button.dataset.folderAction, f = (isFolder ? folders : drive).find((f2) => f2.id === button.dataset.id);
         if (!f) return;
-        switch (button.dataset.drive) {
+        switch (button.dataset.drive || button.dataset.folderAction) {
           case "download":
             downloadDrive(f);
             break;
           case "share":
             share(f);
             break;
+          case "move":
+            await move(f);
+            break;
           case "rename":
-            modal2("重命名文件", '<label>文件名</label><input id="drive-rename" maxlength="240" value="' + esc2(f.name) + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-save-name">保存</button>');
-            bind("drive-save-name", async () => {
-              await api2("/api/drive/files/" + f.id, { method: "PATCH", body: { name: $2("#drive-rename").value } });
-              closeModal2();
-              await renderDrive();
-            });
+            editName(f, isFolder);
             break;
           case "delete":
-            modal2("删除网盘文件", "<p>确定删除 " + esc2(f.name) + "？相关分享链接也会失效。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-confirm-delete">删除</button>');
+            modal2(isFolder ? "删除文件夹" : "删除网盘文件", "<p>确定删除「" + esc2(f.name) + "」？" + (isFolder ? "其子文件夹和文件也会一并删除。" : "") + "相关分享链接将失效，此操作无法撤销。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="drive-confirm-delete">删除</button>');
             bind("drive-confirm-delete", async () => {
-              await api2("/api/drive/files/" + f.id, { method: "DELETE" });
+              await api2("/api/drive/" + (isFolder ? "folders/" : "files/") + f.id, __spreadValues({ method: "DELETE" }, isFolder ? { body: { confirmName: f.name } } : {}));
               closeModal2();
               await renderDrive();
             });
@@ -307,19 +557,20 @@
         fail(error);
       }
     });
-    return { renderDrive, renderSpace, sendFiles, reset() {
-      flushDraft();
-      clearTimeout(draftTimer);
-      drafts.clear();
+    return { renderDrive, sendFiles, back() {
+      if (!folderID) return false;
+      enter2(path.length > 1 ? path[path.length - 2].id : "");
+      return true;
+    }, reset() {
       driveGeneration++;
-      spaceGeneration++;
       drive = [];
-      space = null;
-      editor = null;
+      folders = [];
+      path = [];
+      folderID = "";
       driveQuery = "";
+      searchDraft = "";
     }, changed(type) {
-      var _a;
-      if (type === "drive" && S2.tab === "drive" && !((_a = $2("#drive-upload-status")) == null ? void 0 : _a.textContent)) renderDrive().catch(fail);
+      if (type === "drive" && S2.tab === "drive" && !uploading) renderDrive().catch(fail);
     } };
   }
 
@@ -351,17 +602,17 @@
     async function render(query = "") {
       const token = S2.token, g = ++generation, users = await api2("/api/admin/users?q=" + encodeURIComponent(query));
       if (S2.token !== token || S2.tab !== "admin" || g !== generation) return;
-      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索昵称、账号或 WeLink 号码" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file"><div class="cloud-file-name"><b>'.concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 号 ").concat(esc2(u.number), " · 登录账号 ").concat(esc2(u.account), '</small></div><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
+      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索昵称或 6 位账号" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file"><div class="cloud-file-name"><b>'.concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 账号 ").concat(esc2(u.number), '</small></div><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
       $2("#admin-search").onkeydown = (e) => {
         if (e.key === "Enter") render(e.target.value).catch((error) => toast2(error.message));
       };
       bind("admin-create", create);
     }
     function create() {
-      modal2("注册用户账号", '<label>昵称</label><input id="admin-name" maxlength="32" placeholder="用户昵称"><label>登录账号（选填）</label><input id="admin-account" maxlength="24" placeholder="字母、数字或下划线"><label>初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" maxlength="72" placeholder="留空则生成随机密码"><p class="hint">系统会分配永久 WeLink 号码。用户登录后可以修改密码。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user">注册账号</button>');
+      modal2("注册用户账号", '<label>昵称</label><input id="admin-name" maxlength="32" placeholder="用户昵称"><label>初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" maxlength="72" placeholder="留空则生成随机密码"><p class="hint">系统自动分配永久 6 位数字账号。昵称可以重名，登录只用数字账号。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user">注册账号</button>');
       bind("admin-save-user", async () => {
-        const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value, account: $2("#admin-account").value, password: $2("#admin-password").value } });
-        modal2("账号已注册", "<p>昵称：".concat(esc2(result.user.name), "</p><p>WeLink 号：<b>").concat(esc2(result.user.number), "</b></p><p>登录账号：").concat(esc2(result.user.account), "</p>").concat(result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
+        const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value, password: $2("#admin-password").value } });
+        modal2("账号已注册", "<p>昵称：".concat(esc2(result.user.name), "</p><p>登录账号：<b>").concat(esc2(result.user.number), "</b></p>").concat(result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
         await refresh2();
         await render();
       });
@@ -929,7 +1180,7 @@
         button.onclick = async () => {
           button.disabled = true;
           try {
-            await window.welinkDesktopSave({ closeToTray: $2("desktop-close-tray").checked, messageAlerts: $2("desktop-message-alerts").checked, autoStart: $2("desktop-auto-start").checked, startMinimized: $2("desktop-start-minimized").checked, hotkeysEnabled: $2("desktop-hotkeys-enabled").checked, showHotkey: $2("desktop-show-hotkey").value, captureHotkey: $2("desktop-capture-hotkey").value });
+            await window.welinkDesktopSave({ closeToTray: $2("desktop-close-tray").checked, messageAlerts: $2("desktop-message-alerts").checked, messageSound: p.messageSound !== false, autoStart: $2("desktop-auto-start").checked, startMinimized: $2("desktop-start-minimized").checked, hotkeysEnabled: $2("desktop-hotkeys-enabled").checked, showHotkey: $2("desktop-show-hotkey").value, captureHotkey: $2("desktop-capture-hotkey").value });
             closeModal2();
             toast2("桌面设置已保存");
           } catch (error) {
@@ -1426,8 +1677,8 @@
       }
     }
     function openUser() {
-      var _a, _b, _c, _d, _e;
-      const draft = { name: (_b = (_a = $2("#profile-name")) == null ? void 0 : _a.value) != null ? _b : S2.user.name, bio: (_d = (_c = $2("#profile-bio")) == null ? void 0 : _c.value) != null ? _d : S2.user.bio, avatar: ((_e = $2(".color-list .selected")) == null ? void 0 : _e.dataset.color) || S2.user.avatar };
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+      const draft = { name: (_b = (_a = $2("#profile-name")) == null ? void 0 : _a.value) != null ? _b : S2.user.name, bio: (_d = (_c = $2("#profile-bio")) == null ? void 0 : _c.value) != null ? _d : S2.user.bio, phone: (_f = (_e = $2("#profile-phone")) == null ? void 0 : _e.value) != null ? _f : S2.user.phone, gender: (_h = (_g = $2("#profile-gender")) == null ? void 0 : _g.value) != null ? _h : S2.user.gender, jobTitle: (_j = (_i = $2("#profile-job")) == null ? void 0 : _i.value) != null ? _j : S2.user.jobTitle, avatar: ((_k = $2(".color-list .selected")) == null ? void 0 : _k.dataset.color) || S2.user.avatar };
       release();
       current = { scope: "user", actor: S2.user.id, target: S2.user.id, info: __spreadValues({}, S2.user), back: (changed2) => profile2(__spreadProps(__spreadValues({}, draft), { avatar: changed2 ? S2.user.avatar : draft.avatar })) };
       choose();
@@ -1448,8 +1699,8 @@
     }
     function changed(d) {
       if (!S2.user) return;
-      if (d.userId === S2.user.id) Object.assign(S2.user, { name: d.name, avatar: d.avatar, bio: d.bio });
-      for (const u of S2.friends) if (u.id === d.userId) Object.assign(u, { name: d.name, avatar: d.avatar, bio: d.bio });
+      if (d.userId === S2.user.id) Object.assign(S2.user, { name: d.name, avatar: d.avatar, bio: d.bio, phone: d.phone, gender: d.gender, jobTitle: d.jobTitle });
+      for (const u of S2.friends) if (u.id === d.userId) Object.assign(u, { name: d.name, avatar: d.avatar, bio: d.bio, phone: d.phone, gender: d.gender, jobTitle: d.jobTitle });
       for (const m of S2.messages) if (m.sender === d.userId) m.avatar = d.avatar;
       document.querySelectorAll('.avatar[data-avatar-user="'.concat(d.userId, '"]')).forEach((node) => {
         const online = !!node.querySelector(".dot"), size = node.classList.contains("large") ? "large" : node.classList.contains("small") ? "small" : "";
@@ -2570,10 +2821,11 @@
         if (q && !people.length) return "";
         return '<section class="contact-folder-section" data-contact-folder="'.concat(g.id, '"><button class="contact-folder ').concat(hidden ? "collapsed" : "", '" data-contact="toggle" data-group-id="').concat(g.id, '" aria-expanded="').concat(!hidden, '">').concat(icon2("down"), "<b>").concat(esc2(g.name), "</b><small>").concat(people.filter((u) => u.online).length, "/").concat(g.people.length, "</small></button>").concat(hidden ? "" : people.map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(title(u)), "</b>").concat(badge(u), '</div><div class="row-preview"><span>').concat(esc2(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join("")).concat(!hidden && !q && g.id === "special-care" && !people.length ? '<p class="contact-attention-empty">在联系人设置中添加特别关心</p>' : "", "</section>");
       }).join("");
-      return '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!peopleSource.length && !care.length ? '<div class="empty-list">还没有联系人<br>搜索用户，直接开始聊天</div>' : q && !found ? '<div class="empty-list">没有找到用户</div>' : "");
+      const self = matches(S2.user) ? '<section class="contact-folder-section self-contact"><button class="conversation-row contact-self-row" data-profile="' + S2.user.id + '">' + av2(__spreadProps(__spreadValues({}, S2.user), { online: !S2.offline }), "", true) + '<div class="row-text"><div class="row-title"><b>' + esc2(S2.user.name) + '（我）</b></div><div class="row-preview">' + (S2.offline ? "离线" : "在线") + " · " + esc2(S2.user.number) + "</div></div></button></section>" : "";
+      return self + '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!q && !peopleSource.length && !care.length ? '<div class="empty-list">还没有最近联系人<br>搜索用户，直接开始聊天</div>' : q && !found && !self ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u))).concat(badge(u), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-open-space="').concat(u.id, '">查看空间</button><button class="secondary" data-contact="attention" data-user="').concat(u.id, '">').concat(u.specialCare ? "取消特别关心" : "设为特别关心", '</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button></div>');
+      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u))).concat(badge(u), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 账号：').concat(esc2(u.number || u.account), '</span><dl class="profile-details"><dt>手机号</dt><dd>').concat(esc2(u.phone || "未设置"), "</dd><dt>性别</dt><dd>").concat(esc2({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置"), "</dd><dt>职位</dt><dd>").concat(esc2(u.jobTitle || "未设置"), '</dd></dl><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions">').concat(u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : '<button class="primary" data-start-chat="'.concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="').concat(u.id, '">').concat(u.specialCare ? "取消特别关心" : "设为特别关心", '</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button>'), "</div>");
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
@@ -2664,24 +2916,7 @@
         menu(row.dataset.profile, e.clientX, e.clientY);
       }
     });
-    let touchTimer2, holdUntil = 0;
-    document.addEventListener("touchstart", (e) => {
-      const row = e.target.closest(".contact-row[data-profile]");
-      if (row) {
-        const p = e.touches[0];
-        touchTimer2 = setTimeout(() => {
-          holdUntil = Date.now() + 1e3;
-          menu(row.dataset.profile, p.clientX, p.clientY);
-        }, 550);
-      }
-    }, { passive: true });
-    for (const type of ["touchend", "touchmove", "touchcancel"]) document.addEventListener(type, () => clearTimeout(touchTimer2), { passive: true });
-    document.addEventListener("click", (e) => {
-      if (Date.now() < holdUntil && e.target.closest(".contact-row")) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
-    }, true);
+    bindLongPress(".contact-row[data-profile]", (row, x, y) => menu(row.dataset.profile, x, y));
     document.addEventListener("click", async (e) => {
       var _a, _b;
       const b = e.target.closest("[data-contact]");
@@ -2810,7 +3045,7 @@
       if (c.kind !== "group") return;
       detailState = c;
       const g = c.group, local = S2.conversations.find((x) => x.id === cid) || {}, me = c.members.find((x) => x.id === S2.user.id);
-      modal2("群聊设置", '<div class="group-summary">'.concat(manager(g) ? '<button class="group-avatar-link" data-avatar="group" data-group-id="' + c.id + '" aria-label="更换群头像">' : "").concat(av2({ kind: "group", avatar: g.avatar || "group", name: c.name }, "large")).concat(manager(g) ? "</button>" : "", "<div><h3>").concat(esc2(c.name), "</h3><p>群号 ").concat(esc2(g.number), ' <button class="group-link" data-group="copy-number">复制</button></p><small>').concat(g.count, " 人 · ").concat(roles[g.role], '</small></div></div><div class="group-member-grid">').concat(c.members.slice(0, 9).map((u) => '<button data-group-user="'.concat(u.id, '">').concat(av2(u), "<span>").concat(esc2(u.nickname || u.name), "</span>").concat(u.role !== "member" ? '<small class="group-role '.concat(u.role, '">').concat(roles[u.role], "</small>") : "", "</button>")).join("")).concat(manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : "", "</div>").concat(row("群聊成员", g.count + " 人", "members")).concat(row("群公告", esc2(((_a = c.announcement) == null ? void 0 : _a.slice(0, 24)) || "暂无公告"), "announcement")).concat(row("我的群名片", esc2((me == null ? void 0 : me.nickname) || (me == null ? void 0 : me.name) || ""), "my-card")).concat(manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : "").concat(row("查找聊天记录", "", "history"), '<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ').concat(local.muted ? "checked" : "", '></label><p class="hint">').concat(esc2(g.description || "暂无群介绍"), '</p><button class="group-danger" data-group="').concat(g.role === "owner" ? "dissolve" : "leave", '">').concat(g.role === "owner" ? "解散该群" : "退出该群", "</button>"), '<button class="primary" id="group-save-prefs">完成</button>', true);
+      modal2("群聊设置", '<div class="group-summary">'.concat(manager(g) ? '<button class="group-avatar-link" data-avatar="group" data-group-id="' + c.id + '" aria-label="更换群头像">' : "").concat(av2({ kind: "group", avatar: g.avatar || "group", name: c.name }, "large")).concat(manager(g) ? "</button>" : "", "<div><h3>").concat(esc2(c.name), "</h3><p>群号 ").concat(esc2(g.number), ' <button class="group-link" data-group="copy-number">复制</button></p><small>').concat(g.count, " 人 · ").concat(roles[g.role], '</small></div></div><div class="group-member-grid">').concat(c.members.slice(0, 9).map((u) => '<button data-group-user="'.concat(u.id, '">').concat(av2(u), "<span>").concat(esc2(u.nickname || u.name), "</span>").concat(u.role !== "member" ? '<small class="group-role '.concat(u.role, '">').concat(roles[u.role], "</small>") : "", "</button>")).join("")).concat(manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : "", "</div>").concat(row("群聊成员", g.count + " 人", "members")).concat(row("群公告", esc2(((_a = c.announcement) == null ? void 0 : _a.slice(0, 24)) || "暂无公告"), "announcement")).concat(row("我的群名片", esc2((me == null ? void 0 : me.nickname) || (me == null ? void 0 : me.name) || ""), "my-card")).concat(manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : "").concat(row("查找聊天记录", "", "history"), '<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ').concat(local.muted ? "checked" : "", '></label><p class="hint">').concat(esc2(g.description || "暂无群介绍"), '</p><button class="chat-remove-entry" data-conversation-action="remove" data-cid="').concat(c.id, '">').concat(icon2("trash"), '从消息列表移除</button><button class="group-danger" data-group="').concat(g.role === "owner" ? "dissolve" : "leave", '">').concat(g.role === "owner" ? "解散该群" : "退出该群", "</button>"), '<button class="primary" id="group-save-prefs">完成</button>', true);
       bind("group-save-prefs", async () => {
         await api2("/api/conversations/" + cid, { method: "PATCH", body: { pinned: $2("#group-pin").checked, muted: $2("#group-notifications").checked } });
         closeModal2();
@@ -3984,7 +4219,7 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button><button data-action="register">注册账号</button></div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.0</small></main>');
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.8-preview</small></main>');
       el("qr-refresh").onclick = open;
       try {
         const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
@@ -5084,7 +5319,7 @@
     return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, spaceUser: "me", tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -5094,7 +5329,8 @@
     const n = document.createElement("div");
     n.className = "toast";
     n.textContent = msg;
-    $("#toasts").append(n);
+    $("#toasts").innerHTML = "";
+    $("#toasts").appendChild(n);
     setTimeout(() => n.remove(), 3800);
   }
   async function api(path, options = {}) {
@@ -5162,24 +5398,80 @@
     }
     return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
   }
-  function modal(title, body, footer = "", wide = false) {
-    var _a;
-    (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
-    $("#overlays").innerHTML = '<div class="modal-backdrop"><section class="modal '.concat(wide ? "wide" : "", '" role="dialog" aria-modal="true" aria-label="').concat(esc(title), '"><header class="modal-head"><h3>').concat(esc(title), "</h3>").concat(btn("close", "关闭", "close-modal"), '</header><div class="modal-body">').concat(body, '<div class="form-error" id="modal-error"></div></div>').concat(footer ? '<footer class="modal-footer">'.concat(footer, "</footer>") : "", "</section></div>");
-    modalHandler = null;
-    const dialog = $(".modal");
-    setTimeout(() => {
-      var _a2;
-      if ((dialog == null ? void 0 : dialog.isConnected) && !dialog.contains(document.activeElement)) (_a2 = dialog.querySelector("input:not([type=checkbox]):not([type=file]):not([type=range])")) == null ? void 0 : _a2.focus();
-    }, 40);
+  function modal(...args) {
+    Navigation.open(...args);
   }
   var modalError = (e) => {
     $("#modal-error") ? $("#modal-error").textContent = e.message : toast(e.message);
   };
   function closeModal() {
-    $("#overlays").innerHTML = "";
-    modalHandler = null;
+    Navigation.clear();
   }
+  var pageHistory = [];
+  function pageBack() {
+    var _a;
+    if ($(".remote-screen")) {
+      (_a = $(".remote-screen [data-action=stop-remote]")) == null ? void 0 : _a.click();
+      return true;
+    }
+    if (S.tab === "drive" && Cloud.back()) return true;
+    if (S.profile && S.tab === "contacts") {
+      S.profile = null;
+      renderShell();
+      return true;
+    }
+    if (S.active && S.tab === "messages") {
+      Media.reset();
+      Forwarding.reset(false);
+      S.active = null;
+      S.messages = [];
+      S.reply = null;
+      renderShell();
+      return true;
+    }
+    const previous = pageHistory.pop();
+    if (previous) {
+      Object.assign(S, previous.state);
+      renderShell();
+      if (previous.settings) settings();
+      return true;
+    }
+    if (S.user && S.tab !== "messages") {
+      S.tab = "messages";
+      S.search = "";
+      S.profile = null;
+      renderShell();
+      return true;
+    }
+    return false;
+  }
+  function navigatePage(button) {
+    var _a;
+    const tab = button.dataset.nav;
+    if (!["messages", "contacts", "meetings", "drive", "files", "favorites", "profile", "admin"].includes(tab)) return;
+    if (!button.closest(".rail") && tab !== S.tab) pageHistory.push({ state: { tab: S.tab, active: S.active, profile: S.profile, search: S.search }, settings: ((_a = $(".modal")) == null ? void 0 : _a.getAttribute("aria-label")) === "设置" });
+    else pageHistory.length = 0;
+    closeModal();
+    S.tab = tab;
+    S.search = "";
+    S.profile = null;
+    renderShell();
+  }
+  function pageNavigation() {
+    var _a;
+    return '<header class="utility-navigation"><button class="page-back" data-action="page-back">' + icon("back") + "返回" + (((_a = pageHistory[pageHistory.length - 1]) == null ? void 0 : _a.settings) ? "设置" : "") + "</button></header>";
+  }
+  var Navigation = createNavigation({ getHandler: () => modalHandler, setHandler: (value) => {
+    modalHandler = value;
+  }, beforeOpen: () => {
+    var _a;
+    return (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
+  }, esc, icon, onPageBack: pageBack, beforeBack: () => {
+    var _a, _b;
+    if (((_a = S.remote) == null ? void 0 : _a.state) !== "pending" || !$(".remote-invite")) return false;
+    (S.remote.requester === ((_b = S.user) == null ? void 0 : _b.id) ? stopRemote() : acceptRemote(false)).catch(modalError);
+    return true;
+  } });
   function windows() {
     return '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>");
   }
@@ -5192,7 +5484,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.8-preview · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -5232,11 +5524,11 @@
   }
   function nav() {
     const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
-    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["remote", "monitor", "远程协助", 0], ["drive", "cloud", "网盘", 0], ["space", "notebook", "空间", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t === "远程协助" ? "远程" : t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
+    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["drive", "cloud", "网盘", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div><div id="main-content" style="display:contents"></div></main></div>');
+    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div>').concat(utility ? pageNavigation() : "", '<div id="main-content" style="display:contents"></div></main></div>');
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
@@ -5261,10 +5553,10 @@
       return (c.name + (((_a = c.peer) == null ? void 0 : _a.number) || "") + (((_b = c.group) == null ? void 0 : _b.number) || "") + (((_c = c.last) == null ? void 0 : _c.text) || "")).toLowerCase().includes(q);
     });
     const users = q ? S.friends.filter((u) => (u.name + (u.remark || "") + u.number + u.id + u.account).toLowerCase().includes(q)) : [];
-    list.innerHTML = result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "") + '<button class="search-action" data-action="add-friend">查找用户</button>';
+    list.innerHTML = result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
   }
   function conversationRow(c) {
-    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b>").concat(c.kind === "direct" ? Contacts.badge(c.peer) : "", "<time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
+    return '<div class="conversation-item"><button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b>").concat(c.kind === "direct" ? Contacts.badge(c.peer) : "", "<time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", '</div></div></button><button type="button" class="conversation-more" data-conversation-menu="').concat(c.id, '" aria-label="').concat(esc(c.name), '的会话操作" title="会话操作">').concat(icon("more"), "</button></div>");
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);
@@ -5275,12 +5567,6 @@
     if (!main) return;
     if (S.tab === "drive") {
       Cloud.renderDrive().catch((e) => toast(e.message));
-      return;
-    }
-    if (S.tab === "space") {
-      Cloud.renderSpace(S.spaceUser || "me").catch((e) => {
-        main.innerHTML = empty("空间", e.message);
-      });
       return;
     }
     if (S.tab === "admin") {
@@ -5312,11 +5598,6 @@
       return;
     }
     ;
-    if (S.tab === "remote") {
-      renderRemoteHome();
-      return;
-    }
-    ;
     if (S.tab === "profile") {
       renderMyPage();
       return;
@@ -5328,7 +5609,7 @@
       return;
     }
     ;
-    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")).concat(btn("monitor", "远程协助", "remote")).concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot")).concat(btn("monitor", "远程协助", "remote"), '<span class="spacer"></span><button class="history-btn" data-action="search-history">').concat(icon("history"), '聊天记录</button></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
+    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")).concat(c.kind === "direct" ? btn("monitor", "远程协助", "remote") : "").concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot"), '<span class="spacer"></span></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
     renderMessages();
     const input = $("#composer");
     input.oninput = () => {
@@ -5375,7 +5656,7 @@
     Mentions.mount();
   }
   function empty(title, sub, add = false) {
-    return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">查找用户</button>' : "", "</div>");
+    return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p></div>");
   }
   function fileURL(id) {
     return "/api/files/" + encodeURIComponent(id);
@@ -5531,7 +5812,8 @@
     S.groupRequests = groupRequests;
     S.contactGroups = contactGroups;
     if (S.profile) {
-      S.profile = friends.find((u) => u.id === S.profile.id) || null;
+      const updated = friends.find((u) => u.id === S.profile.id);
+      S.profile = updated ? __spreadValues(__spreadValues({}, S.profile), updated) : null;
       if (S.tab === "contacts") renderMain();
     }
     if (S.active && !conversations.some((c2) => c2.id === S.active)) {
@@ -5613,7 +5895,7 @@
       const d = event.data;
       if (event.type === "call") {
         Calls.changed(d);
-      } else if (event.type === "drive" || event.type === "space") {
+      } else if (event.type === "drive") {
         Cloud.changed(event.type);
       } else if (event.type === "call-history") {
         Calls.historyChanged();
@@ -5629,7 +5911,8 @@
           });
         }
         if ((S.active !== d.conversationId || S.tab !== "messages" || Desktop.hidden()) && d.sender !== S.user.id && (!((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted) || Mentions.applies(d))) {
-          if (!Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg" });
+          Sounds.notify();
+          if (!Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg", silent: true });
           document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
         }
         queueRefresh();
@@ -5677,12 +5960,15 @@
     };
   }
   function connectionState() {
+    if (S.user && S.tab === "contacts") renderSidebar();
     const text = S.cacheSyncing ? "正在核对本机聊天记录…" : S.cacheView ? "离线查看 · 仅显示本机已缓存的记录" : S.offline ? "网络连接已断开，正在重新连接…" : "";
     for (const n of [$("#connection-status"), $(".sidebar-connection-status")]) if (n) n.innerHTML = text ? '<div class="connection-state" role="status">' + text + "</div>" : "";
   }
   async function logout(notify = true) {
     if (S.signingOut) return;
     const signingOutToken = S.token;
+    pageHistory.length = 0;
+    Sounds.reset();
     Screenshots.reset();
     Media.reset();
     Forwarding.reset(false);
@@ -5775,7 +6061,7 @@
       return;
     }
     const c = await api("/api/conversations/".concat(S.active)), mine = c.owner === S.user.id, local = activeConversation();
-    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-contact="edit" data-user="').concat(((_b = local.peer) == null ? void 0 : _b.id) || "", '">好友设置</button><button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", "></label>").concat(c.kind === "group" ? '<button class="secondary" data-action="invite-members">邀请好友</button>' : ""), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("聊天设置", '<div class="detail-members">'.concat(c.members.map((u) => '<div class="detail-member">'.concat(av(u), "<span>").concat(esc(u.name)).concat(u.id === c.owner && c.kind === "group" ? " · 群主" : "", "</span></div>")).join(""), "</div>").concat(c.kind === "group" ? '<label>群名称</label><input id="detail-name" value="'.concat(esc(c.name), '" maxlength="60" ').concat(mine ? "" : "disabled", '><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ').concat(mine ? "" : "disabled", ">").concat(esc(c.announcement), "</textarea>") : "", '<button class="chat-history-entry" data-contact="edit" data-user="').concat(((_b = local.peer) == null ? void 0 : _b.id) || "", '">联系人设置</button><button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ').concat(local.pinned ? "checked" : "", '></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ').concat(local.muted ? "checked" : "", '></label><button class="chat-remove-entry" data-conversation-action="remove" data-cid="').concat(c.id, '">').concat(icon("trash"), "从消息列表移除</button>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       const p = { pinned: $("#detail-pin").checked, muted: $("#detail-mute").checked };
       if (c.kind === "group" && mine) {
@@ -5804,12 +6090,13 @@
   }
   async function renderFiles() {
     const n = $("#main-content");
-    n.innerHTML = '<section class="utility"><h2>文件管理器</h2><div id="file-list" class="inline-loading">正在读取…</div></section>';
+    n.innerHTML = '<section class="utility"><h2>聊天文件</h2><div id="file-list" class="inline-loading">正在读取…</div></section>';
+    const target = $("#file-list");
     try {
       const files = await api("/api/files"), list = $("#file-list");
-      if (!list) return;
+      if (list !== target || S.tab !== "files") return;
       list.className = "";
-      list.innerHTML = files.map((f) => '<div class="utility-row">'.concat(icon(f.mime.startsWith("image/") ? "image" : "file"), '<div class="body"><b>').concat(esc(f.name), "</b><p>").concat(bytes(f.size), " · ").concat(fullTime(f.created), "</p></div>").concat(btn("download", "下载", "download", 'data-download="'.concat(f.id, '" data-filename="').concat(esc(f.name), '"')), "</div>")).join("") || '<div class="empty-list">发送和接收的文件会保存在这里</div>';
+      list.innerHTML = files.map((f) => '<div class="utility-row">'.concat(icon(f.mime.startsWith("image/") ? "image" : "file"), '<div class="body"><b>').concat(esc(f.name), "</b><p>").concat(bytes(f.size), " · ").concat(fullTime(f.created), "</p></div>").concat(btn("download", "下载", "download", 'data-download="'.concat(f.id, '" data-filename="').concat(esc(f.name), '"'))).concat(f.messageId ? btn("trash", "删除文件", "delete-chat-file", 'data-mid="'.concat(f.messageId, '" data-cid="').concat(f.conversationId, '" data-filename="').concat(esc(f.name), '"')) : "", "</div>")).join("") || '<div class="empty-list">发送和接收的文件会保存在这里</div>';
     } catch (e) {
       toast(e.message);
     }
@@ -5825,11 +6112,22 @@
       toast(e.message);
     }
   }
+  async function openUserProfile(id) {
+    modal("个人资料", '<div id="profile-loading" class="inline-loading">正在读取资料…</div>');
+    const node = $("#profile-loading");
+    try {
+      const u = await api("/api/users/" + encodeURIComponent(id));
+      if (!node.isConnected) return;
+      modal("个人资料", '<div class="contact-profile">' + Contacts.profile(__spreadValues(__spreadValues({}, S.friends.find((p) => p.id === id)), u)) + "</div>");
+    } catch (e) {
+      if (node.isConnected) modalError(e);
+    }
+  }
   function profile(initial = {}) {
     const user = __spreadValues(__spreadValues({}, S.user), initial);
-    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><label>昵称</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">WeLink 账号：').concat(esc(user.number), '</p><label>昵称</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="').concat(esc(user.phone || ""), '" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>').concat([["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="'.concat(v, '" ').concat(user.gender === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label>职位</label><input id="profile-job" value="').concat(esc(user.jobTitle || ""), '" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
-      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, avatar: user.avatar } });
+      S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, phone: $("#profile-phone").value, gender: $("#profile-gender").value, jobTitle: $("#profile-job").value, avatar: user.avatar } });
       closeModal();
       updateRail();
       if (S.tab === "profile") renderMyPage();
@@ -5837,10 +6135,11 @@
     };
   }
   function renderMyPage() {
-    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("folder"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="remote">').concat(icon("monitor"), '<div class="body" style="text-align:left">远程协助</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="space">').concat(icon("file"), '<div class="body" style="text-align:left">我的空间</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
+    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("cloud"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
-  function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+  async function settings() {
+    await Sounds.ready;
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.8 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -5880,7 +6179,7 @@
     ;
     const d = document.createElement("div");
     d.className = "popup";
-    d.innerHTML = [..."😀😃😄😁😆😅😂🙂😉😊🥰😍🤩😘😋😎🥳🤔🤗🤭🤫😴😪😮😯😳😱😢😭😤😡🤯🥺😇💙❤️💛💚💜✨🌟🎉🎈🎁🌷🌸🍀☀️🌈☕🍰🍉🍎🎵💡🔥👍👋👏🤝🙏💪👌✅"].map((v) => '<button data-emoji="'.concat(v, '">').concat(v, "</button>")).join("");
+    d.innerHTML = '<div class="emoji-heading"><span>表情</span><button class="emoji-close" data-action="close-emoji" aria-label="关闭表情">' + icon("close") + "</button></div>" + "😀 😃 😄 😁 😆 😅 😂 🙂 😉 😊 🥰 😍 🤩 😘 😋 😎 🥳 🤔 🤗 🤭 🤫 😴 😪 😮 😯 😳 😱 😢 😭 😤 😡 🤯 🥺 😇 💙 ❤️ 💛 💚 💜 ✨ 🌟 🎉 🎈 🎁 🌷 🌸 🍀 ☀️ 🌈 ☕ 🍰 🍉 🍎 🎵 💡 🔥 👍 👋 👏 🤝 🙏 💪 👌 ✅".split(" ").map((v) => '<button data-emoji="'.concat(v, '">').concat(v, "</button>")).join("");
     $(".composer").append(d);
   }
   async function copyMessage(text) {
@@ -5916,7 +6215,18 @@
     }
     History.changed(message.id, true);
     renderMessages(true);
+    if (S.tab === "files") renderFiles();
     queueRefresh();
+  }
+  function deleteChatFile(button) {
+    const { mid, cid, filename } = button.dataset;
+    modal("删除聊天文件", "<p>删除「" + esc(filename) + '」及对应的文件消息？</p><p class="hint">会从你所有设备的聊天记录和文件列表中移除。对方的记录、你的收藏及已下载到设备的副本会保留。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" data-action="modal-submit">删除</button>');
+    modalHandler = async () => {
+      await api("/api/messages/" + mid, { method: "DELETE" });
+      applyDeletion({ id: mid, conversationId: cid });
+      closeModal();
+      toast("已删除聊天文件");
+    };
   }
   function applyDeletion(message) {
     var _a;
@@ -5934,6 +6244,7 @@
       renderMessages(true);
     }
     History.changed(message.id);
+    if (S.tab === "files") renderFiles();
     queueRefresh();
   }
   function deleteMessage(id) {
@@ -5970,9 +6281,6 @@
   }
   async function screenshot() {
     return Screenshots.start();
-  }
-  function renderRemoteHome() {
-    $("#main-content").innerHTML = '<section class="utility"><h2>远程协助</h2><div class="settings-body"><div style="text-align:center;padding:28px 0;color:#80bced">'.concat(icon("monitor").replace("<svg", '<svg style="width:72px;height:72px;stroke-width:1"'), '</div><h3 style="text-align:center;font-weight:500;font-size:20px;margin-bottom:14px">屏幕另一边，也能帮到你</h3><p class="hint" style="text-align:center;color:#99a3b0;line-height:2;font-size:13px;margin-bottom:35px">在好友聊天中发起远程协助<br>共享屏幕，或邀请好友操作你的设备</p><div class="utility-row">').concat(icon("shield"), '<div class="body"><b>每次连接，都由你决定</b><p>对方同意后才开始，随时可以结束</p></div></div><div class="utility-row">').concat(icon("monitor"), '<div class="body"><b>Windows 与 Android 互联</b><p>复用 YuDesk 远控技术，支持加密传输</p></div></div><button class="primary" style="width:100%;margin-top:20px" data-nav="contacts">选择好友</button></div></section>');
   }
   function remoteChoices() {
     const c = activeConversation();
@@ -6213,18 +6521,18 @@
     a.remove();
   }
   document.addEventListener("click", async (e) => {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+    const avatar = e.target.closest(".message .avatar[data-avatar-user],.detail-member .avatar[data-avatar-user]");
+    if (avatar) {
+      openUserProfile(avatar.dataset.avatarUser);
+      return;
+    }
     const b = e.target.closest("button,a,[data-preview-image]");
     (_a = $(".context-menu")) == null ? void 0 : _a.remove();
     if (!b) return;
     try {
       if (b.dataset.nav) {
-        closeModal();
-        S.tab = b.dataset.nav;
-        if (S.tab === "space") S.spaceUser = "me";
-        S.search = "";
-        S.profile = null;
-        renderShell();
+        navigatePage(b);
         return;
       }
       if (b.dataset.contactTab) {
@@ -6237,9 +6545,19 @@
         return;
       }
       if (b.dataset.profile) {
+        if (b.dataset.profile === S.user.id) {
+          await openUserProfile(S.user.id);
+          return;
+        }
         S.profile = S.friends.find((u) => u.id === b.dataset.profile);
         renderMain();
         $(".shell").classList.add("in-chat");
+        const id = b.dataset.profile;
+        const detail = await api("/api/users/" + id);
+        if (S.tab === "contacts" && ((_b = S.profile) == null ? void 0 : _b.id) === id) {
+          S.profile = __spreadValues(__spreadValues({}, S.profile), detail);
+          renderMain();
+        }
         return;
       }
       if (b.dataset.userCall) {
@@ -6251,6 +6569,7 @@
         return;
       }
       if (b.dataset.startChat) {
+        closeModal();
         const c = await action("/api/conversations", { kind: "direct", members: [b.dataset.startChat] });
         await refresh();
         await selectConversation(c.id);
@@ -6296,7 +6615,7 @@
       }
       const a = b.dataset.action;
       if (!a) return;
-      (_b = $(".context-menu")) == null ? void 0 : _b.remove();
+      (_c = $(".context-menu")) == null ? void 0 : _c.remove();
       switch (a) {
         case "register":
           renderAuth(true);
@@ -6305,7 +6624,15 @@
           renderAuth(false);
           break;
         case "close-modal":
-          closeModal();
+          if (((_d = S.remote) == null ? void 0 : _d.state) === "pending" && $(".remote-invite")) Navigation.back();
+          else if (b.closest(".modal-footer") && b.textContent.trim() === "取消") Navigation.back();
+          else closeModal();
+          break;
+        case "modal-back":
+          Navigation.back();
+          break;
+        case "page-back":
+          pageBack();
           break;
         case "modal-submit":
           if (modalHandler) {
@@ -6343,9 +6670,7 @@
           await sendMessage();
           break;
         case "back":
-          S.active = null;
-          S.profile = null;
-          renderShell();
+          pageBack();
           break;
         case "add-friend":
           addFriend();
@@ -6368,6 +6693,10 @@
         }
         case "emoji":
           emojis();
+          break;
+        case "close-emoji":
+          (_e = $(".popup")) == null ? void 0 : _e.remove();
+          (_f = $("#composer")) == null ? void 0 : _f.focus();
           break;
         case "image":
           $("#image-input").click();
@@ -6392,7 +6721,7 @@
           Outbox.saveDraft().catch(() => {
           });
           renderReply();
-          (_c = $("#composer")) == null ? void 0 : _c.focus();
+          (_g = $("#composer")) == null ? void 0 : _g.focus();
           break;
         case "cancel-reply":
           S.reply = null;
@@ -6409,7 +6738,10 @@
           await renderFavorites();
           break;
         case "copy-message":
-          await copyMessage(((_d = S.messages.find((m) => m.id === b.dataset.mid)) == null ? void 0 : _d.text) || "");
+          await copyMessage(((_h = S.messages.find((m) => m.id === b.dataset.mid)) == null ? void 0 : _h.text) || "");
+          break;
+        case "delete-chat-file":
+          deleteChatFile(b);
           break;
         case "delete-message":
           deleteMessage(b.dataset.mid);
@@ -6438,10 +6770,10 @@
           break;
         }
         case "load-older": {
-          const cid = S.active, seq = (_e = S.messages[0]) == null ? void 0 : _e.seq;
+          const cid = S.active, seq = (_i = S.messages[0]) == null ? void 0 : _i.seq;
           if (!cid || !seq) break;
           const older = await api("/api/conversations/".concat(cid, "/messages?before=").concat(seq));
-          if (S.active !== cid || ((_f = S.messages[0]) == null ? void 0 : _f.seq) !== seq) break;
+          if (S.active !== cid || ((_j = S.messages[0]) == null ? void 0 : _j.seq) !== seq) break;
           if (!older.length) {
             b.remove();
             toast(S.cacheView ? "没有更早的本机缓存，联网后可继续加载" : "已经是最早的消息");
@@ -6493,7 +6825,7 @@
     }
   });
   document.addEventListener("click", (e) => {
-    if (e.target.classList.contains("modal-backdrop") && !S.remote) closeModal();
+    if (e.target.classList.contains("modal-backdrop") && (!S.remote || S.remote.state === "pending")) Navigation.back();
   });
   document.addEventListener("contextmenu", (e) => {
     const el = e.target.closest("[data-message]");
@@ -6503,28 +6835,14 @@
       if (m) messageMenu(m, e.clientX, e.clientY);
     }
   });
-  var touchTimer;
-  var suppressMessageClickUntil = 0;
-  document.addEventListener("click", (e) => {
-    if (Date.now() < suppressMessageClickUntil && e.target.closest("[data-message]")) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    }
+  bindLongPress("[data-message]", (node, x, y) => {
+    const message = S.messages.find((m) => m.id === node.dataset.message);
+    if (message) messageMenu(message, x, y);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    var _a;
+    if (!event.target.closest(".popup,[data-action=emoji]")) (_a = $(".popup")) == null ? void 0 : _a.remove();
   }, true);
-  document.addEventListener("touchstart", (e) => {
-    const el = e.target.closest("[data-message]");
-    if (el) {
-      const p = e.touches[0];
-      touchTimer = setTimeout(() => {
-        const m = S.messages.find((x) => x.id === el.dataset.message);
-        if (m) {
-          suppressMessageClickUntil = Date.now() + 1e3;
-          messageMenu(m, p.clientX, p.clientY);
-        }
-      }, 550);
-    }
-  }, { passive: true });
-  for (const ev of ["touchend", "touchmove", "touchcancel"]) document.addEventListener(ev, () => clearTimeout(touchTimer), { passive: true });
   document.addEventListener("visibilitychange", () => {
     if (!Desktop.hidden()) {
       document.title = "WeLink";
@@ -6534,14 +6852,11 @@
     });
   });
   document.addEventListener("pointerdown", (e) => {
-    if (e.button === 0 && window.welinkDrag && !e.target.closest("button,input,textarea,a") && (e.target.closest(".chat-head") || e.clientY < 28)) window.welinkDrag();
+    if (e.button === 0 && window.welinkDrag && !e.target.closest("#overlays,button,input,textarea,a") && (e.target.closest(".chat-head") || e.clientY < 28)) window.welinkDrag();
   });
   document.addEventListener("keydown", (e) => {
-    var _a;
-    if (e.key === "Escape") {
-      if ($(".context-menu")) $(".context-menu").remove();
-      else if (!S.remote) closeModal();
-      (_a = $(".popup")) == null ? void 0 : _a.remove();
+    if (e.key === "Escape" && !e.defaultPrevented && (!S.remote || S.remote.state === "pending") && Navigation.handleBack()) {
+      e.preventDefault();
     }
   });
   window.addEventListener("storage", (event) => {
@@ -6559,10 +6874,12 @@
     renderMessages(true);
   } });
   var Transfers = createTransfers({ S, api, esc, av, bytes, randomID, renderMessages, queueRefresh, toast });
-  var Cloud = createCloud({ S, api, modal, closeModal, toast, esc, icon, bytes, fullTime, renderShell, upload: Transfers.upload });
+  var Cloud = createCloud({ S, api, modal, closeModal, toast, esc, icon, bytes, fullTime, upload: Transfers.upload });
+  createConversationActions({ S, api, modal, closeModal, toast, esc, icon, contextMenu, refresh });
   var Admin = createAdmin({ S, api, modal, closeModal, toast, esc, icon, refresh });
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
   var Desktop = createDesktop({ S, modal, closeModal, toast, markRead, esc });
+  var Sounds = createMessageSounds({ toast, native: Desktop.native, hidden: Desktop.hidden });
   var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc, upload });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });

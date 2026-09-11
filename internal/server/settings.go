@@ -42,8 +42,10 @@ type Settings struct {
 		ReceivedCacheConversations int   `json:"received_cache_conversations"`
 	} `json:"chat"`
 	Drive struct {
-		QuotaGB  int64 `json:"quota_gb"`
-		MaxFiles int   `json:"max_files"`
+		QuotaGB        int64 `json:"quota_gb"`
+		MaxFiles       int   `json:"max_files"`
+		MaxFolders     int   `json:"max_folders"`
+		MaxFolderDepth int   `json:"max_folder_depth"`
 	} `json:"drive"`
 	Spaces struct {
 		MaxDocumentBytes int64 `json:"max_document_bytes"`
@@ -90,6 +92,8 @@ func DefaultSettings() Settings {
 	s.Chat.ReceivedCacheConversations = 100
 	s.Drive.QuotaGB = 100
 	s.Drive.MaxFiles = 10000
+	s.Drive.MaxFolders = 2000
+	s.Drive.MaxFolderDepth = 32
 	s.Spaces.MaxDocumentBytes = 2 << 20
 	s.Spaces.MaxDocuments = 10000
 	s.Directory.AllUsers = true
@@ -134,7 +138,7 @@ func (s Settings) Validate() error {
 			return errors.New("public_url and download_url must be HTTP(S) origins")
 		}
 	}
-	if s.DataDir == "" || s.Storage.ReserveBytes < 0 || s.Storage.ConcurrentUploads < 1 || s.Storage.ConcurrentUploads > 64 || s.Chat.MaxAttachmentBytes < 0 || s.Drive.QuotaGB < 1 || s.Drive.QuotaGB > 1048576 || s.Drive.MaxFiles < 1 || s.Spaces.MaxDocumentBytes < 1 || s.Spaces.MaxDocumentBytes > 16<<20 || s.Spaces.MaxDocuments < 1 || s.Meetings.MaxParticipants < 2 || s.Meetings.MaxParticipants > 32 || s.Meetings.DurationMinutes < 1 || s.Meetings.DurationMinutes > 1440 {
+	if s.DataDir == "" || s.Storage.ReserveBytes < 0 || s.Storage.ConcurrentUploads < 1 || s.Storage.ConcurrentUploads > 64 || s.Chat.MaxAttachmentBytes < 0 || s.Drive.QuotaGB < 1 || s.Drive.QuotaGB > 1048576 || s.Drive.MaxFiles < 1 || s.Drive.MaxFolders < 1 || s.Drive.MaxFolders > 100000 || s.Drive.MaxFolderDepth < 1 || s.Drive.MaxFolderDepth > 100 || s.Spaces.MaxDocumentBytes < 1 || s.Spaces.MaxDocumentBytes > 16<<20 || s.Spaces.MaxDocuments < 1 || s.Meetings.MaxParticipants < 2 || s.Meetings.MaxParticipants > 32 || s.Meetings.DurationMinutes < 1 || s.Meetings.DurationMinutes > 1440 {
 		return errors.New("configuration contains an invalid capacity or limit")
 	}
 	if s.Storage.RequireMarker && s.Storage.Root == "" {

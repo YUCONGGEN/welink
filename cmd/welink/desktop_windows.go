@@ -254,6 +254,9 @@ func (h *windowsHost) setUnread(count int) {
 	if count > before && h.desktop.hidden && h.desktop.preferences.MessageAlerts && time.Since(h.desktop.lastAlert) > 5*time.Second {
 		d.Flags |= 0x10
 		d.InfoFlags = 0x81 // NIIF_INFO | NIIF_RESPECT_QUIET_TIME
+		if !h.desktop.preferences.MessageSound {
+			d.InfoFlags |= 0x10
+		} // NIIF_NOSOUND
 		copy(d.InfoTitle[:], syscall.StringToUTF16("WeLink"))
 		copy(d.Info[:], syscall.StringToUTF16(fmt.Sprintf("你有 %d 条未读消息，点击打开 WeLink。", count)))
 		h.desktop.lastAlert = time.Now()
