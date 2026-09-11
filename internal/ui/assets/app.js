@@ -3824,7 +3824,7 @@
     function peer(id) {
       var _a;
       if (room.peers.has(id)) return room.peers.get(id);
-      const active = room, pc = new RTCPeerConnection({ iceServers: directIceServers(active.rtc), iceTransportPolicy: "all", bundlePolicy: "max-bundle" }), entry = { id, pc, makingOffer: false, queue: [], ignore: false };
+      const active = room, pc = new RTCPeerConnection({ iceServers: directIceServers(active.rtc), iceTransportPolicy: "all", bundlePolicy: "max-bundle" }), entry = { id, pc, makingOffer: false, queue: [], ignore: false, signals: Promise.resolve(), pendingSignals: 0, needsOffer: false, localOffer: null };
       room.peers.set(id, entry);
       entry.route = directFirstICE(pc, active.rtc, { alive: () => room === active && active.peers.get(id) === entry, changed: () => renderConnection(active), negotiate: () => offer(entry) });
       for (const track of room.stream.getAudioTracks()) pc.addTrack(track, room.stream);
@@ -3859,16 +3859,81 @@
     }
     async function offer(p) {
       const active = room;
-      if (!active || p.makingOffer || p.pc.signalingState !== "stable" || active.peers.get(p.id) !== p) return;
+      if (!active || active.peers.get(p.id) !== p) return;
+      if (p.pendingSignals) {
+        p.needsOffer = true;
+        return;
+      }
+      if (p.makingOffer || p.pc.signalingState !== "stable") return;
+      p.needsOffer = false;
       const epoch = p.offerEpoch = (p.offerEpoch || 0) + 1, live = () => room === active && active.peers.get(p.id) === p && p.offerEpoch === epoch;
+      let setting = null;
       try {
         p.makingOffer = true;
         const description = await p.pc.createOffer();
         if (!live()) return;
-        await p.pc.setLocalDescription(description);
+        setting = p.localOffer = p.pc.setLocalDescription(description);
+        await setting;
         if (live()) send({ type: "signal", to: p.id, signal: "offer", sdp: p.pc.localDescription.sdp });
+      } catch (error) {
+        if (live()) throw error;
       } finally {
+        if (p.localOffer === setting) p.localOffer = null;
         if (p.offerEpoch === epoch) p.makingOffer = false;
+      }
+    }
+    function signal(active, p, m) {
+      const live = () => room === active && active.peers.get(p.id) === p;
+      p.pendingSignals++;
+      const task = p.signals.then(async () => {
+        try {
+          if (live()) await receiveSignal(active, p, m, live);
+        } catch (error) {
+          if (live()) throw error;
+        } finally {
+          p.pendingSignals--;
+          if (!p.pendingSignals && p.needsOffer && live()) offer(p).catch((e) => toast2(e.message));
+        }
+      });
+      p.signals = task.catch(() => {
+      });
+      return task;
+    }
+    async function receiveSignal(active, p, m, live) {
+      const pc = p.pc;
+      if (m.signal === "candidate") {
+        if (p.ignore) return;
+        const c = JSON.parse(m.candidate);
+        if (pc.remoteDescription) await pc.addIceCandidate(c);
+        else if (p.queue.length < 64) p.queue.push(c);
+        return;
+      }
+      const collision = m.signal === "offer" && (p.makingOffer || pc.signalingState !== "stable"), polite = active.id > m.from;
+      p.ignore = !polite && collision;
+      if (p.ignore) {
+        p.queue.length = 0;
+        return;
+      }
+      if (collision) {
+        p.offerEpoch = (p.offerEpoch || 0) + 1;
+        p.makingOffer = false;
+        if (p.localOffer) await p.localOffer.catch(() => {
+        });
+        if (!live()) return;
+        if (pc.signalingState === "have-local-offer") await pc.setLocalDescription({ type: "rollback" });
+        if (!live()) return;
+      }
+      await pc.setRemoteDescription({ type: m.signal, sdp: m.sdp });
+      if (!live()) return;
+      for (const c of p.queue.splice(0)) {
+        await pc.addIceCandidate(c);
+        if (!live()) return;
+      }
+      if (m.signal === "offer") {
+        const answer = await pc.createAnswer();
+        if (!live()) return;
+        await pc.setLocalDescription(answer);
+        if (live()) send({ type: "signal", to: p.id, signal: "answer", sdp: pc.localDescription.sdp });
       }
     }
     async function receive(m) {
@@ -3879,14 +3944,16 @@
         return;
       }
       if (m.type === "welcome") {
+        const active = room;
         room.id = m.id;
         room.host = m.host;
         room.states.set(m.id, { name: S2.user.name });
         tile(m.id, S2.user.name, room.stream, true);
-        for (const p2 of m.peers || []) {
-          room.states.set(p2.id, p2);
-          tile(p2.id, p2.name);
-          await offer(peer(p2.id));
+        for (const p of m.peers || []) {
+          room.states.set(p.id, p);
+          tile(p.id, p.name);
+          await offer(peer(p.id));
+          if (room !== active) return;
         }
         el("meeting-network").textContent = "会议进行中";
         state();
@@ -3910,8 +3977,8 @@
         return;
       }
       if (m.type === "state") {
-        const p2 = room.states.get(m.id);
-        if (p2) Object.assign(p2, { microphone: !!m.microphone, camera: !!m.camera, screen: !!m.screen, recording: !!m.recording });
+        const p = room.states.get(m.id);
+        if (p) Object.assign(p, { microphone: !!m.microphone, camera: !!m.camera, screen: !!m.screen, recording: !!m.recording });
         renderMembers();
         return;
       }
@@ -3938,31 +4005,7 @@
         toast2(m.message || "会议已结束");
         return;
       }
-      if (m.type !== "signal") return;
-      const p = peer(m.from), pc = p.pc;
-      if (m.signal === "candidate") {
-        const c = JSON.parse(m.candidate);
-        if (pc.remoteDescription) await pc.addIceCandidate(c).catch((e) => {
-          if (!p.ignore) throw e;
-        });
-        else p.queue.push(c);
-        return;
-      }
-      const collision = m.signal === "offer" && (p.makingOffer || pc.signalingState !== "stable"), polite = room.id > m.from;
-      p.ignore = !polite && collision;
-      if (p.ignore) return;
-      if (collision) {
-        p.offerEpoch = (p.offerEpoch || 0) + 1;
-        p.makingOffer = false;
-        await pc.setLocalDescription({ type: "rollback" });
-      }
-      ;
-      await pc.setRemoteDescription({ type: m.signal, sdp: m.sdp });
-      for (const c of p.queue.splice(0)) await pc.addIceCandidate(c);
-      if (m.signal === "offer") {
-        await pc.setLocalDescription(await pc.createAnswer());
-        send({ type: "signal", to: m.from, signal: "answer", sdp: pc.localDescription.sdp });
-      }
+      if (m.type === "signal") return signal(room, peer(m.from), m);
     }
     async function toggle(kind) {
       var _a;

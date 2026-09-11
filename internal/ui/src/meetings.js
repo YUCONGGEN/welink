@@ -42,27 +42,52 @@ export function createMeetings({api,action,S,modal,toast,esc,icon,onCallClosed,c
   el('meeting-members-list').onclick=e=>{for(const type of ['mute','transfer','kick']){const b=e.target.closest(`[data-meeting-${type}]`);if(b)send({type,to:b.getAttribute(`data-meeting-${type}`)})}};
  }
  function updateButtons(){if(!room)return;const local=room.states.get(room.id),host=room.id&&room.id===room.host;el('meeting-audio').classList.toggle('on',!!local?.microphone);el('meeting-video').classList.toggle('on',!!local?.camera);el('meeting-share').disabled=!host;el('meeting-record').disabled=!host;el('meeting-share').classList.toggle('on',!!room.screen);el('meeting-record').classList.toggle('on',!!room.recording);el('meeting-end').classList.toggle('hidden',!host)}
- function peer(id){if(room.peers.has(id))return room.peers.get(id);const active=room,pc=new RTCPeerConnection({iceServers:directIceServers(active.rtc),iceTransportPolicy:'all',bundlePolicy:'max-bundle'}),entry={id,pc,makingOffer:false,queue:[],ignore:false};room.peers.set(id,entry);entry.route=directFirstICE(pc,active.rtc,{alive:()=>room===active&&active.peers.get(id)===entry,changed:()=>renderConnection(active),negotiate:()=>offer(entry)});
+ function peer(id){if(room.peers.has(id))return room.peers.get(id);const active=room,pc=new RTCPeerConnection({iceServers:directIceServers(active.rtc),iceTransportPolicy:'all',bundlePolicy:'max-bundle'}),entry={id,pc,makingOffer:false,queue:[],ignore:false,signals:Promise.resolve(),pendingSignals:0,needsOffer:false,localOffer:null};room.peers.set(id,entry);entry.route=directFirstICE(pc,active.rtc,{alive:()=>room===active&&active.peers.get(id)===entry,changed:()=>renderConnection(active),negotiate:()=>offer(entry)});
   for(const track of room.stream.getAudioTracks())pc.addTrack(track,room.stream);const video=room.screen?.getVideoTracks()[0]||room.stream.getVideoTracks()[0];if(video)pc.addTrack(video,room.screen||room.stream);if(!room.stream.getAudioTracks().length)pc.addTransceiver('audio',{direction:'recvonly'});if(!video)pc.addTransceiver('video',{direction:'recvonly'});
   pc.onicecandidate=e=>{if(e.candidate&&room===active)send({type:'signal',to:id,signal:'candidate',candidate:JSON.stringify(e.candidate.toJSON())})};
   pc.ontrack=e=>{if(room!==active)return;const p=room.states.get(id);let stream=e.streams[0];if(!stream){stream=new MediaStream();stream.addTrack(e.track)}tile(id,p?.name||'参会者',stream);renderMembers()};
   pc.onnegotiationneeded=()=>offer(entry).catch(e=>toast(e.message));const connectionChanged=()=>{if(room!==active)return;if(active.call&&(pc.connectionState==='connected'||['connected','completed'].includes(pc.iceConnectionState)))send({type:'call-connected'});entry.route.update();renderConnection(active)};pc.onconnectionstatechange=connectionChanged;pc.oniceconnectionstatechange=connectionChanged;return entry;
  }
- async function offer(p){const active=room;if(!active||p.makingOffer||p.pc.signalingState!=='stable'||active.peers.get(p.id)!==p)return;const epoch=p.offerEpoch=(p.offerEpoch||0)+1,live=()=>room===active&&active.peers.get(p.id)===p&&p.offerEpoch===epoch;try{p.makingOffer=true;const description=await p.pc.createOffer();if(!live())return;await p.pc.setLocalDescription(description);if(live())send({type:'signal',to:p.id,signal:'offer',sdp:p.pc.localDescription.sdp})}finally{if(p.offerEpoch===epoch)p.makingOffer=false}}
+ async function offer(p){
+  const active=room;if(!active||active.peers.get(p.id)!==p)return;if(p.pendingSignals){p.needsOffer=true;return}if(p.makingOffer||p.pc.signalingState!=='stable')return;p.needsOffer=false;
+  const epoch=p.offerEpoch=(p.offerEpoch||0)+1,live=()=>room===active&&active.peers.get(p.id)===p&&p.offerEpoch===epoch;let setting=null;
+  try{p.makingOffer=true;const description=await p.pc.createOffer();if(!live())return;setting=p.localOffer=p.pc.setLocalDescription(description);await setting;if(live())send({type:'signal',to:p.id,signal:'offer',sdp:p.pc.localDescription.sdp})}
+  catch(error){if(live())throw error}
+  finally{if(p.localOffer===setting)p.localOffer=null;if(p.offerEpoch===epoch)p.makingOffer=false}
+ }
+ function signal(active,p,m){
+  const live=()=>room===active&&active.peers.get(p.id)===p;
+  // WebSocket ordering must survive awaits in SDP and ICE operations. Each peer
+  // has its own chain so a slow participant does not block the rest of the room.
+  p.pendingSignals++;
+  const task=p.signals.then(async()=>{try{if(live())await receiveSignal(active,p,m,live)}catch(error){if(live())throw error}finally{p.pendingSignals--;if(!p.pendingSignals&&p.needsOffer&&live())offer(p).catch(e=>toast(e.message))}});
+  p.signals=task.catch(()=>{});return task;
+ }
+ async function receiveSignal(active,p,m,live){
+  const pc=p.pc;
+  if(m.signal==='candidate'){if(p.ignore)return;const c=JSON.parse(m.candidate);if(pc.remoteDescription)await pc.addIceCandidate(c);else if(p.queue.length<64)p.queue.push(c);return}
+  const collision=m.signal==='offer'&&(p.makingOffer||pc.signalingState!=='stable'),polite=active.id>m.from;p.ignore=!polite&&collision;if(p.ignore){p.queue.length=0;return}
+  if(collision){
+   // Invalidate a createOffer that has not finished yet. If setLocalDescription
+   // already started, let it settle before deciding whether rollback is needed.
+   p.offerEpoch=(p.offerEpoch||0)+1;p.makingOffer=false;
+   if(p.localOffer)await p.localOffer.catch(()=>{});if(!live())return;
+   if(pc.signalingState==='have-local-offer')await pc.setLocalDescription({type:'rollback'});if(!live())return;
+  }
+  await pc.setRemoteDescription({type:m.signal,sdp:m.sdp});if(!live())return;
+  for(const c of p.queue.splice(0)){await pc.addIceCandidate(c);if(!live())return}
+  if(m.signal==='offer'){const answer=await pc.createAnswer();if(!live())return;await pc.setLocalDescription(answer);if(live())send({type:'signal',to:p.id,signal:'answer',sdp:pc.localDescription.sdp})}
+ }
  async function receive(m){if(!room)return;
   if(m.type==='call-state'&&room.call){room.call.started=m.started||0;return}
-  if(m.type==='welcome'){room.id=m.id;room.host=m.host;room.states.set(m.id,{name:S.user.name});tile(m.id,S.user.name,room.stream,true);for(const p of m.peers||[]){room.states.set(p.id,p);tile(p.id,p.name);await offer(peer(p.id))}el('meeting-network').textContent='会议进行中';state();return}
+  if(m.type==='welcome'){const active=room;room.id=m.id;room.host=m.host;room.states.set(m.id,{name:S.user.name});tile(m.id,S.user.name,room.stream,true);for(const p of m.peers||[]){room.states.set(p.id,p);tile(p.id,p.name);await offer(peer(p.id));if(room!==active)return}el('meeting-network').textContent='会议进行中';state();return}
   if(m.type==='peer-joined'){room.states.set(m.id,{name:m.name});tile(m.id,m.name);renderMembers();state();return}
   if(m.type==='peer-left'){room.peers.get(m.id)?.route.close();room.peers.get(m.id)?.pc.close();room.peers.delete(m.id);room.tiles.get(m.id)?.remove();room.tiles.delete(m.id);room.states.delete(m.id);renderMembers();return}
   if(m.type==='state'){const p=room.states.get(m.id);if(p)Object.assign(p,{microphone:!!m.microphone,camera:!!m.camera,screen:!!m.screen,recording:!!m.recording});renderMembers();return}
   if(m.type==='host'){room.host=m.host;if(room.id!==room.host){await stopSharing();stopRecording()}updateButtons();renderMembers();return}
   if(m.type==='mute'){room.stream.getAudioTracks().forEach(t=>t.enabled=false);state();toast('主持人已将你的麦克风静音');return}
   if(m.type==='ended'){const active=room;active.intentional=true;cleanup(active);toast(m.message||'会议已结束');return}
-  if(m.type!=='signal')return;const p=peer(m.from),pc=p.pc;
-  if(m.signal==='candidate'){const c=JSON.parse(m.candidate);if(pc.remoteDescription)await pc.addIceCandidate(c).catch(e=>{if(!p.ignore)throw e});else p.queue.push(c);return}
-  const collision=m.signal==='offer'&&(p.makingOffer||pc.signalingState!=='stable'),polite=room.id>m.from;p.ignore=!polite&&collision;if(p.ignore)return;
-  if(collision){p.offerEpoch=(p.offerEpoch||0)+1;p.makingOffer=false;await pc.setLocalDescription({type:'rollback'})};await pc.setRemoteDescription({type:m.signal,sdp:m.sdp});for(const c of p.queue.splice(0))await pc.addIceCandidate(c);
-  if(m.signal==='offer'){await pc.setLocalDescription(await pc.createAnswer());send({type:'signal',to:m.from,signal:'answer',sdp:pc.localDescription.sdp})}
+  if(m.type==='signal')return signal(room,peer(m.from),m);
  }
  async function toggle(kind){const active=room;if(!active)return;active.pendingMedia??=new Set();if(active.pendingMedia.has(kind))return;active.pendingMedia.add(kind);try{const tracks=kind==='audio'?active.stream.getAudioTracks():active.stream.getVideoTracks();if(tracks.length)tracks.forEach(t=>t.enabled=!t.enabled);else{const stream=await navigator.mediaDevices.getUserMedia(kind==='audio'?{audio:{echoCancellation:true}}:{video:true});if(room!==active){stream.getTracks().forEach(t=>t.stop());return}for(const t of stream.getTracks()){active.stream.addTrack(t);for(const p of active.peers.values()){if(room!==active)return;if(kind==='video'&&active.screen)continue;const sender=p.pc.getSenders().find(s=>s.track?.kind===kind);if(sender)await sender.replaceTrack(t);else p.pc.addTrack(t,active.stream)}}}if(room!==active)return;if(!active.screen)tile(active.id,S.user.name,active.stream,true);state()}finally{active.pendingMedia.delete(kind)}}
  async function replaceVideo(track,stream){for(const p of room.peers.values()){const sender=p.pc.getSenders().find(s=>s.track?.kind==='video');if(sender)await sender.replaceTrack(track);else if(track)p.pc.addTrack(track,stream)}}
