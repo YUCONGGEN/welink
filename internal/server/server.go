@@ -199,6 +199,7 @@ func (s *Server) routes() {
 		"POST /api/calls":            s.createCall, "GET /api/calls/active": s.activeCalls, "GET /api/calls/history": s.callHistory, "GET /api/calls/{id}": s.getCall, "POST /api/calls/{id}/respond": s.respondCall, "POST /api/calls/{id}/end": s.endCall, "DELETE /api/calls/{id}": s.deleteCall,
 		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
+		"POST /api/conversations/{id}/messages/sync": s.syncCachedMessages,
 		"GET /api/favorites": s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {

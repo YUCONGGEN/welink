@@ -31,11 +31,15 @@ type Settings struct {
 		Volumes           []StorageVolume `json:"volumes"`
 	} `json:"storage"`
 	Chat struct {
-		MaxAttachmentBytes     int64 `json:"max_attachment_bytes"`
-		PersistAttachmentBytes int64 `json:"persist_attachment_bytes"`
-		OfflineQueueBytes      int64 `json:"offline_queue_bytes"`
-		OfflineQueueMessages   int   `json:"offline_queue_messages"`
-		UploadsPerHour         int   `json:"uploads_per_hour"`
+		MaxAttachmentBytes         int64 `json:"max_attachment_bytes"`
+		PersistAttachmentBytes     int64 `json:"persist_attachment_bytes"`
+		OfflineQueueBytes          int64 `json:"offline_queue_bytes"`
+		OfflineQueueMessages       int   `json:"offline_queue_messages"`
+		UploadsPerHour             int   `json:"uploads_per_hour"`
+		ReceivedCacheMessages      int   `json:"received_cache_messages"`
+		ReceivedCacheBytes         int64 `json:"received_cache_bytes"`
+		ReceivedCacheDays          int   `json:"received_cache_days"`
+		ReceivedCacheConversations int   `json:"received_cache_conversations"`
 	} `json:"chat"`
 	Drive struct {
 		QuotaGB  int64 `json:"quota_gb"`
@@ -80,6 +84,10 @@ func DefaultSettings() Settings {
 	s.Chat.PersistAttachmentBytes = 50 << 20
 	s.Chat.OfflineQueueBytes = 250 << 20
 	s.Chat.OfflineQueueMessages = 100
+	s.Chat.ReceivedCacheMessages = 5000
+	s.Chat.ReceivedCacheBytes = 20 << 20
+	s.Chat.ReceivedCacheDays = 30
+	s.Chat.ReceivedCacheConversations = 100
 	s.Drive.QuotaGB = 100
 	s.Drive.MaxFiles = 10000
 	s.Spaces.MaxDocumentBytes = 2 << 20
@@ -111,6 +119,9 @@ func LoadSettings(path string) (Settings, error) {
 	return s, s.Validate()
 }
 func (s Settings) Validate() error {
+	if s.Chat.ReceivedCacheMessages < 0 || s.Chat.ReceivedCacheBytes < 0 || s.Chat.ReceivedCacheDays < 1 || s.Chat.ReceivedCacheConversations < 1 {
+		return errors.New("invalid received message cache settings")
+	}
 	if err := s.Media.validate(); err != nil {
 		return err
 	}

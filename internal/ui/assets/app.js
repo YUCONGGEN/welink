@@ -445,12 +445,12 @@
         xhr.send(form);
       });
     }
-    async function chat(cid, body, file, metadata = {}) {
+    async function chat(cid, body, file, metadata2 = {}) {
       const owner = S2.token, g = generation, id = randomID2(), entry = { id, cid, name: file.name, size: file.size, progress: 0 };
       entries.push(entry);
       renderMessages2(true);
       try {
-        const attachment = await upload2("/api/files", file, __spreadValues(__spreadValues({ conversationId: cid, clientId: id }, ["voice", "video"].includes(body.kind) ? { mediaKind: body.kind } : {}), metadata), (percent) => {
+        const attachment = await upload2("/api/files", file, __spreadValues(__spreadValues({ conversationId: cid, clientId: id }, ["voice", "video"].includes(body.kind) ? { mediaKind: body.kind } : {}), metadata2), (percent) => {
           entry.progress = percent;
           renderMessages2(true);
         });
@@ -1359,12 +1359,12 @@
         } else toast2("引用暂未恢复，请联网后重试");
       }
     }
-    async function enqueue(cid, body, file, metadata = {}, clearDraft = false) {
+    async function enqueue(cid, body, file, metadata2 = {}, clearDraft = false) {
       var _a, _b, _c, _d;
       if (!scope || !S2.user || S2.signingOut) throw Error("请先登录再发送");
       if (file && ((_a = S2.policy) == null ? void 0 : _a.chatMaxAttachmentBytes) > 0 && file.size > S2.policy.chatMaxAttachmentBytes) throw Error("文件超过服务器配置的大小限制");
-      if ((file == null ? void 0 : file.size) > ((_b = S2.policy.chatPersistAttachmentBytes) != null ? _b : 50 * 1024 * 1024)) return sendLarge(cid, body, file, metadata);
-      const g = generation, key = scope, id = randomID2(), draftRevision = (_c = drafts.get(cid)) == null ? void 0 : _c.revision, record = { id, scope: key, cid, body: __spreadProps(__spreadValues({}, body), { clientId: id }), created: Date.now(), state: "waiting", attempts: 0, next: 0, file: file ? { name: file.name, type: file.type, size: file.size } : null, metadata };
+      if ((file == null ? void 0 : file.size) > ((_b = S2.policy.chatPersistAttachmentBytes) != null ? _b : 50 * 1024 * 1024)) return sendLarge(cid, body, file, metadata2);
+      const g = generation, key = scope, id = randomID2(), draftRevision = (_c = drafts.get(cid)) == null ? void 0 : _c.revision, record = { id, scope: key, cid, body: __spreadProps(__spreadValues({}, body), { clientId: id }), created: Date.now(), state: "waiting", attempts: 0, next: 0, file: file ? { name: file.name, type: file.type, size: file.size } : null, metadata: metadata2 };
       await saveChain;
       if (!alive(g, key)) throw Error("登录账号已变化，请重新选择内容");
       try {
@@ -1391,7 +1391,7 @@
           };
         });
       } catch (error) {
-        if (file && alive(g, key)) return sendLarge(cid, body, file, metadata);
+        if (file && alive(g, key)) return sendLarge(cid, body, file, metadata2);
         throw error;
       }
       if (!alive(g, key)) return;
@@ -1576,6 +1576,384 @@
       var _a;
       return ((_a = drafts.get(cid)) == null ? void 0 : _a.replyId) ? { id: drafts.get(cid).replyId, name: "原消息", text: "正在恢复引用…", kind: "text" } : null;
     }, scope: () => scope, settingsRow: () => '<div class="prefs-row"><span>本机待发送消息</span><button class="secondary" data-outbox-open>管理</button></div>' };
+  }
+
+  // internal/ui/src/received-cache.js
+  var metadata = /* @__PURE__ */ new Set(["/api/me", "/api/config", "/api/public-config", "/api/conversations", "/api/friends", "/api/requests", "/api/group-requests", "/api/contact-groups"]);
+  var encoder = new TextEncoder();
+  var decoder = new TextDecoder();
+  var clone = (value) => JSON.parse(JSON.stringify(value));
+  var classify = (path) => {
+    const url = new URL(path, location.origin), match = url.pathname.match(/^\/api\/conversations\/([a-f0-9]{32})(\/messages)?$/);
+    return metadata.has(url.pathname) ? { name: url.pathname, url } : match ? { name: match[2] ? "messages:" + match[1] : url.pathname, cid: match[1], messages: !!match[2], url } : null;
+  };
+  var temporary = (error) => !error.status && error.name !== "AbortError" || [408, 502, 503, 504].includes(error.status);
+  function createReceivedCache({ S: S2, toast: toast2, modal: modal2, closeModal: closeModal2, esc: esc2, bytes: bytes2, connectionState: connectionState2, onReconciled }) {
+    let current = null;
+    const identity = () => JSON.stringify([new URL(S2.config.server).href.replace(/\/$/, ""), (S2.config.fingerprint || "").toLowerCase(), S2.token]);
+    const alive = (ctx) => current === ctx && !ctx.dead && ctx.token === S2.token && !S2.signingOut && ctx.identity === identity();
+    const limits = (ctx) => {
+      var _a, _b, _c, _d, _e;
+      const p = ((_a = ctx.records.get("/api/config")) == null ? void 0 : _a.data) || S2.policy || {};
+      return { messages: (_b = p.receivedCacheMessages) != null ? _b : 5e3, bytes: (_c = p.receivedCacheBytes) != null ? _c : 20 * 1024 * 1024, days: (_d = p.receivedCacheDays) != null ? _d : 30, conversations: (_e = p.receivedCacheConversations) != null ? _e : 100 };
+    };
+    function warning(ctx) {
+      if (!ctx.warned && alive(ctx)) {
+        ctx.warned = true;
+        toast2("本机聊天缓存暂时不可用，联网聊天不受影响");
+      }
+    }
+    async function context() {
+      if (!/^[a-f0-9]{64}$/.test(S2.token) || !S2.config.server || !crypto.subtle) return null;
+      const key = identity();
+      if ((current == null ? void 0 : current.identity) === key) return current.ready;
+      const ctx = current = { identity: key, token: S2.token, records: /* @__PURE__ */ new Map(), revision: 0, chain: Promise.resolve(), dead: false };
+      ctx.ready = (async () => {
+        const digest = await crypto.subtle.digest("SHA-256", encoder.encode(key));
+        ctx.scope = "received:" + Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+        ctx.key = await crypto.subtle.importKey("raw", Uint8Array.from(ctx.token.match(/../g), (b) => parseInt(b, 16)), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+        await transaction(["cache"], "readwrite", (stores) => {
+          const r = stores.cache.openCursor();
+          r.onsuccess = () => {
+            var _a;
+            const cursor = r.result;
+            if (cursor) {
+              if (((_a = cursor.value.scope) == null ? void 0 : _a.startsWith("received:")) && cursor.value.expires < Date.now()) cursor.delete();
+              cursor.continue();
+            }
+          };
+        });
+        for (const row of await scopedRows("cache", ctx.scope)) {
+          try {
+            const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: row.iv, additionalData: encoder.encode(ctx.scope + "\n" + row.name) }, ctx.key, row.cipher), value = JSON.parse(decoder.decode(plain));
+            ctx.records.set(row.name, __spreadProps(__spreadValues({}, value), { versions: /* @__PURE__ */ new Map(), revision: 0, size: plain.byteLength }));
+          } catch (e) {
+            ctx.records.set(row.name, { invalid: true, updated: 0, size: 0 });
+          }
+        }
+        if (alive(ctx)) await flush(ctx, /* @__PURE__ */ new Set());
+        return ctx;
+      })().catch(() => {
+        warning(ctx);
+        return null;
+      });
+      return ctx.ready;
+    }
+    function serial(ctx, work) {
+      const next = ctx.chain.then(() => alive(ctx) ? work() : void 0);
+      ctx.chain = next.catch(() => warning(ctx));
+      return next;
+    }
+    function record(ctx, name, data) {
+      let row = ctx.records.get(name);
+      if (!row || row.invalid) {
+        row = { data, versions: /* @__PURE__ */ new Map(), revision: 0, updated: Date.now(), size: 0 };
+        ctx.records.set(name, row);
+      }
+      return row;
+    }
+    function prune(ctx, changed) {
+      const policy = limits(ctx), now = Date.now(), allowed = policy.messages > 0 && policy.bytes > 0;
+      for (const [name, row] of ctx.records) if (!allowed || row.invalid || now - row.updated > policy.days * 864e5) {
+        ctx.records.delete(name);
+        changed.add(name);
+      }
+      let chats = [...ctx.records].filter(([name]) => name.startsWith("messages:")).sort((a, b) => b[1].updated - a[1].updated);
+      for (const [name] of chats.slice(policy.conversations)) {
+        ctx.records.delete(name);
+        changed.add(name);
+      }
+      chats = chats.slice(0, policy.conversations);
+      let count = chats.reduce((n, [, r]) => n + r.data.items.length, 0);
+      for (const [name, row] of [...chats].reverse()) if (count > policy.messages) {
+        const remove = Math.min(row.data.items.length, count - policy.messages);
+        row.data.items.splice(0, remove);
+        count -= remove;
+        changed.add(name);
+      }
+      for (const [, row] of chats) {
+        const retained = /* @__PURE__ */ new Set([...row.data.items.map((m) => m.id), ...row.data.deleted]);
+        for (const id of row.versions.keys()) if (!retained.has(id)) row.versions.delete(id);
+      }
+      for (const name of changed) {
+        const row = ctx.records.get(name);
+        if (row) row.size = encoder.encode(JSON.stringify({ data: row.data, updated: row.updated })).byteLength;
+      }
+      let total = [...ctx.records.values()].reduce((n, r) => n + r.size, 0);
+      const ordered = [...ctx.records].sort((a, b) => Number(!a[0].startsWith("messages:")) - Number(!b[0].startsWith("messages:")) || a[1].updated - b[1].updated);
+      for (const [name, row] of ordered) if (total > policy.bytes) {
+        ctx.records.delete(name);
+        changed.add(name);
+        total -= row.size;
+      }
+    }
+    async function flush(ctx, changed) {
+      prune(ctx, changed);
+      const writes = [];
+      for (const name of changed) {
+        const row = ctx.records.get(name), id = JSON.stringify([ctx.scope, name]);
+        if (!row) {
+          writes.push({ id });
+          continue;
+        }
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: encoder.encode(ctx.scope + "\n" + name) }, ctx.key, encoder.encode(JSON.stringify({ data: row.data, updated: row.updated })));
+        writes.push({ id, scope: ctx.scope, name, iv, cipher, expires: row.updated + limits(ctx).days * 864e5 });
+      }
+      if (!writes.length || !alive(ctx)) return;
+      await transaction(["cache"], "readwrite", (stores) => {
+        if (!alive(ctx)) return;
+        for (const row of writes) if (row.cipher) stores.cache.put(row);
+        else stores.cache.delete(row.id);
+      });
+    }
+    function merge(ctx, cid, items, ticket, changed, checked) {
+      var _a;
+      const name = "messages:" + cid, row = record(ctx, name, { items: [], deleted: [] }), map = new Map(row.data.items.map((m) => [m.id, m])), deleted = new Set(row.data.deleted);
+      const returned = new Set(items.map((m) => m.id));
+      if (checked) {
+        for (const id of checked) if (!returned.has(id) && (row.versions.get(id) || 0) <= ticket) {
+          map.delete(id);
+          deleted.add(id);
+          row.versions.set(id, ticket);
+        }
+      }
+      for (const message of items) {
+        if (message.conversationId !== cid || deleted.has(message.id) || (row.versions.get(message.id) || 0) > ticket) continue;
+        if (((_a = map.get(message.id)) == null ? void 0 : _a.recalled) && !message.recalled) continue;
+        map.set(message.id, clone(message));
+        row.versions.set(message.id, ticket);
+      }
+      row.data = { items: [...map.values()].sort((a, b) => a.seq - b.seq), deleted: [...deleted].slice(-limits(ctx).messages) };
+      row.updated = Date.now();
+      changed.add(name);
+      const conversations = ctx.records.get("/api/conversations");
+      for (const conversation of (conversations == null ? void 0 : conversations.data) || []) {
+        if (conversation.id !== cid || !conversation.last) continue;
+        if (deleted.has(conversation.last.id)) conversation.last = row.data.items[row.data.items.length - 1] || null;
+        else if (map.has(conversation.last.id)) conversation.last = clone(map.get(conversation.last.id));
+        conversations.revision = Math.max(conversations.revision, ticket);
+        changed.add("/api/conversations");
+      }
+    }
+    async function remember(ctx, info, value, ticket) {
+      return serial(ctx, async () => {
+        const changed = /* @__PURE__ */ new Set();
+        let result = value;
+        if (info.messages) {
+          merge(ctx, info.cid, value, ticket, changed);
+          const row = ctx.records.get(info.name), returned = new Set(value.map((m) => m.id));
+          const candidates = row.data.items.filter((m) => returned.has(m.id) || (row.versions.get(m.id) || 0) > ticket), around = info.url.searchParams.get("around");
+          result = around && !candidates.some((m) => m.id === around) ? [] : selectMessages(ctx, info, candidates);
+        } else {
+          const row = record(ctx, info.name, value);
+          if (row.revision > ticket) return clone(row.data);
+          row.data = clone(value);
+          row.revision = ticket;
+          row.updated = Date.now();
+          changed.add(info.name);
+          if (info.name === "/api/conversations") {
+            const ids = new Set(value.map((c) => c.id));
+            for (const name of ctx.records.keys()) if (name.startsWith("messages:") && !ids.has(name.slice(9)) || /^\/api\/conversations\/[a-f0-9]{32}$/.test(name) && !ids.has(name.slice(19))) {
+              ctx.records.delete(name);
+              changed.add(name);
+            }
+          }
+        }
+        await flush(ctx, changed);
+        return result;
+      });
+    }
+    function selectMessages(ctx, info, source) {
+      var _a, _b;
+      const row = ctx.records.get(info.name);
+      if (!row) return void 0;
+      const q = info.url.searchParams;
+      let items = (source || row.data.items).slice();
+      const around = q.get("around");
+      if (around) {
+        const at = items.findIndex((m) => m.id === around);
+        if (at < 0) throw Error("本机尚未缓存这条消息，请联网后查看");
+        items = items.slice(Math.max(0, at - 30), at + 31);
+      }
+      const text = (q.get("q") || "").trim().toLowerCase(), kind = q.get("kind"), sender = q.get("sender"), before = Number(q.get("before") || Infinity), after = Number(q.get("after") || 0), from = Number(q.get("from") || 0), to = Number(q.get("to") || Infinity), user = (_b = (_a = ctx.records.get("/api/me")) == null ? void 0 : _a.data) == null ? void 0 : _b.id;
+      items = items.filter((m) => m.seq < before && m.seq > after && m.created >= from && m.created < to && (!text || !m.recalled && (m.text + " " + (m.fileName || "")).toLowerCase().includes(text)) && (!kind || !m.recalled && m.kind === kind) && (!sender || m.sender === sender) && (!q.get("mentions") || !m.recalled && (m.mentionRecipients || []).includes(user)));
+      return clone(around ? items : after ? items.slice(0, 60) : items.slice(-60));
+    }
+    async function cached(ctx, info) {
+      return serial(ctx, async () => {
+        var _a;
+        await flush(ctx, /* @__PURE__ */ new Set());
+        const data = info.messages ? selectMessages(ctx, info) : (_a = ctx.records.get(info.name)) == null ? void 0 : _a.data;
+        return data === void 0 ? void 0 : clone(data);
+      });
+    }
+    async function dropConversation(ctx, cid) {
+      return serial(ctx, async () => {
+        const changed = /* @__PURE__ */ new Set(["messages:" + cid, "/api/conversations/" + cid]);
+        for (const name of changed) ctx.records.delete(name);
+        const row = ctx.records.get("/api/conversations");
+        if (row) {
+          row.data = row.data.filter((c) => c.id !== cid);
+          changed.add("/api/conversations");
+        }
+        await flush(ctx, changed);
+      });
+    }
+    async function run(path, options, network) {
+      const method = options.method || "GET", info = method === "GET" ? classify(path) : null, sent = method === "POST" && /^\/api\/conversations\/[a-f0-9]{32}\/messages$/.test(path) ? classify(path) : null, ctx = info || sent ? await context() : null, ticket = ctx ? ++ctx.revision : 0;
+      let timer;
+      try {
+        const request = network().then(async (value) => {
+          if (ctx && alive(ctx)) try {
+            if (sent) {
+              await serial(ctx, async () => {
+                const changed = /* @__PURE__ */ new Set();
+                merge(ctx, sent.cid, [value], ticket, changed);
+                await flush(ctx, changed);
+              });
+            } else {
+              const canonical = await remember(ctx, info, value, ticket);
+              if (canonical !== void 0) return canonical;
+            }
+          } catch (e) {
+            warning(ctx);
+          }
+          return value;
+        });
+        if (!ctx || !info || !ctx.records.has(info.name) || options.signal) return await request;
+        return await Promise.race([request, new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(Error("连接暂时不可用"), { status: 504 })), S2.cacheView ? 0 : 6e3);
+        })]);
+      } catch (error) {
+        if (error.status === 401 && current === ctx) await forget();
+        if (ctx && info && alive(ctx)) {
+          if (error.status === 404 && info.messages && info.url.searchParams.get("around")) await event("message-deleted", { id: info.url.searchParams.get("around"), conversationId: info.cid }).catch(() => {
+          });
+          else if ((error.status === 403 || error.status === 404) && info.cid) await dropConversation(ctx, info.cid).catch(() => {
+          });
+          if (temporary(error)) {
+            const value = await cached(ctx, info).catch(() => void 0);
+            if (value !== void 0 && alive(ctx)) {
+              S2.offline = true;
+              S2.cacheView = true;
+              connectionState2();
+              if (info.name === "/api/friends") return value.map((u) => __spreadProps(__spreadValues({}, u), { online: false }));
+              if (info.name === "/api/conversations") return value.map((c) => __spreadValues(__spreadValues({}, c), c.peer ? { peer: __spreadProps(__spreadValues({}, c.peer), { online: false }) } : {}));
+              return value;
+            }
+          }
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    async function identified(user) {
+      const ctx = await context();
+      if (ctx) {
+        await remember(ctx, { name: "/api/me" }, user, ++ctx.revision).catch(() => warning(ctx));
+        await remember(ctx, { name: "/api/public-config" }, { registrationEnabled: S2.registrationEnabled }, ++ctx.revision).catch(() => warning(ctx));
+      }
+    }
+    async function event(type, message) {
+      const ctx = await context();
+      if (!ctx || !alive(ctx) || !(message == null ? void 0 : message.conversationId)) return;
+      const ticket = ++ctx.revision;
+      await serial(ctx, async () => {
+        var _a, _b, _c;
+        const changed = /* @__PURE__ */ new Set();
+        merge(ctx, message.conversationId, type === "message-deleted" ? [] : [message], ticket, changed, type === "message-deleted" ? [message.id] : null);
+        if (type === "recall") {
+          for (const [name, row] of ctx.records) if (name.startsWith("messages:")) {
+            for (const item of row.data.items) if (((_a = item.reply) == null ? void 0 : _a.id) === message.id) {
+              item.reply = __spreadProps(__spreadValues({}, item.reply), { text: "", fileName: "", recalled: true });
+              row.versions.set(item.id, ticket);
+              changed.add(name);
+            }
+          }
+        }
+        if (type === "recall") {
+          const row = ctx.records.get("/api/conversations");
+          for (const c of (row == null ? void 0 : row.data) || []) if (((_c = (_b = c.last) == null ? void 0 : _b.reply) == null ? void 0 : _c.id) === message.id) {
+            c.last.reply = __spreadProps(__spreadValues({}, c.last.reply), { text: "", fileName: "", recalled: true });
+            row.revision = Math.max(row.revision, ticket);
+            changed.add("/api/conversations");
+          }
+        }
+        await flush(ctx, changed);
+      });
+    }
+    async function reconcile(network) {
+      var _a;
+      const ctx = await context();
+      if (!ctx || !alive(ctx)) return;
+      await ctx.chain;
+      const batches = [...ctx.records].filter(([name]) => name.startsWith("messages:")).map(([name, row]) => ({ cid: name.slice(9), ids: row.data.items.map((m) => m.id) }));
+      for (const { cid, ids } of batches) {
+        let denied = false;
+        for (let at = 0; at < ids.length; at += 200) {
+          if (!alive(ctx)) return;
+          const checked = ids.slice(at, at + 200), ticket = ++ctx.revision;
+          try {
+            const items = await network("/api/conversations/" + cid + "/messages/sync", { method: "POST", body: { ids: checked } });
+            await serial(ctx, async () => {
+              const changed = /* @__PURE__ */ new Set();
+              merge(ctx, cid, items, ticket, changed, checked);
+              await flush(ctx, changed);
+            });
+          } catch (error) {
+            if ([403, 404, 405].includes(error.status)) {
+              denied = true;
+              await dropConversation(ctx, cid);
+              break;
+            }
+            throw error;
+          }
+        }
+        if (alive(ctx)) onReconciled(cid, clone(((_a = ctx.records.get("messages:" + cid)) == null ? void 0 : _a.data.items) || []), ids, denied);
+      }
+    }
+    async function forget() {
+      const ctx = current;
+      current = null;
+      if (!ctx) return;
+      ctx.dead = true;
+      await ctx.ready;
+      await ctx.chain.catch(() => {
+      });
+      if (ctx.scope) await transaction(["cache"], "readwrite", (stores) => {
+        const request = stores.cache.index("scope").openCursor(ctx.scope);
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+      }).catch(() => {
+      });
+      ctx.records.clear();
+    }
+    async function show() {
+      const ctx = await context();
+      if (!ctx) {
+        toast2("此设备暂不支持加密聊天缓存");
+        return;
+      }
+      await ctx.chain;
+      const count = [...ctx.records].filter(([name]) => name.startsWith("messages:")).reduce((n, [, r]) => n + r.data.items.length, 0), size = [...ctx.records.values()].reduce((n, r) => n + r.size, 0), policy = limits(ctx);
+      modal2("本机聊天缓存", "<p>已缓存 <b>".concat(count, "</b> 条消息 · ").concat(esc2(bytes2(size)), '</p><p class="hint">断网时可查看本机已加载的聊天记录。图片、语音、视频和文件内容仍需联网打开。</p><p class="hint">当前上限 ').concat(policy.messages, " 条消息、").concat(esc2(bytes2(policy.bytes)), "，保留 ").concat(policy.days, " 天。缓存与此服务器和登录会话绑定，退出登录会清除；不会删除服务器记录、草稿或待发送消息。</p>"), '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="clear-received-cache">清理本机缓存</button>');
+      document.querySelector("#clear-received-cache").onclick = async () => {
+        await forget();
+        closeModal2();
+        toast2("本机聊天缓存已清理，服务器记录仍保留");
+      };
+    }
+    document.addEventListener("click", (event2) => {
+      if (event2.target.closest("[data-received-cache]")) show().catch(() => toast2("无法读取本机聊天缓存"));
+    });
+    return { run, identified, event, reconcile, forget, settingsRow: () => '<div class="prefs-row"><span>本机聊天缓存</span><button class="secondary" data-received-cache>管理</button></div>' };
   }
 
   // internal/ui/src/mentions.js
@@ -2558,10 +2936,10 @@
       var _a;
       return JSON.stringify([S2.config.server, S2.config.fingerprint, (_a = S2.user) == null ? void 0 : _a.id, S2.token]);
     };
-    async function sendMedia(file, kind, metadata = {}, cid = S2.active) {
+    async function sendMedia(file, kind, metadata2 = {}, cid = S2.active) {
       const owner = accountScope(), retry = () => {
         if (accountScope() !== owner) throw Error("登录账号已变化");
-        return enqueue(cid, { kind, text: "" }, file, metadata);
+        return enqueue(cid, { kind, text: "" }, file, metadata2);
       };
       try {
         return await retry();
@@ -2637,16 +3015,16 @@
           else toast2("聊天已切换，请重新选择文件");
         };
       };
-      let metadata;
+      let metadata2;
       try {
-        metadata = await videoMetadata(file);
+        metadata2 = await videoMetadata(file);
       } catch (error) {
         fallback(error);
         return;
       }
       if (accountScope() !== owner) return;
       try {
-        await sendMedia(file, "video", metadata, cid);
+        await sendMedia(file, "video", metadata2, cid);
       } catch (error) {
         if (error.status === 400) fallback(error);
         else showRetry(error);
@@ -3102,6 +3480,7 @@
       const state = current, list = $2("#history-results");
       if (!list || !state) return;
       list.innerHTML = state.items.map((m) => '<button class="history-item" data-history-id="'.concat(m.id, '"><small>').concat(esc2(m.name), " · ").concat(fullTime2(m.created), "</small><p>").concat(esc2(preview2(m)), "</p><span>查看上下文</span></button>")).join("") || '<div class="empty-list">未找到相关消息</div>';
+      if (S2.cacheView) list.insertAdjacentHTML("afterbegin", '<p class="hint">当前仅搜索此设备已缓存的消息，联网后可搜索完整记录。</p>');
       if (state.more) list.insertAdjacentHTML("beforeend", '<button class="history-more secondary">加载更早记录</button>');
       list.querySelectorAll("[data-history-id]").forEach((button) => button.onclick = () => jump(state.cid, button.dataset.historyId).catch((e) => toast2(e.message)));
       const more = list.querySelector(".history-more");
@@ -4375,7 +4754,7 @@
     return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, spaceUser: "me", tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, spaceUser: "me", tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -4389,7 +4768,16 @@
     setTimeout(() => n.remove(), 3800);
   }
   async function api(path, options = {}) {
-    const requestToken = S.token, headers = __spreadValues({}, options.headers);
+    const token = S.token, server = S.config.server;
+    const value = await Received.run(path, options, () => {
+      if (!path.startsWith("/local") && (token !== S.token || server !== S.config.server)) throw Object.assign(Error("登录账号已变化"), { name: "AbortError" });
+      return apiNetwork(path, options, token);
+    });
+    if (!path.startsWith("/local") && (token !== S.token || server !== S.config.server)) throw Object.assign(Error("登录账号已变化"), { name: "AbortError" });
+    return value;
+  }
+  async function apiNetwork(path, options = {}, requestToken = S.token) {
+    const headers = __spreadValues({}, options.headers);
     if (requestToken) headers.Authorization = "Bearer " + requestToken;
     if (options.body && !(options.body instanceof FormData)) {
       headers["Content-Type"] = "application/json";
@@ -4397,6 +4785,7 @@
     }
     ;
     const r = await fetch(path, __spreadProps(__spreadValues({}, options), { headers }));
+    if (requestToken !== S.token && !path.startsWith("/local")) throw Object.assign(Error("登录账号已变化"), { name: "AbortError" });
     if (r.status === 401 && S.user && requestToken === S.token && !path.startsWith("/local")) {
       logout(false);
       throw Object.assign(Error("登录已过期，请重新登录"), { status: 401 });
@@ -4517,7 +4906,7 @@
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div><div id="main-content" style="display:contents"></div></main></div>');
+    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div><div id="main-content" style="display:contents"></div></main></div>');
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
@@ -4677,7 +5066,7 @@
       } catch (e) {
       }
     }
-    if (m.kind === "image") content = '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
+    if (m.kind === "image") content = S.offline ? '<div class="file-card">' + icon("image") + "<span><b>" + esc(m.fileName || "图片") + "</b><small>联网后查看图片</small></span></div>" : '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
     if (m.kind === "file") content = '<button class="file-card" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">').concat(icon("file"), "<span><b>").concat(esc(m.fileName), "</b><small>").concat(bytes(m.fileSize), " · 点击下载</small></span></button>");
     return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
   }
@@ -4696,7 +5085,7 @@
     }).join("");
     if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
     const pending = Outbox.html(S.active) + Transfers.html(S.active);
-    if (!S.messages.length && !pending) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
+    if (!S.messages.length && !pending) area.innerHTML = '<div class="timestamp">' + (S.offline ? "此会话尚无本机缓存，联网后加载消息" : "和好友打个招呼吧") + "</div>";
     area.insertAdjacentHTML("beforeend", pending);
     Forwarding.sync();
     Media.sync();
@@ -4732,6 +5121,7 @@
     }
   }
   async function markRead() {
+    if (S.offline || S.cacheSyncing) return;
     const last = S.messages[S.messages.length - 1];
     if (!last || Desktop.hidden() || S.historyMode || S.tab !== "messages" || !$("#messages")) return;
     await action("/api/conversations/".concat(S.active, "/read"), { seq: last.seq });
@@ -4836,6 +5226,7 @@
     refreshTimer = setTimeout(() => refresh().catch((e) => toast(e.message)), 200);
   }
   async function enter() {
+    if (!S.cacheView) await Received.identified(S.user);
     S.policy = await api("/api/config");
     await refresh();
     await Outbox.start();
@@ -4849,26 +5240,40 @@
     (_a = S.ws) == null ? void 0 : _a.close();
     const ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/api/ws");
     S.ws = ws;
-    ws.onopen = () => {
-      Outbox.kick();
-      S.offline = false;
+    ws.onopen = async () => {
+      if (S.ws !== ws || !S.user) return;
+      S.cacheView = false;
+      S.cacheSyncing = true;
       connectionState();
-      refresh().catch(() => {
-      });
-      if (S.active && !S.historyMode) {
-        const cid = S.active;
-        api("/api/conversations/".concat(cid, "/messages")).then((ms) => {
-          if (S.active !== cid || S.historyMode) return;
-          S.messages = ms;
-          renderMessages(true);
+      try {
+        await Received.reconcile(api);
+        if (S.ws !== ws || !S.user) return;
+        await refresh();
+        if (S.active && !S.historyMode) {
+          const cid = S.active, ms = await api("/api/conversations/" + cid + "/messages");
+          if (S.ws !== ws || !S.user) return;
+          if (S.active === cid && !S.historyMode) {
+            S.messages = ms;
+            renderMessages(true);
+          }
+        }
+        if (S.ws === ws && !S.cacheView) {
+          S.offline = false;
+          Outbox.kick();
+        }
+      } catch (e) {
+      } finally {
+        if (S.ws === ws) {
+          S.cacheSyncing = false;
+          connectionState();
           markRead().catch(() => {
           });
-        }).catch(() => {
-        });
+        }
       }
     };
     ws.onmessage = (e) => {
       var _a2, _b, _c;
+      if (S.ws !== ws || !S.user || S.signingOut) return;
       let event;
       try {
         event = JSON.parse(e.data);
@@ -4883,6 +5288,8 @@
       } else if (event.type === "call-history") {
         Calls.historyChanged();
       } else if (event.type === "message") {
+        Received.event("message", d).catch(() => {
+        });
         Outbox.ack(d).catch(() => {
         });
         if (S.active === d.conversationId && !S.historyMode) {
@@ -4940,11 +5347,12 @@
     };
   }
   function connectionState() {
-    const n = $("#connection-status");
-    if (n) n.innerHTML = S.offline ? '<div class="connection-state">网络连接已断开，正在重新连接…</div>' : "";
+    const text = S.cacheSyncing ? "正在核对本机聊天记录…" : S.cacheView ? "离线查看 · 仅显示本机已缓存的记录" : S.offline ? "网络连接已断开，正在重新连接…" : "";
+    for (const n of [$("#connection-status"), $(".sidebar-connection-status")]) if (n) n.innerHTML = text ? '<div class="connection-state" role="status">' + text + "</div>" : "";
   }
   async function logout(notify = true) {
     if (S.signingOut) return;
+    const signingOutToken = S.token;
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
@@ -4958,6 +5366,7 @@
     S.drafts = {};
     try {
       Meetings.close();
+      await Received.forget();
       if (notify) try {
         await action("/api/auth/logout");
       } catch (e) {
@@ -4967,9 +5376,14 @@
       S.ws = null;
       ws == null ? void 0 : ws.close();
       S.token = "";
-      localStorage.removeItem("welink_token");
+      if (localStorage.getItem("welink_token") === signingOutToken) localStorage.removeItem("welink_token");
       S.active = null;
       S.messages = [];
+      S.conversations = [];
+      S.friends = [];
+      S.offline = false;
+      S.cacheView = false;
+      S.cacheSyncing = false;
       closeModal();
       stopRemote(false).catch(() => {
       });
@@ -5095,7 +5509,7 @@
     $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("folder"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="remote">').concat(icon("monitor"), '<div class="body" style="text-align:left">远程协助</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="space">').concat(icon("file"), '<div class="body" style="text-align:left">我的空间</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -5157,6 +5571,8 @@
   }
   function applyRecall(message) {
     var _a, _b;
+    Received.event("recall", message).catch(() => {
+    });
     Mentions.invalidated(message.id);
     Media.invalidate(message.id);
     Forwarding.invalidate(message.id);
@@ -5173,6 +5589,8 @@
   }
   function applyDeletion(message) {
     var _a;
+    Received.event("message-deleted", message).catch(() => {
+    });
     Mentions.invalidated(message.id);
     Media.invalidate(message.id);
     Forwarding.removed(message.id);
@@ -5488,7 +5906,7 @@
     a.remove();
   }
   document.addEventListener("click", async (e) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f;
     const b = e.target.closest("button,a,[data-preview-image]");
     (_a = $(".context-menu")) == null ? void 0 : _a.remove();
     if (!b) return;
@@ -5700,7 +6118,7 @@
           const ms = await api("/api/conversations/".concat(cid, "/messages?after=").concat(S.messages[S.messages.length - 1].seq));
           if (S.active !== cid) break;
           if (!ms.length) {
-            toast("已到最新消息");
+            toast(S.cacheView ? "已到本机缓存的最新消息" : "已到最新消息");
             S.historyMode = false;
           } else S.messages.push(...ms.filter((m) => !S.messages.some((x) => x.id === m.id)));
           renderMessages(true);
@@ -5713,10 +6131,13 @@
           break;
         }
         case "load-older": {
-          const older = await api("/api/conversations/".concat(S.active, "/messages?before=").concat(S.messages[0].seq));
+          const cid = S.active, seq = (_e = S.messages[0]) == null ? void 0 : _e.seq;
+          if (!cid || !seq) break;
+          const older = await api("/api/conversations/".concat(cid, "/messages?before=").concat(seq));
+          if (S.active !== cid || ((_f = S.messages[0]) == null ? void 0 : _f.seq) !== seq) break;
           if (!older.length) {
             b.remove();
-            toast("已经是最早的消息");
+            toast(S.cacheView ? "没有更早的本机缓存，联网后可继续加载" : "已经是最早的消息");
             break;
           }
           const area = $("#messages"), h = area.scrollHeight;
@@ -5816,7 +6237,20 @@
       (_a = $(".popup")) == null ? void 0 : _a.remove();
     }
   });
+  window.addEventListener("storage", (event) => {
+    if ((event.key === "welink_token" || event.key === null) && S.token && localStorage.getItem("welink_token") !== S.token) logout(false);
+  });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
+  var Received = createReceivedCache({ S, toast, modal, closeModal, esc, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
+    if (S.active !== cid) return;
+    const live = new Map(messages.map((m) => [m.id, m])), checked = new Set(ids);
+    S.messages = denied ? [] : S.messages.filter((m) => !checked.has(m.id) || live.has(m.id)).map((m) => live.get(m.id) || m);
+    if (S.reply && (denied || checked.has(S.reply.id) && (!live.has(S.reply.id) || live.get(S.reply.id).recalled))) {
+      S.reply = null;
+      renderReply();
+    }
+    renderMessages(true);
+  } });
   var Transfers = createTransfers({ S, api, esc, av, bytes, randomID, renderMessages, queueRefresh, toast });
   var Cloud = createCloud({ S, api, modal, closeModal, toast, esc, icon, bytes, fullTime, renderShell, upload: Transfers.upload });
   var Admin = createAdmin({ S, api, modal, closeModal, toast, esc, icon, refresh });

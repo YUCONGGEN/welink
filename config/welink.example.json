@@ -18,7 +18,11 @@
     "persist_attachment_bytes": 52428800,
     "offline_queue_bytes": 262144000,
     "offline_queue_messages": 100,
-    "uploads_per_hour": 0
+    "uploads_per_hour": 0,
+    "received_cache_messages": 5000,
+    "received_cache_bytes": 20971520,
+    "received_cache_days": 30,
+    "received_cache_conversations": 100
   },
   "drive": {
     "quota_gb": 100,

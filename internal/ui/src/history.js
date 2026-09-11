@@ -5,6 +5,7 @@ export function createHistory({S,api,modal,toast,esc,preview,fullTime,jump}) {
     const state=current, list=$('#history-results');
     if(!list||!state)return;
     list.innerHTML=state.items.map(m=>`<button class="history-item" data-history-id="${m.id}"><small>${esc(m.name)} · ${fullTime(m.created)}</small><p>${esc(preview(m))}</p><span>查看上下文</span></button>`).join('')||'<div class="empty-list">未找到相关消息</div>';
+    if(S.cacheView)list.insertAdjacentHTML('afterbegin','<p class="hint">当前仅搜索此设备已缓存的消息，联网后可搜索完整记录。</p>');
     if(state.more)list.insertAdjacentHTML('beforeend','<button class="history-more secondary">加载更早记录</button>');
     list.querySelectorAll('[data-history-id]').forEach(button=>button.onclick=()=>jump(state.cid,button.dataset.historyId).catch(e=>toast(e.message)));
     const more=list.querySelector('.history-more');if(more)more.onclick=()=>load(true);
