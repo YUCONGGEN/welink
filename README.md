@@ -4,7 +4,9 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 
 ## 使用
 
-最新客户端修复记录：[0.1.3 · 同时重连的音视频协商修复](docs/MEDIA_NEGOTIATION_20260911.md)。[0.1.2 · 系统安全边距、麦克风波动、Windows 黑屏与托盘图标](docs/CLIENT_STABILITY_20260911.md) 的修复继续保留。
+最新客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
+
+客户端修复记录：[0.1.3 · 同时重连的音视频协商修复](docs/MEDIA_NEGOTIATION_20260911.md)。[0.1.2 · 系统安全边距、麦克风波动、Windows 黑屏与托盘图标](docs/CLIENT_STABILITY_20260911.md) 的修复继续保留。
 
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`

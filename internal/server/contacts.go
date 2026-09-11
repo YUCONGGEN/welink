@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS message_blocks(user_id TEXT NOT NULL REFERENCES users
 CREATE TRIGGER IF NOT EXISTS blocked_direct_message BEFORE INSERT ON messages WHEN EXISTS(SELECT 1 FROM conversations c JOIN members m ON m.conversation_id=c.id JOIN message_blocks b ON b.user_id=m.user_id AND b.peer_id=NEW.sender WHERE c.id=NEW.conversation_id AND c.kind='direct' AND m.user_id<>NEW.sender) BEGIN SELECT RAISE(ABORT,'message_blocked'); END;
 CREATE TABLE IF NOT EXISTS contact_groups(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,UNIQUE(user_id,name));
 CREATE TABLE IF NOT EXISTS contact_preferences(user_id TEXT NOT NULL,peer_id TEXT NOT NULL,group_id TEXT REFERENCES contact_groups(id) ON DELETE SET NULL,note TEXT NOT NULL DEFAULT '',PRIMARY KEY(user_id,peer_id),FOREIGN KEY(user_id,peer_id) REFERENCES friends(user_id,peer_id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS contact_attention(user_id TEXT NOT NULL,peer_id TEXT NOT NULL,PRIMARY KEY(user_id,peer_id),FOREIGN KEY(user_id,peer_id) REFERENCES friends(user_id,peer_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS contact_blocks(user_id TEXT NOT NULL REFERENCES users(id),peer_id TEXT NOT NULL REFERENCES users(id),created INTEGER NOT NULL,PRIMARY KEY(user_id,peer_id));
 CREATE TABLE IF NOT EXISTS contact_privacy(user_id TEXT PRIMARY KEY REFERENCES users(id),searchable INTEGER NOT NULL DEFAULT 1,allow_requests INTEGER NOT NULL DEFAULT 1);
 CREATE TRIGGER IF NOT EXISTS contact_request_permission BEFORE INSERT ON requests WHEN EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.sender AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.sender)) OR EXISTS(SELECT 1 FROM contact_privacy WHERE user_id=NEW.recipient AND allow_requests=0) BEGIN SELECT RAISE(ABORT,'contact_request_forbidden'); END;
@@ -97,7 +98,7 @@ func (s *Server) saveContactGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Name = strings.TrimSpace(p.Name)
-	if p.Name == "" || p.Name == "我的好友" || !validText(p.Name, 24) || p.Position != nil && (*p.Position < 0 || *p.Position > 1000) {
+	if p.Name == "" || p.Name == "我的好友" || p.Name == "最近联系人" || p.Name == "特别关心" || !validText(p.Name, 24) || p.Position != nil && (*p.Position < 0 || *p.Position > 1000) {
 		fail(w, 400, "分组名称应为 1–24 字，且不能使用默认分组名称")
 		return
 	}
@@ -148,6 +149,7 @@ func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
 	var p struct {
 		Remark, GroupID, Note *string
 		MessageBlocked        *bool
+		SpecialCare           *bool
 	}
 	if !decode(w, r, &p) {
 		return
@@ -159,7 +161,7 @@ func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
 	user, peer := uid(r), r.PathValue("user")
 	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
 		if !contactAllowed(tx, user, peer) {
-			return nil, nil, groupFail(403, "只能设置当前好友的备注和分组")
+			return nil, nil, groupFail(403, "无法修改该用户的联系人设置")
 		}
 		if _, e := tx.Exec("INSERT OR IGNORE INTO friends(user_id,peer_id) VALUES(?,?)", user, peer); e != nil {
 			return nil, nil, e
@@ -187,6 +189,17 @@ func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
 		}
 		if p.Note != nil {
 			if _, e := tx.Exec("UPDATE contact_preferences SET note=? WHERE user_id=? AND peer_id=?", strings.TrimSpace(*p.Note), user, peer); e != nil {
+				return nil, nil, e
+			}
+		}
+		if p.SpecialCare != nil {
+			var e error
+			if *p.SpecialCare {
+				_, e = tx.Exec("INSERT OR IGNORE INTO contact_attention(user_id,peer_id) VALUES(?,?)", user, peer)
+			} else {
+				_, e = tx.Exec("DELETE FROM contact_attention WHERE user_id=? AND peer_id=?", user, peer)
+			}
+			if e != nil {
 				return nil, nil, e
 			}
 		}
@@ -219,7 +232,7 @@ func (s *Server) contactDetail(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.QueryRow("SELECT allow_requests FROM contact_privacy WHERE user_id=?", peer).Scan(&allow)
 	u.Online = u.Online && friend
 	if friend {
-		_ = s.db.QueryRow("SELECT f.remark,COALESCE(p.group_id,''),COALESCE(p.note,'') FROM friends f LEFT JOIN contact_preferences p ON p.user_id=f.user_id AND p.peer_id=f.peer_id WHERE f.user_id=? AND f.peer_id=?", user, peer).Scan(&u.Remark, &u.ContactGroupID, &u.Note)
+		_ = s.db.QueryRow("SELECT f.remark,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM contact_attention a WHERE a.user_id=f.user_id AND a.peer_id=f.peer_id) FROM friends f LEFT JOIN contact_preferences p ON p.user_id=f.user_id AND p.peer_id=f.peer_id WHERE f.user_id=? AND f.peer_id=?", user, peer).Scan(&u.Remark, &u.ContactGroupID, &u.Note, &u.SpecialCare)
 	}
 	ok(w, map[string]any{"user": u, "friend": friend, "blocked": blocked == 1, "messageBlocked": messagesBlocked(s.db, user, peer), "canAdd": allow && !contactBlocked(s.db, user, peer) && peer != user})
 }

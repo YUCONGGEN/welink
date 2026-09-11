@@ -167,6 +167,7 @@ func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
 	MessageBlocked bool   `json:"messageBlocked,omitempty"`
+	SpecialCare    bool   `json:"specialCare,omitempty"`
 	ID             string `json:"id"`
 	Number         string `json:"number"`
 	Account        string `json:"account"`

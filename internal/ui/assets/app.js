@@ -1845,19 +1845,27 @@
         return /* @__PURE__ */ new Set();
       }
     }
+    function badge(u) {
+      return (u == null ? void 0 : u.specialCare) ? '<span class="contact-attention-badge" role="img" aria-label="特别关心" title="特别关心">' + icon2("star") + "</span>" : "";
+    }
     function sidebar() {
       const closed = collapsed(), q = S2.search.toLowerCase(), recent = new Set(S2.conversations.filter((c) => c.kind === "direct").map((c) => {
         var _a;
         return (_a = c.peer) == null ? void 0 : _a.id;
-      })), peopleSource = q ? S2.friends : S2.friends.filter((u) => recent.has(u.id)), list = peopleSource.filter((u) => (u.name + u.remark + u.account + u.number + u.id + (u.note || "")).toLowerCase().includes(q)), groups2 = [{ id: "", name: "最近联系人" }, ...S2.contactGroups];
-      return '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + groups2.map((g) => {
-        const people = list.filter((u) => (u.contactGroupId || "") === g.id), total = peopleSource.filter((u) => (u.contactGroupId || "") === g.id).length, hidden = !q && closed.has(g.id);
+      })), peopleSource = q ? S2.friends : S2.friends.filter((u) => recent.has(u.id)), care = S2.friends.filter((u) => u.specialCare);
+      const matches = (u) => (u.name + (u.remark || "") + u.account + u.number + u.id + (u.note || "")).toLowerCase().includes(q);
+      const groups2 = [{ id: "special-care", name: "特别关心", people: care }, ...[{ id: "", name: "最近联系人" }, ...S2.contactGroups].map((g) => __spreadProps(__spreadValues({}, g), { people: peopleSource.filter((u) => (u.contactGroupId || "") === g.id) }))];
+      let found = 0;
+      const folders = groups2.map((g) => {
+        const people = g.people.filter(matches), hidden = !q && closed.has(g.id);
+        found += people.length;
         if (q && !people.length) return "";
-        return '<button class="contact-folder '.concat(hidden ? "collapsed" : "", '" data-contact="toggle" data-group-id="').concat(g.id, '">').concat(icon2("down"), "<b>").concat(esc2(g.name), "</b><small>").concat(people.filter((u) => u.online).length, "/").concat(total, "</small></button>").concat(hidden ? "" : people.map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(title(u)), '</b></div><div class="row-preview"><span>').concat(esc2(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join(""));
-      }).join("") + (!peopleSource.length ? '<div class="empty-list">还没有联系人<br>搜索用户，直接开始聊天</div>' : q && !list.length ? '<div class="empty-list">没有找到用户</div>' : "");
+        return '<section class="contact-folder-section" data-contact-folder="'.concat(g.id, '"><button class="contact-folder ').concat(hidden ? "collapsed" : "", '" data-contact="toggle" data-group-id="').concat(g.id, '" aria-expanded="').concat(!hidden, '">').concat(icon2("down"), "<b>").concat(esc2(g.name), "</b><small>").concat(people.filter((u) => u.online).length, "/").concat(g.people.length, "</small></button>").concat(hidden ? "" : people.map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(title(u)), "</b>").concat(badge(u), '</div><div class="row-preview"><span>').concat(esc2(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join("")).concat(!hidden && !q && g.id === "special-care" && !people.length ? '<p class="contact-attention-empty">在联系人设置中添加特别关心</p>' : "", "</section>");
+      }).join("");
+      return '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!peopleSource.length && !care.length ? '<div class="empty-list">还没有联系人<br>搜索用户，直接开始聊天</div>' : q && !found ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u)), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-open-space="').concat(u.id, '">查看空间</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button></div>');
+      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u))).concat(badge(u), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-open-space="').concat(u.id, '">查看空间</button><button class="secondary" data-contact="attention" data-user="').concat(u.id, '">').concat(u.specialCare ? "取消特别关心" : "设为特别关心", '</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button></div>');
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
@@ -1871,9 +1879,9 @@
         bind("contact-add", () => requestFriend2(id, u.name));
         return;
       }
-      modal2("联系人设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ').concat(detail.messageBlocked ? "checked" : "", '></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      modal2("联系人设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ').concat(u.specialCare ? "checked" : "", '></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ').concat(detail.messageBlocked ? "checked" : "", '></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
       bind("contact-save", async () => {
-        await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, messageBlocked: $2("#contact-message-blocked").checked } });
+        await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, specialCare: $2("#contact-special-care").checked, messageBlocked: $2("#contact-message-blocked").checked } });
         closeModal2();
         await refresh2();
         toast2("联系人设置已保存");
@@ -1885,7 +1893,7 @@
         var _a2;
         return ((_a2 = c.peer) == null ? void 0 : _a2.id) === id;
       })) == null ? void 0 : _a.peer) || { name: "该用户" };
-      modal2(block ? "加入黑名单" : "从列表移除", '<p class="contact-confirm">确定'.concat(block ? "拉黑" : "删除", " ").concat(esc2(title(u)), '？</p><p class="hint">').concat(block ? "不再接收对方的私聊，双方的远程协助和单聊会议会结束。" : "只从当前列表移除，聊天记录保留。下次收发消息时会重新显示。", "</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
+      modal2(block ? "加入黑名单" : "从列表移除", '<p class="contact-confirm">确定'.concat(block ? "拉黑" : "移除", " ").concat(esc2(title(u)), '？</p><p class="hint">').concat(block ? "不再接收对方的私聊，双方的远程协助和单聊会议会结束。" : "从列表移除并取消特别关心，聊天记录和备注保留。下次收发消息时会重新显示。", "</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
       bind("contact-remove-confirm", async () => {
         await api2((block ? "/api/contact-blocks/" : "/api/contacts/") + id, { method: block ? "POST" : "DELETE", body: block ? {} : void 0 });
         closeModal2();
@@ -1935,10 +1943,11 @@
       ;
       banner.innerHTML = blocked ? '<span>当前无法私聊，请检查黑名单或账号状态。</span><button data-contact="edit" data-user="'.concat(c.peer.id, '">查看联系人</button>') : "";
       if (blocked || was) $2("#composer").disabled = blocked;
-      if ((c == null ? void 0 : c.kind) === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + '<small id="typing-status">'.concat(((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线", "</small>");
+      if ((c == null ? void 0 : c.kind) === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + badge(c.peer) + '<small id="typing-status">'.concat(((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线", "</small>");
     }
     function menu(id, x, y) {
-      contextMenu2(x, y, '<button data-contact="edit" data-user="'.concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
+      const u = S2.friends.find((u2) => u2.id === id);
+      contextMenu2(x, y, '<button data-contact="attention" data-user="'.concat(id, '">').concat((u == null ? void 0 : u.specialCare) ? "取消特别关心" : "设为特别关心", '</button><button data-contact="edit" data-user="').concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
     }
     document.addEventListener("contextmenu", (e) => {
       const row = e.target.closest(".contact-row[data-profile]");
@@ -1966,10 +1975,26 @@
       }
     }, true);
     document.addEventListener("click", async (e) => {
+      var _a, _b;
       const b = e.target.closest("[data-contact]");
       if (!b || !S2.user) return;
       try {
         switch (b.dataset.contact) {
+          case "attention": {
+            b.disabled = true;
+            const owner = S2.user.id;
+            try {
+              const detail = await api2("/api/contacts/" + b.dataset.user);
+              if (((_a = S2.user) == null ? void 0 : _a.id) !== owner) break;
+              await api2("/api/contacts/" + b.dataset.user, { method: "PATCH", body: { specialCare: !detail.user.specialCare } });
+              if (((_b = S2.user) == null ? void 0 : _b.id) !== owner) break;
+              await refresh2();
+              toast2(detail.user.specialCare ? "已取消特别关心" : "已设为特别关心");
+            } finally {
+              b.disabled = false;
+            }
+            break;
+          }
           case "messages": {
             const detail = await api2("/api/contacts/" + b.dataset.user);
             await api2("/api/contacts/" + b.dataset.user, { method: "PATCH", body: { messageBlocked: !detail.messageBlocked } });
@@ -2035,7 +2060,7 @@
         error(e2);
       }
     });
-    return { sidebar, profile: profile2, edit, privacy, syncComposer };
+    return { sidebar, profile: profile2, edit, privacy, syncComposer, badge };
   }
 
   // internal/ui/src/groups.js
@@ -4520,7 +4545,7 @@
     list.innerHTML = result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "") + '<button class="search-action" data-action="add-friend">查找用户</button>';
   }
   function conversationRow(c) {
-    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
+    return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b>").concat(c.kind === "direct" ? Contacts.badge(c.peer) : "", "<time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);

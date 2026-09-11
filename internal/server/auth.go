@@ -215,7 +215,7 @@ func escapeLike(s string) string {
 	return strings.ReplaceAll(s, "_", `\_`)
 }
 func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,COALESCE(f.remark,''),n.number,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM message_blocks b WHERE b.user_id=d.user_id AND b.peer_id=d.peer_id) FROM directory_friends d JOIN users u ON u.id=d.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN friends f ON f.user_id=d.user_id AND f.peer_id=d.peer_id LEFT JOIN contact_preferences p ON p.user_id=d.user_id AND p.peer_id=d.peer_id WHERE d.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,COALESCE(f.remark,''),n.number,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM message_blocks b WHERE b.user_id=d.user_id AND b.peer_id=d.peer_id),EXISTS(SELECT 1 FROM contact_attention a WHERE a.user_id=d.user_id AND a.peer_id=d.peer_id) FROM directory_friends d JOIN users u ON u.id=d.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN friends f ON f.user_id=d.user_id AND f.peer_id=d.peer_id LEFT JOIN contact_preferences p ON p.user_id=d.user_id AND p.peer_id=d.peer_id WHERE d.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -224,9 +224,16 @@ func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
 	out := []User{}
 	for rows.Next() {
 		var u User
-		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number, &u.ContactGroupID, &u.Note, &u.MessageBlocked)
+		if e = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number, &u.ContactGroupID, &u.Note, &u.MessageBlocked, &u.SpecialCare); e != nil {
+			s.dbError(w, e)
+			return
+		}
 		u.Online = s.online(u.ID)
 		out = append(out, u)
+	}
+	if e = rows.Err(); e != nil {
+		s.dbError(w, e)
+		return
 	}
 	ok(w, out)
 }

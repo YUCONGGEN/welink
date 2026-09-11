@@ -34,7 +34,7 @@ func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
 			canSend := contactAllowed(s.db, uid(r), peer)
 			u.Online = u.Online && canSend
 			if canSend {
-				_ = s.db.QueryRow("SELECT remark FROM friends WHERE user_id=? AND peer_id=?", uid(r), peer).Scan(&u.Remark)
+				_ = s.db.QueryRow("SELECT f.remark,EXISTS(SELECT 1 FROM contact_attention a WHERE a.user_id=f.user_id AND a.peer_id=f.peer_id) FROM friends f WHERE f.user_id=? AND f.peer_id=?", uid(r), peer).Scan(&u.Remark, &u.SpecialCare)
 			}
 			c["peer"] = u
 			c["canSend"] = canSend
