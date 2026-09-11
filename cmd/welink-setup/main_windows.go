@@ -124,7 +124,7 @@ func install(directory string) error {
 	if err = os.WriteFile(uninstallPath, []byte("\xef\xbb\xbf"+uninstallScript), 0600); err != nil {
 		return err
 	}
-	for k, v := range map[string]string{"DisplayName": "WeLink", "DisplayVersion": "0.1.6", "Publisher": "WeLink", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
+	for k, v := range map[string]string{"DisplayName": "WeLink", "DisplayVersion": "0.1.7", "Publisher": "WeLink", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
 		if err = key.SetStringValue(k, v); err != nil {
 			return err
 		}
@@ -163,6 +163,9 @@ if([IO.Path]::GetFullPath($registered) -ne $installDirectory){throw '安装目�
 $targetExecutable=Join-Path $installDirectory 'WeLink-Windows.exe'
 if(Get-Process -Name 'WeLink-Windows' -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $targetExecutable}){[void][System.Windows.Forms.MessageBox]::Show('请先退出 WeLink，再运行卸载程序。','WeLink');exit}
 Remove-Item -LiteralPath $targetExecutable -ErrorAction Stop
+$startupPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$startupKey=Get-Item -LiteralPath $startupPath -ErrorAction SilentlyContinue
+if($startupKey){foreach($entry in $startupKey.GetValueNames()){$command=$startupKey.GetValue($entry);if($entry -like 'WeLink-*' -and $command -is [string] -and $command.StartsWith(('"'+$targetExecutable+'" '),[StringComparison]::OrdinalIgnoreCase)){Remove-ItemProperty -LiteralPath $startupPath -Name $entry}}}
 $startLink=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\WeLink.lnk'
 $desktopLink=Join-Path ([Environment]::GetFolderPath('Desktop')) 'WeLink.lnk'
 $shell=New-Object -ComObject WScript.Shell

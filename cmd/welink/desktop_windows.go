@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"welink/internal/desktopconfig"
 )
 
 var shellNotify = syscall.NewLazyDLL("shell32.dll").NewProc("Shell_NotifyIconW")
@@ -36,10 +38,7 @@ type notifyIconData struct {
 	BalloonIcon         uintptr
 }
 
-type desktopPreferences struct {
-	CloseToTray   bool `json:"closeToTray"`
-	MessageAlerts bool `json:"messageAlerts"`
-}
+type desktopPreferences = desktopconfig.Preferences
 
 // All fields belong to the WebView's UI thread. Other goroutines use Dispatch.
 type desktopState struct {
@@ -50,12 +49,30 @@ type desktopState struct {
 	taskbarCreated                 uint32
 	unread                         int
 	lastAlert                      time.Time
+	hotkeys                        *desktopHotkeys
+	startup                        *desktopStartup
+	done                           chan struct{}
+	capture                        *screenshotSelection
+	capturePending                 bool
+	captureVersion                 uint64
+	captureCancel                  chan struct{}
+	captureWasHidden               bool
 }
 
 var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref uintptr) uintptr {
 	if value, ok := desktopWindows.Load(hwnd); ok {
 		h := value.(*windowsHost)
 		switch message {
+		case 0x0312: // WM_HOTKEY
+			if h.desktop.hotkeys != nil {
+				switch h.desktop.hotkeys.action(wp) {
+				case "show":
+					h.showWindow()
+				case "capture":
+					h.view.Eval(`window.dispatchEvent(new CustomEvent('welink-screenshot-request'));`)
+				}
+			}
+			return 0
 		case 0x10: // WM_CLOSE, including Alt+F4 and the system menu.
 			h.closeWindow()
 			return 0
@@ -94,7 +111,7 @@ var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref ui
 })
 
 func (h *windowsHost) installDesktop(directory string) error {
-	h.desktop = desktopState{directory: directory, preferences: desktopPreferences{CloseToTray: true, MessageAlerts: true}}
+	h.desktop = desktopState{directory: directory, preferences: desktopconfig.Defaults(), done: make(chan struct{})}
 	if raw, err := os.ReadFile(filepath.Join(directory, "desktop.json")); err == nil {
 		preferences := h.desktop.preferences
 		if err = json.Unmarshal(raw, &preferences); err != nil {
@@ -102,6 +119,13 @@ func (h *windowsHost) installDesktop(directory string) error {
 		} else {
 			h.desktop.preferences = preferences
 		}
+	}
+	if p, err := h.desktop.preferences.Normalize(); err == nil {
+		h.desktop.preferences = p
+	} else {
+		log.Print("desktop shortcuts invalid; using defaults")
+		h.desktop.preferences.ShowHotkey = desktopconfig.Defaults().ShowHotkey
+		h.desktop.preferences.CaptureHotkey = desktopconfig.Defaults().CaptureHotkey
 	}
 	desktopWindows.Store(h.hwnd, h)
 	result, _, err := commonControls.NewProc("SetWindowSubclass").Call(h.hwnd, desktopSubclass, 1, 0)
@@ -120,30 +144,71 @@ func (h *windowsHost) installDesktop(directory string) error {
 	restart, _, _ := user32.NewProc("RegisterWindowMessageW").Call(uintptr(unsafe.Pointer(name)))
 	h.desktop.taskbarCreated = uint32(restart)
 	h.addTray()
+	h.desktop.hotkeys = newDesktopHotkeys(h.hwnd)
+	h.desktop.hotkeys.restore(h.desktop.preferences)
+	h.desktop.startup = newDesktopStartup(directory)
 	h.view.Bind("welinkDesktopSettings", func() map[string]any {
-		return map[string]any{"closeToTray": h.desktop.preferences.CloseToTray, "messageAlerts": h.desktop.preferences.MessageAlerts, "trayAvailable": h.desktop.trayAvailable}
+		raw, _ := json.Marshal(h.desktop.preferences)
+		result := map[string]any{}
+		_ = json.Unmarshal(raw, &result)
+		result["trayAvailable"] = h.desktop.trayAvailable
+		result["hotkeyErrors"] = h.desktop.hotkeys.errors
+		result["autoStartRegistered"] = h.desktop.startup.registered()
+		return result
 	})
 	h.view.Bind("welinkDesktopSave", func(p desktopPreferences) error {
-		raw, err := json.MarshalIndent(p, "", "  ")
+		var err error
+		p, err = p.Normalize()
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(directory, "desktop.json")
-		if err = os.WriteFile(path+".tmp", raw, 0600); err != nil {
-			return fmt.Errorf("无法保存桌面设置: %w", err)
+		commit, rollback, err := h.desktop.hotkeys.prepare(p)
+		if err != nil {
+			return err
 		}
-		if err = os.Rename(path+".tmp", path); err != nil {
-			return fmt.Errorf("无法保存桌面设置: %w", err)
+		defer rollback()
+		undoStartup, err := h.desktop.startup.prepare(p.AutoStart)
+		if err != nil {
+			return err
 		}
+		if err = h.persistDesktopPreferences(p); err != nil {
+			return errors.Join(err, undoStartup())
+		}
+		commit()
 		h.desktop.preferences = p
 		return nil
 	})
+	h.view.Bind("welinkScreenshotCapture", func() bool {
+		if h.desktop.closing || h.desktop.capturePending {
+			return false
+		}
+		h.beginScreenshot()
+		return true
+	})
+	h.view.Bind("welinkScreenshotCancel", h.cancelScreenshot)
+	h.view.Bind("welinkScreenshotCopy", func(encoded string) error { return copyScreenshot(encoded) })
 	h.view.Bind("welinkDesktopUnread", func(count int) { h.setUnread(count) })
 	h.view.Bind("welinkDesktopExit", func() { h.Action("quit") })
 	h.view.Bind("welinkMeetingInvitation", func() string { return takeMeetingInvite(directory) })
 	h.view.Bind("welinkMeetingNotify", func(code, title string, expires int64) bool { return h.showMeetingNotice(code, title, expires) })
 	h.view.Bind("welinkMeetingClear", func() { h.closeMeetingNotices() })
 	h.view.Init(`window.welinkNativeHidden=false;`)
+	return nil
+}
+
+func (h *windowsHost) persistDesktopPreferences(p desktopPreferences) error {
+	raw, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(h.desktop.directory, "desktop.json")
+	if err = os.WriteFile(path+".tmp", raw, 0600); err != nil {
+		return fmt.Errorf("无法保存桌面设置: %w", err)
+	}
+	if err = os.Rename(path+".tmp", path); err != nil {
+		_ = os.Remove(path + ".tmp")
+		return fmt.Errorf("无法保存桌面设置: %w", err)
+	}
 	return nil
 }
 
@@ -273,6 +338,7 @@ func (h *windowsHost) exitDesktop() {
 		return
 	}
 	h.desktop.closing = true
+	h.stopDesktopExtras()
 	h.closeMeetingNotices()
 	if h.desktop.trayAvailable {
 		shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))
@@ -282,6 +348,7 @@ func (h *windowsHost) exitDesktop() {
 }
 
 func (h *windowsHost) removeDesktop() {
+	h.stopDesktopExtras()
 	h.closeMeetingNotices()
 	if h.desktop.trayAvailable {
 		shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))
@@ -289,4 +356,33 @@ func (h *windowsHost) removeDesktop() {
 	h.desktop.closing = true
 	commonControls.NewProc("RemoveWindowSubclass").Call(h.hwnd, desktopSubclass, 1)
 	desktopWindows.Delete(h.hwnd)
+}
+
+func (h *windowsHost) stopDesktopExtras() {
+	if h.desktop.hotkeys != nil {
+		h.desktop.hotkeys.close()
+	}
+	if h.desktop.done != nil {
+		select {
+		case <-h.desktop.done:
+		default:
+			close(h.desktop.done)
+		}
+	}
+	if h.desktop.capture != nil {
+		h.desktop.capture.finish(false)
+	}
+}
+
+func (h *windowsHost) startupWindow() {
+	if !h.desktop.preferences.StartMinimized {
+		return
+	}
+	if h.desktop.trayAvailable {
+		_ = h.view.SetVisible(false)
+		user32.NewProc("ShowWindow").Call(h.hwnd, 0)
+	} else {
+		user32.NewProc("ShowWindow").Call(h.hwnd, 6)
+	}
+	h.visibility(true)
 }

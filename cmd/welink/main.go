@@ -13,6 +13,7 @@ import (
 
 func main() {
 	headless := flag.Bool("headless", false, "run the local client without a native window")
+	startup := flag.Bool("startup", false, "started by the current user's login startup entry")
 	listen := flag.String("listen", "127.0.0.1:18746", "local client address")
 	dir := flag.String("data", "", "client private directory")
 	server := flag.String("server", "", "server URL override")
@@ -92,6 +93,11 @@ func main() {
 	windowMu.Lock()
 	window = created
 	windowMu.Unlock()
+	if *startup {
+		if h, ok := created.(interface{ startupWindow() }); ok {
+			h.startupWindow()
+		}
+	}
 	if instance != nil {
 		instance.Watch(func() { created.Action("show") })
 	}

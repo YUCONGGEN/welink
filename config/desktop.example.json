@@ -1,0 +1,9 @@
+{
+  "closeToTray": true,
+  "messageAlerts": true,
+  "autoStart": false,
+  "startMinimized": true,
+  "hotkeysEnabled": true,
+  "showHotkey": "Ctrl+Alt+W",
+  "captureHotkey": "Ctrl+Alt+A"
+}

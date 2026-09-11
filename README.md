@@ -4,7 +4,7 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 
 ## 使用
 
-双端最新功能：[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md)。Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的修复继续保留。
+最新客户端：[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md)。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
 
 双端客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
 
@@ -14,6 +14,7 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 - 默认服务：`http://www.yucg.cn:8250`
 - Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
 - Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 WeLink 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
+- Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。
 - Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
 - 自助注册暂时关闭。管理员从“设置 → 管理员 · 账号管理”注册账号，系统分配永久 6 位 WeLink 号码；用号码或登录别名登录。管理员可重置任何账号的密码，并删除普通账号。
 - 注册和“编辑资料 → 更换头像”提供 100 个内置卡通头像，每次推荐 8 个，可换一批或查看全部；也可上传照片、拖动裁剪、缩放、旋转或恢复默认。照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
@@ -96,6 +97,7 @@ node scripts/avatars-test.mjs
 node scripts/cartoon-avatars-test.mjs
 node scripts/meeting-invitations-test.mjs
 node scripts/desktop-ui-test.mjs
+node scripts/desktop-extras-test.mjs
 node scripts/outbox-test.mjs
 node scripts/received-cache-test.mjs
 node scripts/received-cache-policy-test.mjs

@@ -868,7 +868,7 @@
   }
 
   // internal/ui/src/desktop.js
-  function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2 }) {
+  function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2, esc: esc2 }) {
     const native = typeof window.welinkDesktopSettings === "function";
     let lastCount = -1, nativeHidden = !!window.welinkNativeHidden;
     const hidden = () => document.hidden || native && nativeHidden;
@@ -882,47 +882,377 @@
       });
     }
     async function settings2() {
+      var _a, _b, _c, _d, _e, _f;
       try {
         const p = await window.welinkDesktopSettings();
-        modal2("Windows 桌面设置", '<label class="prefs-row" for="desktop-close-tray"><span>关闭窗口后留在系统托盘</span><input id="desktop-close-tray" type="checkbox" '.concat(p.closeToTray ? "checked" : "", '></label><p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><label class="prefs-row" for="desktop-message-alerts"><span>后台新消息提醒</span><input id="desktop-message-alerts" type="checkbox" ').concat(p.messageAlerts ? "checked" : "", '></label><p class="hint">提醒只显示未读数量，遵守会话免打扰和 Windows 通知设置。群 @提醒仍会提示。</p>').concat(p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>', '<p class="hint">完全退出可使用托盘右键菜单中的“退出 WeLink”。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
+        const toggle = (id, label, checked) => '<label class="prefs-row" for="'.concat(id, '"><span>').concat(label, '</span><input id="').concat(id, '" type="checkbox" ').concat(checked ? "checked" : "", "></label>");
+        const shortcut = (id, label, value, error) => '<label class="prefs-row desktop-shortcut" for="'.concat(id, '"><span>').concat(label, '</span><span class="shortcut-control"><input id="').concat(id, '" class="shortcut-input" readonly value="').concat(esc2(value || ""), '" placeholder="点击后按下快捷键" aria-label="').concat(label, '快捷键"><button class="secondary" type="button" data-clear-shortcut="').concat(id, '">清除</button></span></label>').concat(error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc2(error) + "</p>" : "");
+        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 WeLink", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", (_a = p.startMinimized) != null ? _a : true) + '<p class="hint">仅对当前 Windows 用户生效，默认关闭。'.concat(p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : "", "</p>") + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p>' + toggle("desktop-message-alerts", "后台新消息提醒", p.messageAlerts) + '<p class="hint">提醒只显示未读数量，遵守会话免打扰和 Windows 通知设置。群 @提醒仍会提示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", (_b = p.hotkeysEnabled) != null ? _b : true) + shortcut("desktop-show-hotkey", "显示主界面", (_c = p.showHotkey) != null ? _c : "Ctrl+Alt+W", (_d = p.hotkeyErrors) == null ? void 0 : _d.show) + shortcut("desktop-capture-hotkey", "截图", (_e = p.captureHotkey) != null ? _e : "Ctrl+Alt+A", (_f = p.hotkeyErrors) == null ? void 0 : _f.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 WeLink”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
         document.querySelector(".modal").classList.add("desktop-settings");
-        const button = document.querySelector("#desktop-save");
+        const $2 = (id) => document.getElementById(id), availability = () => {
+          $2("desktop-start-minimized").disabled = !$2("desktop-auto-start").checked;
+          for (const input of document.querySelectorAll(".shortcut-input")) input.disabled = !$2("desktop-hotkeys-enabled").checked;
+          for (const b of document.querySelectorAll("[data-clear-shortcut]")) b.disabled = !$2("desktop-hotkeys-enabled").checked;
+        };
+        $2("desktop-auto-start").onchange = availability;
+        $2("desktop-hotkeys-enabled").onchange = availability;
+        availability();
+        for (const input of document.querySelectorAll(".shortcut-input")) input.onkeydown = (event) => {
+          var _a2;
+          if (event.key === "Tab") return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.key === "Escape") {
+            input.blur();
+            return;
+          }
+          if (event.key === "Backspace" || event.key === "Delete") {
+            input.value = "";
+            return;
+          }
+          if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return;
+          const code = event.code || "", key = /^Key[A-Z]$/.test(code) ? code.slice(3) : /^Digit\d$/.test(code) ? code.slice(5) : /^F\d+$/.test(event.key) ? event.key : "";
+          if (event.metaKey || !event.ctrlKey && !event.altKey || !key || key === "F12") {
+            $2("desktop-save-error").textContent = "请选择 Ctrl / Alt 与字母、数字或功能键的组合，F12 不可用。";
+            return;
+          }
+          (_a2 = document.querySelector('[data-shortcut-error="' + input.id + '"]')) == null ? void 0 : _a2.remove();
+          input.value = [event.ctrlKey ? "Ctrl" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", key].filter(Boolean).join("+");
+          $2("desktop-save-error").textContent = "";
+        };
+        for (const button2 of document.querySelectorAll("[data-clear-shortcut]")) button2.onclick = () => {
+          var _a2;
+          $2(button2.dataset.clearShortcut).value = "";
+          (_a2 = document.querySelector('[data-shortcut-error="' + button2.dataset.clearShortcut + '"]')) == null ? void 0 : _a2.remove();
+        };
+        const button = $2("desktop-save");
         button.onclick = async () => {
           button.disabled = true;
           try {
-            await window.welinkDesktopSave({ closeToTray: document.querySelector("#desktop-close-tray").checked, messageAlerts: document.querySelector("#desktop-message-alerts").checked });
+            await window.welinkDesktopSave({ closeToTray: $2("desktop-close-tray").checked, messageAlerts: $2("desktop-message-alerts").checked, autoStart: $2("desktop-auto-start").checked, startMinimized: $2("desktop-start-minimized").checked, hotkeysEnabled: $2("desktop-hotkeys-enabled").checked, showHotkey: $2("desktop-show-hotkey").value, captureHotkey: $2("desktop-capture-hotkey").value });
             closeModal2();
             toast2("桌面设置已保存");
-          } catch (e) {
-            toast2(String(e));
+          } catch (error) {
+            $2("desktop-save-error").textContent = String(error);
             button.disabled = false;
           }
         };
-      } catch (e) {
-        toast2(String(e));
+      } catch (error) {
+        toast2(String(error));
       }
     }
     function quit() {
       modal2("退出 WeLink", "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
       document.querySelector("#desktop-exit").onclick = () => window.welinkDesktopExit();
     }
-    window.addEventListener("welink-native-visibility", (e) => {
+    window.addEventListener("welink-native-visibility", (event) => {
       var _a;
-      nativeHidden = !!((_a = e.detail) == null ? void 0 : _a.hidden);
+      nativeHidden = !!((_a = event.detail) == null ? void 0 : _a.hidden);
       if (!hidden() && S2.user) {
         document.title = "WeLink";
         markRead2().catch(() => {
         });
       }
     });
-    document.addEventListener("click", (e) => {
+    document.addEventListener("click", (event) => {
       var _a;
       if (!native) return;
-      const action2 = (_a = e.target.closest("[data-desktop]")) == null ? void 0 : _a.dataset.desktop;
+      const action2 = (_a = event.target.closest("[data-desktop]")) == null ? void 0 : _a.dataset.desktop;
       if (action2 === "settings") settings2();
       if (action2 === "quit") quit();
     });
     return { native, hidden, unread, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 WeLink</button>' : "" };
+  }
+
+  // internal/ui/src/screenshots.js
+  function createScreenshots({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, upload: upload2 }) {
+    let pending = null, editor = null, generation = 0, stream = null;
+    const own = (state) => editor === state && state.canvas.isConnected;
+    function reset() {
+      var _a, _b;
+      generation++;
+      pending = null;
+      stream == null ? void 0 : stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      if (editor) {
+        (_a = editor.observer) == null ? void 0 : _a.disconnect();
+        cancelAnimationFrame(editor.frame);
+        editor.image.src = "";
+        editor.canvas.width = editor.canvas.height = 1;
+        editor = null;
+      }
+      (_b = window.welinkScreenshotCancel) == null ? void 0 : _b.call(window).catch(() => {
+      });
+    }
+    async function start() {
+      var _a, _b;
+      if (pending || editor) return;
+      const state = pending = { token: S2.token, cid: S2.user && S2.active && S2.tab === "messages" ? S2.active : null, name: ((_a = S2.conversations.find((c) => c.id === S2.active)) == null ? void 0 : _a.name) || "" }, version = generation;
+      if (typeof window.welinkScreenshotCapture === "function") {
+        try {
+          if (await window.welinkScreenshotCapture() === false) {
+            pending = null;
+            toast2("截图仍在处理中，请稍后重试");
+          }
+        } catch (error) {
+          pending = null;
+          toast2(String(error));
+        }
+        return;
+      }
+      if (!((_b = navigator.mediaDevices) == null ? void 0 : _b.getDisplayMedia)) {
+        pending = null;
+        toast2("此设备请使用系统截图后发送图片");
+        return;
+      }
+      let captureStream;
+      try {
+        captureStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        if (version !== generation) return;
+        stream = captureStream;
+        const video = document.createElement("video");
+        video.srcObject = captureStream;
+        await video.play();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (version !== generation) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d").drawImage(video, 0, 0);
+        const image = canvas.toDataURL("image/png");
+        canvas.width = canvas.height = 1;
+        video.srcObject = null;
+        if (version === generation && pending === state) await preview2(state, image);
+      } catch (error) {
+        if (version === generation && error.name !== "NotAllowedError") toast2("截图失败：" + error.message);
+      } finally {
+        captureStream == null ? void 0 : captureStream.getTracks().forEach((track) => track.stop());
+        if (stream === captureStream) stream = null;
+        if (pending === state) pending = null;
+      }
+    }
+    function redraw(state) {
+      if (!own(state)) return;
+      const { canvas, ctx, image } = state;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      for (const item of [...state.items, ...state.current ? [state.current] : []]) {
+        ctx.strokeStyle = ctx.fillStyle = item.color;
+        ctx.lineWidth = item.width;
+        ctx.lineCap = ctx.lineJoin = "round";
+        const [a, b] = item.points;
+        if (item.tool === "pen") {
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          for (const point of item.points.slice(1)) ctx.lineTo(point.x, point.y);
+          if (item.points.length === 1) ctx.lineTo(a.x + 0.1, a.y + 0.1);
+          ctx.stroke();
+        } else if (item.tool === "text") {
+          ctx.font = "".concat(Math.max(18, item.width * 6), 'px "Microsoft YaHei",sans-serif');
+          ctx.textBaseline = "top";
+          ctx.fillText(item.text, a.x, a.y);
+        } else if (b) {
+          const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y);
+          if (item.tool === "rectangle") ctx.strokeRect(x, y, w, h);
+          if (item.tool === "arrow") {
+            const angle = Math.atan2(b.y - a.y, b.x - a.x), length = Math.max(12, item.width * 4);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.moveTo(b.x - length * Math.cos(angle - 0.5), b.y - length * Math.sin(angle - 0.5));
+            ctx.lineTo(b.x, b.y);
+            ctx.lineTo(b.x - length * Math.cos(angle + 0.5), b.y - length * Math.sin(angle + 0.5));
+            ctx.stroke();
+          }
+          if (item.tool === "mosaic" && w >= 1 && h >= 1) {
+            const small = document.createElement("canvas"), size = Math.max(8, item.width * 5);
+            small.width = Math.max(1, Math.ceil(w / size));
+            small.height = Math.max(1, Math.ceil(h / size));
+            small.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, small.width, small.height);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(small, x, y, w, h);
+            ctx.imageSmoothingEnabled = true;
+            small.width = small.height = 1;
+          }
+        }
+      }
+      document.querySelector("#screenshot-undo").disabled = !state.items.length;
+      document.querySelector("#screenshot-clear").disabled = !state.items.length;
+    }
+    function paint(state) {
+      cancelAnimationFrame(state.frame);
+      state.frame = requestAnimationFrame(() => redraw(state));
+    }
+    async function blob(state) {
+      if (!own(state)) throw Error("截图预览已关闭");
+      redraw(state);
+      const result = await new Promise((resolve) => state.canvas.toBlob(resolve, "image/png"));
+      if (!result) throw Error("无法生成截图");
+      if (!own(state)) throw Error("截图预览已关闭");
+      return result;
+    }
+    async function preview2(intent, url) {
+      intent.loading = true;
+      const version = generation, image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(Error("无法读取截图"));
+        image.src = url;
+      });
+      if (version !== generation) return;
+      if (!image.naturalWidth || image.naturalWidth * image.naturalHeight > 32 * 1024 * 1024) throw Error("截图尺寸过大");
+      pending = null;
+      const canSend = !!intent.cid && !!S2.user && S2.token === intent.token;
+      modal2(
+        "截图预览",
+        '<div class="screenshot-tools" role="toolbar" aria-label="截图标注">'.concat([["pen", "画笔"], ["rectangle", "矩形"], ["arrow", "箭头"], ["text", "文字"], ["mosaic", "马赛克"]].map(([tool, label]) => '<button type="button" data-shot-tool="'.concat(tool, '" class="').concat(tool === "pen" ? "selected" : "", '" aria-pressed="').concat(tool === "pen", '">').concat(label, "</button>")).join(""), '<label>颜色<input id="screenshot-color" type="color" value="#ff5454" aria-label="标注颜色"></label><label>粗细<select id="screenshot-width" aria-label="标注粗细"><option value="2">细</option><option value="4" selected>中</option><option value="8">粗</option></select></label><button id="screenshot-undo" type="button">撤销</button><button id="screenshot-clear" type="button">清空标注</button></div><div class="screenshot-canvas-wrap"><canvas id="screenshot-canvas" aria-label="截图标注画布"></canvas></div><div class="screenshot-text-row hidden"><input id="screenshot-text" maxlength="200" placeholder="输入标注文字后，点击图中要放置的位置" aria-label="截图标注文字"></div><p class="hint">').concat(image.naturalWidth, " × ").concat(image.naturalHeight, " · ").concat(canSend ? "确认后发送给 " + esc2(intent.name) : "可保存到电脑或复制到剪贴板", "。Esc 关闭，Ctrl + Z 撤销。</p>"),
+        '<button class="secondary" data-action="close-modal">取消</button><button class="secondary" id="screenshot-save">保存图片</button><button class="secondary" id="screenshot-copy">复制</button>' + (canSend ? '<button class="primary" id="screenshot-send">发送到 ' + esc2(intent.name) + "</button>" : ""),
+        true
+      );
+      document.querySelector(".modal").classList.add("screenshot-editor");
+      const canvas = document.querySelector("#screenshot-canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const state = editor = __spreadProps(__spreadValues({}, intent), { canvas, ctx: canvas.getContext("2d"), image, items: [], current: null, tool: "pen", frame: 0, pointer: null });
+      state.observer = new MutationObserver(() => {
+        if (editor === state && !canvas.isConnected) reset();
+      });
+      state.observer.observe(document.querySelector("#overlays"), { childList: true, subtree: true });
+      const position = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * canvas.width / rect.width)), y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * canvas.height / rect.height)) };
+      };
+      canvas.onpointerdown = (event) => {
+        if (event.button !== 0 || state.pointer !== null) return;
+        event.preventDefault();
+        if (state.items.length >= 250) {
+          toast2("标注数量较多，请先撤销或清空部分内容");
+          return;
+        }
+        const item = { tool: state.tool, color: document.querySelector("#screenshot-color").value, width: Number(document.querySelector("#screenshot-width").value), points: [position(event)] };
+        if (item.tool === "text") {
+          item.text = document.querySelector("#screenshot-text").value.trim();
+          if (!item.text) {
+            document.querySelector("#screenshot-text").focus();
+            return;
+          }
+          state.items.push(item);
+          paint(state);
+          return;
+        }
+        state.current = item;
+        state.pointer = event.pointerId;
+        canvas.setPointerCapture(event.pointerId);
+        paint(state);
+      };
+      canvas.onpointermove = (event) => {
+        if (state.pointer !== event.pointerId || !state.current) return;
+        const point = position(event);
+        if (state.current.tool === "pen") {
+          if (state.current.points.length < 1e4) state.current.points.push(point);
+        } else state.current.points[1] = point;
+        paint(state);
+      };
+      const finish = (event, cancelled = false) => {
+        if (state.pointer !== event.pointerId) return;
+        state.pointer = null;
+        if (!cancelled && state.current) state.items.push(state.current);
+        state.current = null;
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+        paint(state);
+      };
+      canvas.onpointerup = (event) => finish(event);
+      canvas.onpointercancel = (event) => finish(event, true);
+      canvas.onlostpointercapture = (event) => finish(event, true);
+      for (const button of document.querySelectorAll("[data-shot-tool]")) button.onclick = () => {
+        state.tool = button.dataset.shotTool;
+        for (const b of document.querySelectorAll("[data-shot-tool]")) {
+          b.classList.toggle("selected", b === button);
+          b.setAttribute("aria-pressed", String(b === button));
+        }
+        document.querySelector(".screenshot-text-row").classList.toggle("hidden", state.tool !== "text");
+      };
+      document.querySelector("#screenshot-undo").onclick = () => {
+        state.items.pop();
+        paint(state);
+      };
+      document.querySelector("#screenshot-clear").onclick = () => {
+        state.items = [];
+        paint(state);
+      };
+      const perform = (id, work) => {
+        const button = document.getElementById(id);
+        if (button) button.onclick = async () => {
+          button.disabled = true;
+          try {
+            await work();
+          } catch (error) {
+            toast2(String(error.message || error));
+          } finally {
+            if (own(state)) button.disabled = false;
+          }
+        };
+      };
+      perform("screenshot-save", async () => {
+        const data = await blob(state), href = URL.createObjectURL(data), link = document.createElement("a");
+        link.href = href;
+        link.download = "WeLink-截图-" + Date.now() + ".png";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(href), 6e4);
+      });
+      perform("screenshot-copy", async () => {
+        var _a;
+        const data = await blob(state);
+        if (typeof window.welinkScreenshotCopy === "function") {
+          const encoded = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(data);
+          });
+          if (!own(state)) return;
+          await window.welinkScreenshotCopy(encoded);
+        } else if (((_a = navigator.clipboard) == null ? void 0 : _a.write) && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ "image/png": data })]);
+        else throw Error("此设备请先保存图片");
+        if (own(state)) toast2("截图已复制");
+      });
+      perform("screenshot-send", async () => {
+        if (!S2.user || S2.token !== state.token) throw Error("登录账号已变化，请重新选择聊天后截图");
+        const data = await blob(state);
+        if (S2.token !== state.token) throw Error("登录账号已变化");
+        await upload2(new File([data], "截图-" + Date.now() + ".png", { type: "image/png" }), false, state.cid);
+        if (own(state)) closeModal2();
+      });
+      redraw(state);
+    }
+    window.addEventListener("welink-screenshot-request", () => start().catch((error) => toast2(String(error))));
+    window.addEventListener("welink-screenshot-result", (event) => {
+      const state = pending;
+      if (!state || state.loading) return;
+      const result = event.detail || {};
+      if (result.cancelled || result.error) {
+        pending = null;
+        if (result.error) toast2(result.error);
+        return;
+      }
+      if (typeof result.image === "string" && result.image.startsWith("data:image/png;base64,")) preview2(state, result.image).catch((error) => {
+        pending = null;
+        toast2(String(error.message || error));
+      });
+    });
+    document.addEventListener("keydown", (event) => {
+      if (!editor || !own(editor)) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        closeModal2();
+        reset();
+      } else if (event.ctrlKey && !event.altKey && event.key.toLowerCase() === "z" && !event.target.closest("input")) {
+        event.preventDefault();
+        editor.items.pop();
+        paint(editor);
+      }
+    }, true);
+    return { start, reset };
   }
 
   // internal/ui/src/avatars.js
@@ -5353,6 +5683,7 @@
   async function logout(notify = true) {
     if (S.signingOut) return;
     const signingOutToken = S.token;
+    Screenshots.reset();
     Media.reset();
     Forwarding.reset(false);
     S.signingOut = true;
@@ -5638,31 +5969,7 @@
     target.classList.add("highlight-message");
   }
   async function screenshot() {
-    var _a;
-    if (!((_a = navigator.mediaDevices) == null ? void 0 : _a.getDisplayMedia)) {
-      toast("此设备请使用系统截图后发送图片");
-      return;
-    }
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      await video.play();
-      await new Promise((r) => setTimeout(r, 150));
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
-      stream.getTracks().forEach((t) => t.stop());
-      canvas.toBlob((b) => {
-        if (b) upload(new File([b], "截图-" + Date.now() + ".png", { type: "image/png" }));
-      }, "image/png");
-    } catch (e) {
-      if (e.name !== "NotAllowedError") toast("截图失败：" + e.message);
-    } finally {
-      stream == null ? void 0 : stream.getTracks().forEach((t) => t.stop());
-    }
+    return Screenshots.start();
   }
   function renderRemoteHome() {
     $("#main-content").innerHTML = '<section class="utility"><h2>远程协助</h2><div class="settings-body"><div style="text-align:center;padding:28px 0;color:#80bced">'.concat(icon("monitor").replace("<svg", '<svg style="width:72px;height:72px;stroke-width:1"'), '</div><h3 style="text-align:center;font-weight:500;font-size:20px;margin-bottom:14px">屏幕另一边，也能帮到你</h3><p class="hint" style="text-align:center;color:#99a3b0;line-height:2;font-size:13px;margin-bottom:35px">在好友聊天中发起远程协助<br>共享屏幕，或邀请好友操作你的设备</p><div class="utility-row">').concat(icon("shield"), '<div class="body"><b>每次连接，都由你决定</b><p>对方同意后才开始，随时可以结束</p></div></div><div class="utility-row">').concat(icon("monitor"), '<div class="body"><b>Windows 与 Android 互联</b><p>复用 YuDesk 远控技术，支持加密传输</p></div></div><button class="primary" style="width:100%;margin-top:20px" data-nav="contacts">选择好友</button></div></section>');
@@ -6255,7 +6562,8 @@
   var Cloud = createCloud({ S, api, modal, closeModal, toast, esc, icon, bytes, fullTime, renderShell, upload: Transfers.upload });
   var Admin = createAdmin({ S, api, modal, closeModal, toast, esc, icon, refresh });
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
-  var Desktop = createDesktop({ S, modal, closeModal, toast, markRead });
+  var Desktop = createDesktop({ S, modal, closeModal, toast, markRead, esc });
+  var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc, upload });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
   var Outbox = createOutbox({ sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal });
