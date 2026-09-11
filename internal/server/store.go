@@ -17,7 +17,8 @@ PRAGMA foreign_keys=ON;
 PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password BLOB NOT NULL, avatar TEXT NOT NULL DEFAULT 'blue', bio TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS user_numbers(number INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT UNIQUE REFERENCES users(id));
-INSERT INTO sqlite_sequence(name,seq) SELECT 'user_numbers',100000000 WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='user_numbers');
+CREATE TABLE IF NOT EXISTS user_number_aliases(number INTEGER PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id));
+INSERT INTO sqlite_sequence(name,seq) SELECT 'user_numbers',100000 WHERE NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='user_numbers');
 CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS session_info(token TEXT PRIMARY KEY REFERENCES sessions(token) ON DELETE CASCADE, id TEXT UNIQUE NOT NULL, device TEXT NOT NULL, created INTEGER NOT NULL, last_seen INTEGER NOT NULL);
 INSERT INTO session_info SELECT token,lower(hex(randomblob(16))),'旧版客户端',MAX(0,expires-2592000000),0 FROM sessions WHERE token NOT IN (SELECT token FROM session_info);
@@ -60,7 +61,7 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err = db.Exec(contactSchema); err != nil {
+	if _, err = db.Exec(directorySchema + contactSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -80,6 +81,10 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err = db.Exec(driveSchema + spaceSchema + adminSchema + conversationVisibilitySchema + storageSchema); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -94,6 +99,9 @@ func assignNumber(tx *sql.Tx, id string) error {
 		number, err := result.LastInsertId()
 		if err != nil {
 			return err
+		}
+		if number < 100001 || number > 999999 {
+			return groupFail(409, "六位 WeLink 号码已分配完毕")
 		}
 		var taken int
 		if err = tx.QueryRow("SELECT COUNT(*) FROM users WHERE account=CAST(? AS TEXT)", number).Scan(&taken); err != nil {
@@ -112,6 +120,17 @@ func migrateNumbers(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Upgrade early nine-digit preview numbers without changing user IDs,
+	// sessions or messages. Old numbers remain valid login aliases.
+	if _, err = tx.Exec("INSERT OR IGNORE INTO user_number_aliases SELECT number,user_id FROM user_numbers WHERE user_id IS NOT NULL AND (number<100001 OR number>999999)"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("DELETE FROM user_numbers WHERE number<100001 OR number>999999"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("UPDATE sqlite_sequence SET seq=MAX(100000,COALESCE((SELECT MAX(number) FROM user_numbers),0)) WHERE name='user_numbers' AND (seq<100000 OR seq>999999)"); err != nil {
+		return err
+	}
 	rows, err := tx.Query("SELECT id FROM users WHERE id NOT IN (SELECT user_id FROM user_numbers WHERE user_id IS NOT NULL) ORDER BY created,id")
 	if err != nil {
 		return err
@@ -147,6 +166,7 @@ func newID() string {
 func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
+	MessageBlocked bool   `json:"messageBlocked,omitempty"`
 	ID             string `json:"id"`
 	Number         string `json:"number"`
 	Account        string `json:"account"`

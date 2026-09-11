@@ -15,6 +15,10 @@ var accountPattern = regexp.MustCompile(`^[a-zA-Z0-9_]{5,24}$`)
 var numericAccount = regexp.MustCompile(`^[0-9]+$`)
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	if !s.settings.Registration.Enabled {
+		fail(w, 403, "暂未开放自助注册，请联系管理员")
+		return
+	}
 	if !s.rate(r, "register", 12, time.Hour) {
 		fail(w, 429, "注册过于频繁，请稍后再试")
 		return
@@ -69,6 +73,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.issueSession(w, r, id)
+	s.directoryChanged()
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !s.rate(r, "login", 30, time.Minute) {
@@ -82,7 +87,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var id string
 	var hash []byte
 	login := strings.ToLower(strings.TrimSpace(p.Account))
-	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.account=? OR CAST(n.number AS TEXT)=?", login, login).Scan(&id, &hash)
+	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE (u.account=? OR CAST(n.number AS TEXT)=? OR EXISTS(SELECT 1 FROM user_number_aliases a WHERE a.user_id=u.id AND CAST(a.number AS TEXT)=?)) AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login, login, login).Scan(&id, &hash)
 	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte(p.Password)) != nil {
 		fail(w, 401, "账号或密码不正确")
 		return
@@ -186,7 +191,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		ok(w, out)
 		return
 	}
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND (NOT EXISTS(SELECT 1 FROM contact_privacy p WHERE p.user_id=u.id AND p.searchable=0) OR EXISTS(SELECT 1 FROM friends f WHERE f.user_id=? AND f.peer_id=u.id)) AND NOT EXISTS(SELECT 1 FROM contact_blocks b WHERE (b.user_id=? AND b.peer_id=u.id) OR (b.user_id=u.id AND b.peer_id=?)) AND (u.account=? OR CAST(n.number AS TEXT)=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), uid(r), uid(r), uid(r), strings.ToLower(q), q, "%"+escapeLike(q)+"%")
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,n.number FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE u.id<>? AND ((SELECT value FROM app_settings WHERE key='all_users')='1' OR NOT EXISTS(SELECT 1 FROM contact_privacy p WHERE p.user_id=u.id AND p.searchable=0) OR EXISTS(SELECT 1 FROM friends f WHERE f.user_id=? AND f.peer_id=u.id)) AND NOT EXISTS(SELECT 1 FROM contact_blocks b WHERE (b.user_id=? AND b.peer_id=u.id) OR (b.user_id=u.id AND b.peer_id=?)) AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id) AND (u.account=? OR CAST(n.number AS TEXT)=? OR u.id=? OR u.name LIKE ? ESCAPE '\\') LIMIT 30", uid(r), uid(r), uid(r), uid(r), strings.ToLower(q), q, q, "%"+escapeLike(q)+"%")
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -210,7 +215,7 @@ func escapeLike(s string) string {
 	return strings.ReplaceAll(s, "_", `\_`)
 }
 func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,f.remark,n.number,COALESCE(p.group_id,''),COALESCE(p.note,'') FROM friends f JOIN users u ON u.id=f.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN contact_preferences p ON p.user_id=f.user_id AND p.peer_id=f.peer_id WHERE f.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
+	rows, e := s.db.Query("SELECT u.id,u.account,u.name,u.avatar,u.bio,COALESCE(f.remark,''),n.number,COALESCE(p.group_id,''),COALESCE(p.note,''),EXISTS(SELECT 1 FROM message_blocks b WHERE b.user_id=d.user_id AND b.peer_id=d.peer_id) FROM directory_friends d JOIN users u ON u.id=d.peer_id JOIN user_numbers n ON n.user_id=u.id LEFT JOIN friends f ON f.user_id=d.user_id AND f.peer_id=d.peer_id LEFT JOIN contact_preferences p ON p.user_id=d.user_id AND p.peer_id=d.peer_id WHERE d.user_id=? ORDER BY CASE WHEN f.remark<>'' THEN f.remark ELSE u.name END", uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -219,7 +224,7 @@ func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
 	out := []User{}
 	for rows.Next() {
 		var u User
-		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number, &u.ContactGroupID, &u.Note)
+		_ = rows.Scan(&u.ID, &u.Account, &u.Name, &u.Avatar, &u.Bio, &u.Remark, &u.Number, &u.ContactGroupID, &u.Note, &u.MessageBlocked)
 		u.Online = s.online(u.ID)
 		out = append(out, u)
 	}

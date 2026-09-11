@@ -19,6 +19,467 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/cloud.js
+  function createCloud({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, bytes: bytes2, fullTime: fullTime2, upload: upload2, renderShell: renderShell2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let drive = [], offset = 0, driveQuery = "", space = null, spaceOwner = "me", editor = null, revision = 0, driveGeneration = 0, spaceGeneration = 0;
+    const owns = (token) => S2.user && S2.token === token && !S2.signingOut;
+    const request = api2;
+    api2 = async (...args) => {
+      const token = S2.token;
+      const result = await request(...args);
+      if (!owns(token)) throw Object.assign(Error("操作已结束"), { name: "AbortError" });
+      return result;
+    };
+    const drafts = /* @__PURE__ */ new Map();
+    let draftTimer;
+    const draftKey = (id) => "welink-space-draft:" + S2.user.id + ":" + (id || "new");
+    function readDraft(id) {
+      const key = draftKey(id);
+      if (drafts.has(key)) return drafts.get(key);
+      try {
+        return JSON.parse(localStorage.getItem(key) || "null");
+      } catch (e) {
+        return null;
+      }
+    }
+    function keepDraft(id, value) {
+      const key = draftKey(id);
+      drafts.set(key, value);
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        const label = $2("#space-save-state");
+        if (label) label.textContent = "草稿保留在当前窗口，请保存文档后再关闭";
+      }
+    }
+    function clearDraft(id) {
+      const key = draftKey(id);
+      drafts.delete(key);
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+      }
+    }
+    function flushDraft() {
+      clearTimeout(draftTimer);
+      if ((editor == null ? void 0 : editor.own) && S2.user && $2("#space-document-content")) {
+        const value = { title: $2("#space-document-title").value, content: $2("#space-document-content").value, revision };
+        if (value.title !== editor.title || value.content !== editor.content) keepDraft(editor.id, value);
+      }
+    }
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("button,[data-nav]")) flushDraft();
+    }, true);
+    addEventListener("pagehide", flushDraft);
+    async function copy(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const input = document.createElement("textarea");
+        input.value = text;
+        document.body.append(input);
+        input.select();
+        const ok = document.execCommand("copy");
+        input.remove();
+        if (!ok) throw Error("复制失败，请手动选择文本复制");
+      }
+      toast2("已复制");
+    }
+    function fail(error) {
+      if (error.name === "AbortError") return;
+      const target = $2("#modal-error");
+      if (target) target.textContent = error.message;
+      else toast2(error.message);
+    }
+    function bind(id, fn) {
+      const button = $2("#" + id);
+      if (button) button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await fn();
+        } catch (error) {
+          fail(error);
+        } finally {
+          button.disabled = false;
+        }
+      };
+    }
+    async function renderDrive(reset = true) {
+      const token = S2.token, g = ++driveGeneration;
+      if (reset) offset = 0;
+      const result = await api2("/api/drive?q=" + encodeURIComponent(driveQuery) + "&offset=" + offset);
+      if (!owns(token) || g !== driveGeneration || S2.tab !== "drive") return;
+      drive = reset ? result.files : [...drive, ...result.files];
+      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>我的网盘</h2><p>文件随账号保存，随时取用和分享</p></div><button class="primary" id="drive-upload">'.concat(icon2("plus"), '上传文件</button><input type="file" multiple id="drive-file-input" hidden></header><div class="drive-capacity"><div><b>免费 ').concat(bytes2(result.quota), " 空间</b><span>").concat(bytes2(result.used), " / ").concat(bytes2(result.quota), '</span></div><progress value="').concat(result.used, '" max="').concat(result.quota, '"></progress><small>聊天附件不占用这份容量</small></div><div id="drive-upload-status" class="cloud-upload-status"></div><label class="cloud-search">').concat(icon2("search"), '<input id="drive-search" placeholder="搜索网盘文件" value="').concat(esc2(driveQuery), '"></label><div class="cloud-file-list">').concat(drive.map((f) => '<article class="cloud-file"><span class="cloud-file-icon">'.concat(icon2("file"), '</span><div class="cloud-file-name"><b>').concat(esc2(f.name), "</b><small>").concat(bytes2(f.size), " · ").concat(fullTime2(f.updated), '</small></div><div class="cloud-file-actions"><button data-drive="download" data-id="').concat(f.id, '" title="下载">').concat(icon2("download"), '</button><button data-drive="share" data-id="').concat(f.id, '" title="分享">').concat(icon2("copy"), '</button><button data-drive="rename" data-id="').concat(f.id, '" title="重命名">重命名</button><button data-drive="delete" data-id="').concat(f.id, '" title="删除">').concat(icon2("trash"), "</button></div></article>")).join("") || '<div class="cloud-empty">' + icon2("folder") + "<h3>把重要文件放在这里</h3><p>点击上传，或将文件拖到网盘页面</p></div>", "</div>").concat(result.hasMore ? '<button id="drive-more" class="secondary cloud-more">加载更多</button>' : "", "</section>");
+      bind("drive-upload", () => $2("#drive-file-input").click());
+      $2("#drive-file-input").onchange = (e) => {
+        sendFiles([...e.target.files]);
+        e.target.value = "";
+      };
+      $2("#drive-search").onkeydown = (e) => {
+        if (e.key === "Enter") {
+          driveQuery = e.target.value;
+          renderDrive().catch(fail);
+        }
+      };
+      bind("drive-more", () => {
+        offset = drive.length;
+        return renderDrive(false);
+      });
+    }
+    async function sendFiles(files) {
+      const token = S2.token;
+      for (const file of files) {
+        if (!owns(token)) return;
+        const display = (percent) => {
+          const target = $2("#drive-upload-status");
+          if (target) target.textContent = file.name + " · " + (percent === 100 ? "正在保存" : percent === null ? "正在上传" : "已上传 " + percent + "%");
+        };
+        try {
+          await upload2("/api/drive/files", file, {}, display);
+        } catch (error) {
+          fail(error);
+          break;
+        }
+      }
+      if (owns(token) && S2.tab === "drive") await renderDrive().catch(fail);
+    }
+    function downloadDrive(f) {
+      var _a;
+      const path = "/api/drive/files/" + f.id;
+      if ((_a = window.WeLinkAndroid) == null ? void 0 : _a.downloadDriveFile) {
+        window.WeLinkAndroid.downloadDriveFile(f.id, f.name);
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = path;
+      a.download = f.name;
+      document.body.append(a);
+      a.click();
+      a.remove();
+    }
+    function share(f) {
+      modal2("分享文件", '<p class="hint">'.concat(esc2(f.name), '</p><label>链接有效期</label><select id="drive-share-days"><option value="7">7 天</option><option value="1">1 天</option><option value="30">30 天</option><option value="365">1 年</option></select><p class="hint">拿到链接的人可以下载这个文件。生成新链接会使旧链接失效。</p><div id="drive-share-result"></div>'), '<button class="secondary" id="drive-revoke">取消已有分享</button><button class="primary" id="drive-create-share">生成链接</button>');
+      bind("drive-create-share", async () => {
+        const result = await api2("/api/drive/files/" + f.id + "/share", { method: "POST", body: { days: Number($2("#drive-share-days").value) } });
+        $2("#drive-share-result").innerHTML = '<textarea id="drive-share-url" readonly>' + esc2(result.url) + '</textarea><button class="secondary" id="drive-copy-share">复制分享链接</button>';
+        bind("drive-copy-share", () => copy(result.url));
+      });
+      bind("drive-revoke", async () => {
+        await api2("/api/drive/files/" + f.id + "/share", { method: "DELETE" });
+        closeModal2();
+        toast2("分享链接已失效");
+      });
+    }
+    async function renderSpace(owner = "me") {
+      const token = S2.token, g = ++spaceGeneration;
+      spaceOwner = owner;
+      const result = await api2("/api/spaces/" + encodeURIComponent(owner));
+      if (!owns(token) || g !== spaceGeneration || S2.tab !== "space") return;
+      space = result;
+      editor = null;
+      const own = result.owner === S2.user.id;
+      const person = own ? S2.user : S2.friends.find((u) => u.id === result.owner) || { name: "用户" };
+      $2("#main-content").innerHTML = '<section class="cloud-page space-page"><header class="cloud-heading"><div><h2>'.concat(own ? "我的空间" : esc2(person.name) + "的空间", "</h2><p>").concat(own ? "用 Markdown 记录想法，自己决定谁能看到" : "阅读分享的文档", "</p></div>").concat(own ? '<button class="primary" id="space-new">' + icon2("plus") + "新建文档</button>" : "", '</header><div class="space-access"><span>').concat(icon2("shield")).concat({ public: "公开空间", private: "仅自己可见", selected: "指定用户可见" }[result.visibility], "</span>").concat(own ? '<button class="secondary" id="space-access">设置可见范围</button>' : "").concat(result.visibility === "public" ? '<button class="secondary" id="space-copy">复制空间链接</button>' : "", '</div><div class="space-documents">').concat(result.documents.map((d) => '<button class="space-document" data-space="open" data-id="'.concat(d.id, '">').concat(icon2("file"), "<b>").concat(esc2(d.title), "</b><small>").concat(fullTime2(d.updated), " · ").concat(bytes2(d.size), "</small><span>打开文档 →</span></button>")).join("") || '<div class="cloud-empty">' + icon2("file") + "<h3>从第一篇文档开始</h3><p>支持 Markdown 标题、列表、引用和代码</p></div>", "</div></section>");
+      bind("space-new", () => editDocument(null));
+      bind("space-access", access);
+      bind("space-copy", () => copy(result.publicURL));
+    }
+    async function access() {
+      modal2("空间可见范围", '<p class="hint">设置应用到整个空间及其中所有文档。</p><label>谁可以看到</label><select id="space-visibility"><option value="private">仅自己可见</option><option value="public">公开，任何人可以阅读</option><option value="selected">指定用户可见</option></select><div id="space-viewers" class="member-select">'.concat(S2.friends.map((u) => '<label class="check-row">'.concat(esc2(u.remark || u.name), " · ").concat(esc2(u.number), '<input type="checkbox" value="').concat(u.id, '" ').concat(space.viewers.includes(u.id) ? "checked" : "", "></label>")).join(""), "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="space-save-access">保存</button>');
+      $2("#space-visibility").value = space.visibility;
+      const update = () => $2("#space-viewers").hidden = $2("#space-visibility").value !== "selected";
+      $2("#space-visibility").onchange = update;
+      update();
+      bind("space-save-access", async () => {
+        await api2("/api/spaces/me/access", { method: "PATCH", body: { visibility: $2("#space-visibility").value, viewers: [...document.querySelectorAll("#space-viewers input:checked")].map((n) => n.value) } });
+        closeModal2();
+        await renderSpace();
+      });
+    }
+    function markdown(raw) {
+      let code = false;
+      return raw.split("\n").map((line) => {
+        if (line.startsWith("```")) {
+          code = !code;
+          return code ? "<pre><code>" : "</code></pre>";
+        }
+        ;
+        if (code) return esc2(line) + "\n";
+        const safe = esc2(line).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+        const heading = safe.match(/^(#{1,6})\s+(.*)$/);
+        if (heading) return "<h" + heading[1].length + ">" + heading[2] + "</h" + heading[1].length + ">";
+        if (/^&gt;\s?/.test(safe)) return "<blockquote>" + safe.replace(/^&gt;\s?/, "") + "</blockquote>";
+        if (/^[-*]\s/.test(safe)) return '<p class="md-list">• ' + safe.slice(2) + "</p>";
+        return "<p>" + safe + "</p>";
+      }).join("") + (code ? "</code></pre>" : "");
+    }
+    async function editDocument(id) {
+      var _a, _b, _c;
+      flushDraft();
+      const token = S2.token, owner = spaceOwner, g = ++spaceGeneration;
+      const d = id ? await api2("/api/spaces/" + owner + "/documents/" + id) : { id: "", title: "", content: "", revision: 0 };
+      if (!owns(token) || S2.tab !== "space" || g !== spaceGeneration || owner !== spaceOwner) return;
+      const own = space.owner === S2.user.id, draft = own ? readDraft(id) : null;
+      editor = __spreadProps(__spreadValues({}, d), { own });
+      revision = (_a = draft == null ? void 0 : draft.revision) != null ? _a : d.revision;
+      const title = (_b = draft == null ? void 0 : draft.title) != null ? _b : d.title, content = (_c = draft == null ? void 0 : draft.content) != null ? _c : d.content;
+      $2("#main-content").innerHTML = '<section class="cloud-page markdown-page"><header class="cloud-heading"><button class="secondary" id="space-back">← 返回空间</button><div class="markdown-actions">' + (own ? '<button class="secondary" id="space-delete">删除</button><button class="primary" id="space-save">保存文档</button>' : "") + '</div></header><input id="space-document-title" class="markdown-title" placeholder="给文档起个名字.md" maxlength="120" value="' + esc2(title) + '" ' + (own ? "" : "readonly") + '><div class="markdown-editor ' + (own ? "" : "readonly") + '">' + (own ? '<textarea id="space-document-content" aria-label="Markdown 内容" placeholder="# 从这里开始记录">' + esc2(content) + "</textarea>" : "") + '<article id="space-preview" class="markdown-preview">' + markdown(content) + '</article></div><div id="space-save-state" role="status">' + (draft ? "已恢复本机草稿 · 尚未保存到空间" : own ? "内容保存到你的空间 · " + { private: "仅自己可见", selected: "指定用户可见", public: "公开可见" }[space.visibility] : "") + "</div></section>";
+      bind("space-back", () => renderSpace(owner));
+      if (!own) return;
+      const changed = () => {
+        $2("#space-preview").innerHTML = markdown($2("#space-document-content").value);
+        $2("#space-save-state").textContent = "尚未保存 · 本机草稿";
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(flushDraft, 250);
+      };
+      $2("#space-document-content").oninput = changed;
+      $2("#space-document-title").oninput = changed;
+      bind("space-save", async () => {
+        const current = editor, body = { title: $2("#space-document-title").value, content: $2("#space-document-content").value, revision };
+        const saved = await api2("/api/spaces/me/documents" + (current.id ? "/" + current.id : ""), { method: current.id ? "PUT" : "POST", body });
+        clearDraft(current.id);
+        if (editor !== current || S2.tab !== "space" || g !== spaceGeneration) return;
+        editor = __spreadProps(__spreadValues({}, saved), { own: true });
+        revision = saved.revision;
+        if ($2("#space-document-title").value !== body.title || $2("#space-document-content").value !== body.content) {
+          flushDraft();
+          $2("#space-save-state").textContent = "已保存上一版本 · 新修改尚未保存";
+        } else $2("#space-save-state").textContent = "已保存 · " + fullTime2(saved.updated);
+      });
+      bind("space-delete", () => {
+        const current = editor;
+        if (!current.id) {
+          clearDraft("");
+          return renderSpace(owner);
+        }
+        modal2("删除空间文档", "<p>确定删除 " + esc2(current.title) + "？</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="space-confirm-delete">删除</button>');
+        bind("space-confirm-delete", async () => {
+          await api2("/api/spaces/me/documents/" + current.id, { method: "DELETE" });
+          clearDraft(current.id);
+          closeModal2();
+          if (S2.tab === "space") await renderSpace(owner);
+        });
+      });
+    }
+    document.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-drive],[data-space],[data-open-space]");
+      if (!button || !S2.user) return;
+      try {
+        if (button.dataset.openSpace) {
+          S2.spaceUser = button.dataset.openSpace;
+          S2.tab = "space";
+          renderShell2();
+          return;
+        }
+        if (button.dataset.space === "open") {
+          await editDocument(button.dataset.id);
+          return;
+        }
+        const f = drive.find((f2) => f2.id === button.dataset.id);
+        if (!f) return;
+        switch (button.dataset.drive) {
+          case "download":
+            downloadDrive(f);
+            break;
+          case "share":
+            share(f);
+            break;
+          case "rename":
+            modal2("重命名文件", '<label>文件名</label><input id="drive-rename" maxlength="240" value="' + esc2(f.name) + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-save-name">保存</button>');
+            bind("drive-save-name", async () => {
+              await api2("/api/drive/files/" + f.id, { method: "PATCH", body: { name: $2("#drive-rename").value } });
+              closeModal2();
+              await renderDrive();
+            });
+            break;
+          case "delete":
+            modal2("删除网盘文件", "<p>确定删除 " + esc2(f.name) + "？相关分享链接也会失效。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-confirm-delete">删除</button>');
+            bind("drive-confirm-delete", async () => {
+              await api2("/api/drive/files/" + f.id, { method: "DELETE" });
+              closeModal2();
+              await renderDrive();
+            });
+            break;
+        }
+      } catch (error) {
+        fail(error);
+      }
+    });
+    return { renderDrive, renderSpace, sendFiles, reset() {
+      flushDraft();
+      clearTimeout(draftTimer);
+      drafts.clear();
+      driveGeneration++;
+      spaceGeneration++;
+      drive = [];
+      space = null;
+      editor = null;
+      driveQuery = "";
+    }, changed(type) {
+      var _a;
+      if (type === "drive" && S2.tab === "drive" && !((_a = $2("#drive-upload-status")) == null ? void 0 : _a.textContent)) renderDrive().catch(fail);
+    } };
+  }
+
+  // internal/ui/src/admin.js
+  function createAdmin({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, refresh: refresh2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let generation = 0;
+    const request = api2;
+    api2 = async (...args) => {
+      const token = S2.token, result = await request(...args);
+      if (!S2.user || S2.signingOut || S2.token !== token) throw Object.assign(Error("操作已结束"), { name: "AbortError" });
+      return result;
+    };
+    function bind(id, fn) {
+      const button = $2("#" + id);
+      if (button) button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await fn();
+        } catch (error) {
+          const n = $2("#modal-error");
+          if (n) n.textContent = error.message;
+          else toast2(error.message);
+        } finally {
+          button.disabled = false;
+        }
+      };
+    }
+    async function render(query = "") {
+      const token = S2.token, g = ++generation, users = await api2("/api/admin/users?q=" + encodeURIComponent(query));
+      if (S2.token !== token || S2.tab !== "admin" || g !== generation) return;
+      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索昵称、账号或 WeLink 号码" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file"><div class="cloud-file-name"><b>'.concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 号 ").concat(esc2(u.number), " · 登录账号 ").concat(esc2(u.account), '</small></div><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
+      $2("#admin-search").onkeydown = (e) => {
+        if (e.key === "Enter") render(e.target.value).catch((error) => toast2(error.message));
+      };
+      bind("admin-create", create);
+    }
+    function create() {
+      modal2("注册用户账号", '<label>昵称</label><input id="admin-name" maxlength="32" placeholder="用户昵称"><label>登录账号（选填）</label><input id="admin-account" maxlength="24" placeholder="字母、数字或下划线"><label>初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" maxlength="72" placeholder="留空则生成随机密码"><p class="hint">系统会分配永久 WeLink 号码。用户登录后可以修改密码。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user">注册账号</button>');
+      bind("admin-save-user", async () => {
+        const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value, account: $2("#admin-account").value, password: $2("#admin-password").value } });
+        modal2("账号已注册", "<p>昵称：".concat(esc2(result.user.name), "</p><p>WeLink 号：<b>").concat(esc2(result.user.number), "</b></p><p>登录账号：").concat(esc2(result.user.account), "</p>").concat(result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
+        await refresh2();
+        await render();
+      });
+    }
+    document.addEventListener("click", (event) => {
+      var _a, _b;
+      const reset = event.target.closest("[data-admin-password]");
+      if (reset && ((_a = S2.policy) == null ? void 0 : _a.admin)) {
+        modal2("重置用户密码", "<p>为 " + esc2(reset.dataset.name) + "（" + esc2(reset.dataset.number) + '）设置新密码</p><label>新密码</label><input id="admin-new-password" type="password" autocomplete="new-password" maxlength="72"><p class="hint">不需要原密码。该用户的其他登录设备将退出。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-reset-password">重置密码</button>');
+        bind("admin-reset-password", async () => {
+          await api2("/api/admin/users/" + reset.dataset.adminPassword + "/password", { method: "POST", body: { password: $2("#admin-new-password").value } });
+          closeModal2();
+          toast2("密码已重置");
+        });
+        return;
+      }
+      const b = event.target.closest("[data-admin-delete]");
+      if (!b || !((_b = S2.policy) == null ? void 0 : _b.admin)) return;
+      const id = b.dataset.adminDelete, number = b.dataset.number;
+      modal2("删除用户账号", "<p>确认删除 <b>".concat(esc2(b.dataset.name), "</b>（").concat(esc2(number), '）？</p><p class="hint">账号将无法登录，个人网盘、空间及分享会被清除。其他用户的已有聊天记录保留，发送人显示为已注销用户。</p><label>输入该用户的 WeLink 号码确认</label><input id="admin-confirm-number" autocomplete="off" inputmode="numeric">'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="admin-confirm-delete">删除账号</button>');
+      bind("admin-confirm-delete", async () => {
+        await api2("/api/admin/users/" + id, { method: "DELETE", body: { confirmNumber: $2("#admin-confirm-number").value } });
+        closeModal2();
+        toast2("账号已删除");
+        await refresh2();
+        await render();
+      });
+    });
+    return { render, reset() {
+      generation++;
+    }, settingsRow: () => {
+      var _a;
+      return ((_a = S2.policy) == null ? void 0 : _a.admin) ? '<button class="utility-row" data-nav="admin"><div class="body">管理员 · 账号管理</div>' + icon2("chevron") + "</button>" : "";
+    } };
+  }
+
+  // internal/ui/src/transfers.js
+  function createTransfers({ S: S2, api: api2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, toast: toast2 }) {
+    let generation = 0, entries = [];
+    const requests = /* @__PURE__ */ new Set();
+    const active = (owner, g) => S2.user && S2.token === owner && generation === g && !S2.signingOut;
+    function stop() {
+      generation++;
+      for (const xhr of requests) xhr.abort();
+      requests.clear();
+      entries = [];
+    }
+    function upload2(path, file, fields = {}, onProgress = () => {
+    }) {
+      const owner = S2.token, g = generation;
+      if (!S2.user) return Promise.reject(Error("请先登录"));
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest(), form = new FormData();
+        for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+        form.append("file", file, file.name);
+        requests.add(xhr);
+        const finish = (error, result) => {
+          requests.delete(xhr);
+          if (error) reject(error);
+          else if (!active(owner, g)) reject(Object.assign(Error("账号已切换"), { name: "AbortError" }));
+          else resolve(result);
+        };
+        xhr.open("POST", path);
+        xhr.setRequestHeader("Authorization", "Bearer " + owner);
+        xhr.upload.onprogress = (e) => {
+          if (active(owner, g)) onProgress(e.lengthComputable ? Math.min(99, Math.floor(e.loaded / e.total * 100)) : null);
+        };
+        xhr.onload = () => {
+          let result;
+          try {
+            result = JSON.parse(xhr.responseText);
+          } catch (e) {
+            return finish(Error("上传响应无效"));
+          }
+          if (xhr.status < 200 || xhr.status >= 300) return finish(Object.assign(Error(result.error || "上传失败"), { status: xhr.status }));
+          onProgress(100);
+          finish(null, result);
+        };
+        xhr.onerror = () => finish(Error("上传连接中断，请重新选择文件重试"));
+        xhr.onabort = () => finish(Object.assign(Error("上传已取消"), { name: "AbortError" }));
+        xhr.send(form);
+      });
+    }
+    async function chat(cid, body, file, metadata = {}) {
+      const owner = S2.token, g = generation, id = randomID2(), entry = { id, cid, name: file.name, size: file.size, progress: 0 };
+      entries.push(entry);
+      renderMessages2(true);
+      try {
+        const attachment = await upload2("/api/files", file, __spreadValues(__spreadValues({ conversationId: cid, clientId: id }, ["voice", "video"].includes(body.kind) ? { mediaKind: body.kind } : {}), metadata), (percent) => {
+          entry.progress = percent;
+          renderMessages2(true);
+        });
+        if (!active(owner, g)) return;
+        const payload = __spreadProps(__spreadValues({}, body), { clientId: id, attachmentId: attachment.id });
+        if (payload.kind === "auto") payload.kind = /^image\/(png|jpeg|gif|webp)$/.test(attachment.mime) ? "image" : "file";
+        const message = await api2("/api/conversations/" + cid + "/messages", { method: "POST", body: payload });
+        if (!active(owner, g)) return;
+        if (S2.active === cid && !S2.historyMode && !S2.messages.some((m) => m.id === message.id)) S2.messages.push(message);
+        queueRefresh2();
+      } catch (error) {
+        if (active(owner, g) && error.name !== "AbortError") {
+          entry.error = error.message;
+          toast2(error.message);
+          throw error;
+        }
+      } finally {
+        if (active(owner, g)) {
+          if (!entry.error) entries = entries.filter((x) => x !== entry);
+          renderMessages2(true);
+        }
+      }
+    }
+    function html(cid) {
+      return entries.filter((e) => e.cid === cid).map((e) => '<article class="message mine pending-message">'.concat(av2(S2.user), '<div class="message-body"><div class="bubble"><b>').concat(esc2(e.name), "</b><small>").concat(bytes2(e.size), '</small></div><div class="outbox-status">').concat(e.error ? esc2(e.error) : e.progress === 100 ? "正在生成消息…" : "正在上传 " + (e.progress === null ? "" : e.progress + "%"), "</div><small>大文件直接上传，请保持客户端运行</small></div></article>")).join("");
+    }
+    return { upload: upload2, chat, html, stop };
+  }
+
   // internal/ui/src/cartoon-catalog.js
   var cartoonAvatars = [{ "id": "cartoon:001", "name": "元气小猫", "animal": "小猫", "style": "元气" }, { "id": "cartoon:002", "name": "元气小狗", "animal": "小狗", "style": "元气" }, { "id": "cartoon:003", "name": "元气小熊", "animal": "小熊", "style": "元气" }, { "id": "cartoon:004", "name": "元气兔兔", "animal": "兔兔", "style": "元气" }, { "id": "cartoon:005", "name": "元气狐狸", "animal": "狐狸", "style": "元气" }, { "id": "cartoon:006", "name": "元气熊猫", "animal": "熊猫", "style": "元气" }, { "id": "cartoon:007", "name": "元气考拉", "animal": "考拉", "style": "元气" }, { "id": "cartoon:008", "name": "元气老虎", "animal": "老虎", "style": "元气" }, { "id": "cartoon:009", "name": "元气狮子", "animal": "狮子", "style": "元气" }, { "id": "cartoon:010", "name": "元气小猴", "animal": "小猴", "style": "元气" }, { "id": "cartoon:011", "name": "元气小猪", "animal": "小猪", "style": "元气" }, { "id": "cartoon:012", "name": "元气绵羊", "animal": "绵羊", "style": "元气" }, { "id": "cartoon:013", "name": "元气奶牛", "animal": "奶牛", "style": "元气" }, { "id": "cartoon:014", "name": "元气企鹅", "animal": "企鹅", "style": "元气" }, { "id": "cartoon:015", "name": "元气猫头鹰", "animal": "猫头鹰", "style": "元气" }, { "id": "cartoon:016", "name": "元气青蛙", "animal": "青蛙", "style": "元气" }, { "id": "cartoon:017", "name": "元气小鸡", "animal": "小鸡", "style": "元气" }, { "id": "cartoon:018", "name": "元气浣熊", "animal": "浣熊", "style": "元气" }, { "id": "cartoon:019", "name": "元气海豹", "animal": "海豹", "style": "元气" }, { "id": "cartoon:020", "name": "元气仓鼠", "animal": "仓鼠", "style": "元气" }, { "id": "cartoon:021", "name": "甜梦小猫", "animal": "小猫", "style": "甜梦" }, { "id": "cartoon:022", "name": "甜梦小狗", "animal": "小狗", "style": "甜梦" }, { "id": "cartoon:023", "name": "甜梦小熊", "animal": "小熊", "style": "甜梦" }, { "id": "cartoon:024", "name": "甜梦兔兔", "animal": "兔兔", "style": "甜梦" }, { "id": "cartoon:025", "name": "甜梦狐狸", "animal": "狐狸", "style": "甜梦" }, { "id": "cartoon:026", "name": "甜梦熊猫", "animal": "熊猫", "style": "甜梦" }, { "id": "cartoon:027", "name": "甜梦考拉", "animal": "考拉", "style": "甜梦" }, { "id": "cartoon:028", "name": "甜梦老虎", "animal": "老虎", "style": "甜梦" }, { "id": "cartoon:029", "name": "甜梦狮子", "animal": "狮子", "style": "甜梦" }, { "id": "cartoon:030", "name": "甜梦小猴", "animal": "小猴", "style": "甜梦" }, { "id": "cartoon:031", "name": "甜梦小猪", "animal": "小猪", "style": "甜梦" }, { "id": "cartoon:032", "name": "甜梦绵羊", "animal": "绵羊", "style": "甜梦" }, { "id": "cartoon:033", "name": "甜梦奶牛", "animal": "奶牛", "style": "甜梦" }, { "id": "cartoon:034", "name": "甜梦企鹅", "animal": "企鹅", "style": "甜梦" }, { "id": "cartoon:035", "name": "甜梦猫头鹰", "animal": "猫头鹰", "style": "甜梦" }, { "id": "cartoon:036", "name": "甜梦青蛙", "animal": "青蛙", "style": "甜梦" }, { "id": "cartoon:037", "name": "甜梦小鸡", "animal": "小鸡", "style": "甜梦" }, { "id": "cartoon:038", "name": "甜梦浣熊", "animal": "浣熊", "style": "甜梦" }, { "id": "cartoon:039", "name": "甜梦海豹", "animal": "海豹", "style": "甜梦" }, { "id": "cartoon:040", "name": "甜梦仓鼠", "animal": "仓鼠", "style": "甜梦" }, { "id": "cartoon:041", "name": "花园小猫", "animal": "小猫", "style": "花园" }, { "id": "cartoon:042", "name": "花园小狗", "animal": "小狗", "style": "花园" }, { "id": "cartoon:043", "name": "花园小熊", "animal": "小熊", "style": "花园" }, { "id": "cartoon:044", "name": "花园兔兔", "animal": "兔兔", "style": "花园" }, { "id": "cartoon:045", "name": "花园狐狸", "animal": "狐狸", "style": "花园" }, { "id": "cartoon:046", "name": "花园熊猫", "animal": "熊猫", "style": "花园" }, { "id": "cartoon:047", "name": "花园考拉", "animal": "考拉", "style": "花园" }, { "id": "cartoon:048", "name": "花园老虎", "animal": "老虎", "style": "花园" }, { "id": "cartoon:049", "name": "花园狮子", "animal": "狮子", "style": "花园" }, { "id": "cartoon:050", "name": "花园小猴", "animal": "小猴", "style": "花园" }, { "id": "cartoon:051", "name": "花园小猪", "animal": "小猪", "style": "花园" }, { "id": "cartoon:052", "name": "花园绵羊", "animal": "绵羊", "style": "花园" }, { "id": "cartoon:053", "name": "花园奶牛", "animal": "奶牛", "style": "花园" }, { "id": "cartoon:054", "name": "花园企鹅", "animal": "企鹅", "style": "花园" }, { "id": "cartoon:055", "name": "花园猫头鹰", "animal": "猫头鹰", "style": "花园" }, { "id": "cartoon:056", "name": "花园青蛙", "animal": "青蛙", "style": "花园" }, { "id": "cartoon:057", "name": "花园小鸡", "animal": "小鸡", "style": "花园" }, { "id": "cartoon:058", "name": "花园浣熊", "animal": "浣熊", "style": "花园" }, { "id": "cartoon:059", "name": "花园海豹", "animal": "海豹", "style": "花园" }, { "id": "cartoon:060", "name": "花园仓鼠", "animal": "仓鼠", "style": "花园" }, { "id": "cartoon:061", "name": "眼镜小猫", "animal": "小猫", "style": "眼镜" }, { "id": "cartoon:062", "name": "眼镜小狗", "animal": "小狗", "style": "眼镜" }, { "id": "cartoon:063", "name": "眼镜小熊", "animal": "小熊", "style": "眼镜" }, { "id": "cartoon:064", "name": "眼镜兔兔", "animal": "兔兔", "style": "眼镜" }, { "id": "cartoon:065", "name": "眼镜狐狸", "animal": "狐狸", "style": "眼镜" }, { "id": "cartoon:066", "name": "眼镜熊猫", "animal": "熊猫", "style": "眼镜" }, { "id": "cartoon:067", "name": "眼镜考拉", "animal": "考拉", "style": "眼镜" }, { "id": "cartoon:068", "name": "眼镜老虎", "animal": "老虎", "style": "眼镜" }, { "id": "cartoon:069", "name": "眼镜狮子", "animal": "狮子", "style": "眼镜" }, { "id": "cartoon:070", "name": "眼镜小猴", "animal": "小猴", "style": "眼镜" }, { "id": "cartoon:071", "name": "眼镜小猪", "animal": "小猪", "style": "眼镜" }, { "id": "cartoon:072", "name": "眼镜绵羊", "animal": "绵羊", "style": "眼镜" }, { "id": "cartoon:073", "name": "眼镜奶牛", "animal": "奶牛", "style": "眼镜" }, { "id": "cartoon:074", "name": "眼镜企鹅", "animal": "企鹅", "style": "眼镜" }, { "id": "cartoon:075", "name": "眼镜猫头鹰", "animal": "猫头鹰", "style": "眼镜" }, { "id": "cartoon:076", "name": "眼镜青蛙", "animal": "青蛙", "style": "眼镜" }, { "id": "cartoon:077", "name": "眼镜小鸡", "animal": "小鸡", "style": "眼镜" }, { "id": "cartoon:078", "name": "眼镜浣熊", "animal": "浣熊", "style": "眼镜" }, { "id": "cartoon:079", "name": "眼镜海豹", "animal": "海豹", "style": "眼镜" }, { "id": "cartoon:080", "name": "眼镜仓鼠", "animal": "仓鼠", "style": "眼镜" }, { "id": "cartoon:081", "name": "星光小猫", "animal": "小猫", "style": "星光" }, { "id": "cartoon:082", "name": "星光小狗", "animal": "小狗", "style": "星光" }, { "id": "cartoon:083", "name": "星光小熊", "animal": "小熊", "style": "星光" }, { "id": "cartoon:084", "name": "星光兔兔", "animal": "兔兔", "style": "星光" }, { "id": "cartoon:085", "name": "星光狐狸", "animal": "狐狸", "style": "星光" }, { "id": "cartoon:086", "name": "星光熊猫", "animal": "熊猫", "style": "星光" }, { "id": "cartoon:087", "name": "星光考拉", "animal": "考拉", "style": "星光" }, { "id": "cartoon:088", "name": "星光老虎", "animal": "老虎", "style": "星光" }, { "id": "cartoon:089", "name": "星光狮子", "animal": "狮子", "style": "星光" }, { "id": "cartoon:090", "name": "星光小猴", "animal": "小猴", "style": "星光" }, { "id": "cartoon:091", "name": "星光小猪", "animal": "小猪", "style": "星光" }, { "id": "cartoon:092", "name": "星光绵羊", "animal": "绵羊", "style": "星光" }, { "id": "cartoon:093", "name": "星光奶牛", "animal": "奶牛", "style": "星光" }, { "id": "cartoon:094", "name": "星光企鹅", "animal": "企鹅", "style": "星光" }, { "id": "cartoon:095", "name": "星光猫头鹰", "animal": "猫头鹰", "style": "星光" }, { "id": "cartoon:096", "name": "星光青蛙", "animal": "青蛙", "style": "星光" }, { "id": "cartoon:097", "name": "星光小鸡", "animal": "小鸡", "style": "星光" }, { "id": "cartoon:098", "name": "星光浣熊", "animal": "浣熊", "style": "星光" }, { "id": "cartoon:099", "name": "星光海豹", "animal": "海豹", "style": "星光" }, { "id": "cartoon:100", "name": "星光仓鼠", "animal": "仓鼠", "style": "星光" }];
   var cartoonURL = (value) => /^cartoon:(00[1-9]|0[1-9][0-9]|100)$/.test(value || "") ? "/assets/avatars/" + value.slice(8) + ".svg" : "";
@@ -38,7 +499,7 @@
   // internal/ui/src/calls.js
   function createCalls({ S: S2, api: api2, action: action2, esc: esc2, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
     const $2 = (s) => document.querySelector(s);
-    let active = null, scope = "", generation = 0, refreshTimer2, clock, ringTimer, audio, joining = "", dialing = false, history = null;
+    let active = null, scope = "", generation = 0, refreshTimer2, clock, ringTimer, audio, joining = "", dialing = false, history = null, closingTask = null;
     const permitted = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), dismissed = /* @__PURE__ */ new Set();
     const identity = () => {
       var _a;
@@ -253,6 +714,7 @@
       if (closing) Meetings2.closeCall(closing);
       joining = "";
       dialing = false;
+      closingTask = null;
       permitted.clear();
       seen.clear();
       dismissed.clear();
@@ -261,13 +723,15 @@
     }
     async function dial(cid, mode) {
       if (dialing) return;
-      if (active || Meetings2.busy()) {
-        toast2("请先结束当前通话或会议");
-        return;
-      }
       const g = generation;
       dialing = true;
       try {
+        if (closingTask) await closingTask;
+        if (!live(g)) return;
+        if (active || Meetings2.busy()) {
+          toast2("请先结束当前通话或会议");
+          return;
+        }
         const c = await action2("/api/calls", { conversationId: cid, mode, clientId: randomID2() });
         if (!live(g)) return;
         permitted.add(c.id);
@@ -278,7 +742,7 @@
           sync();
         }
       } finally {
-        dialing = false;
+        if (live(g)) dialing = false;
       }
     }
     async function answer(audioOnly = false) {
@@ -315,12 +779,24 @@
     async function mediaClosed(id) {
       Meetings2.closedNativeCall(id);
       if (joining === id) joining = "";
-      if ((active == null ? void 0 : active.id) === id) {
+      if ((active == null ? void 0 : active.id) !== id) return;
+      const g = generation;
+      active = null;
+      seen.add(id);
+      stopRing();
+      render();
+      const task = (async () => {
         try {
           await action2("/api/calls/" + id + "/end");
         } catch (e) {
         }
-        await changed({ id });
+        if (live(g)) await sync();
+      })();
+      closingTask = task;
+      try {
+        await task;
+      } finally {
+        if (closingTask === task) closingTask = null;
       }
     }
     function historyRow(c) {
@@ -385,7 +861,7 @@
       }
     });
     window.WeLinkCallNativeClosed = (id) => mediaClosed(id);
-    return { start, stop, changed, sync, card, summary, mediaClosed, isCurrent: (id) => (active == null ? void 0 : active.id) === id && active.canJoin, historyChanged: () => {
+    return { dial, start, stop, changed, sync, card, summary, mediaClosed, isCurrent: (id) => (active == null ? void 0 : active.id) === id && active.canJoin, historyChanged: () => {
       if (history) loadHistory().catch(() => {
       });
     }, historyEntry: () => '<button class="call-history-entry" data-call-history>' + icon2("phone") + "<span>通话记录</span>" + icon2("chevron") + "</button>" };
@@ -786,7 +1262,7 @@
   var localPut = (name, value) => transaction([name], "readwrite", (stores) => stores[name].put(value));
 
   // internal/ui/src/outbox.js
-  function createOutbox({ S: S2, api: api2, toast: toast2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
+  function createOutbox({ sendLarge, S: S2, api: api2, toast: toast2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
     const $2 = (selector) => document.querySelector(selector);
     let scope = "", generation = 0, rows = [], drafts = /* @__PURE__ */ new Map(), timer, working = false, controller, saveChain = Promise.resolve(), storageWarning = false;
     const scopeFor = () => {
@@ -884,36 +1360,43 @@
       }
     }
     async function enqueue(cid, body, file, metadata = {}, clearDraft = false) {
-      var _a, _b;
+      var _a, _b, _c, _d;
       if (!scope || !S2.user || S2.signingOut) throw Error("请先登录再发送");
-      if ((file == null ? void 0 : file.size) > 50 * 1024 * 1024) throw Error("文件不能超过 50 MB");
-      const g = generation, key = scope, id = randomID2(), draftRevision = (_a = drafts.get(cid)) == null ? void 0 : _a.revision, record = { id, scope: key, cid, body: __spreadProps(__spreadValues({}, body), { clientId: id }), created: Date.now(), state: "waiting", attempts: 0, next: 0, file: file ? { name: file.name, type: file.type, size: file.size } : null, metadata };
+      if (file && ((_a = S2.policy) == null ? void 0 : _a.chatMaxAttachmentBytes) > 0 && file.size > S2.policy.chatMaxAttachmentBytes) throw Error("文件超过服务器配置的大小限制");
+      if ((file == null ? void 0 : file.size) > ((_b = S2.policy.chatPersistAttachmentBytes) != null ? _b : 50 * 1024 * 1024)) return sendLarge(cid, body, file, metadata);
+      const g = generation, key = scope, id = randomID2(), draftRevision = (_c = drafts.get(cid)) == null ? void 0 : _c.revision, record = { id, scope: key, cid, body: __spreadProps(__spreadValues({}, body), { clientId: id }), created: Date.now(), state: "waiting", attempts: 0, next: 0, file: file ? { name: file.name, type: file.type, size: file.size } : null, metadata };
       await saveChain;
       if (!alive(g, key)) throw Error("登录账号已变化，请重新选择内容");
-      await transaction(["queue", "blobs", "drafts"], "readwrite", (stores, done, abort) => {
-        const request2 = stores.queue.index("scope").getAll(key);
-        request2.onsuccess = () => {
-          if (request2.result.length >= 100 || request2.result.reduce((n, r) => {
+      try {
+        await transaction(["queue", "blobs", "drafts"], "readwrite", (stores, done, abort) => {
+          const request2 = stores.queue.index("scope").getAll(key);
+          request2.onsuccess = () => {
             var _a2;
-            return n + (((_a2 = r.file) == null ? void 0 : _a2.size) || 0);
-          }, 0) + ((file == null ? void 0 : file.size) || 0) > 250 * 1024 * 1024) {
-            abort(Error("待发送内容已达上限（100 条 / 250 MB），请先处理发送队列"));
-            return;
-          }
-          stores.queue.add(record);
-          if (file) stores.blobs.put(file, id);
-          if (clearDraft) {
-            const draft = stores.drafts.get(JSON.stringify([key, cid]));
-            draft.onsuccess = () => {
-              var _a2;
-              if (((_a2 = draft.result) == null ? void 0 : _a2.revision) === draftRevision) stores.drafts.delete(JSON.stringify([key, cid]));
-            };
-          }
-        };
-      });
+            if (request2.result.length >= (S2.policy.chatOfflineQueueMessages || 100) || request2.result.reduce((n, r) => {
+              var _a3;
+              return n + (((_a3 = r.file) == null ? void 0 : _a3.size) || 0);
+            }, 0) + ((file == null ? void 0 : file.size) || 0) > ((_a2 = S2.policy.chatOfflineQueueBytes) != null ? _a2 : 250 * 1024 * 1024)) {
+              abort(Error("本机待发送队列已满，请先处理已有消息"));
+              return;
+            }
+            stores.queue.add(record);
+            if (file) stores.blobs.put(file, id);
+            if (clearDraft) {
+              const draft = stores.drafts.get(JSON.stringify([key, cid]));
+              draft.onsuccess = () => {
+                var _a3;
+                if (((_a3 = draft.result) == null ? void 0 : _a3.revision) === draftRevision) stores.drafts.delete(JSON.stringify([key, cid]));
+              };
+            }
+          };
+        });
+      } catch (error) {
+        if (file && alive(g, key)) return sendLarge(cid, body, file, metadata);
+        throw error;
+      }
       if (!alive(g, key)) return;
       storageWarning = false;
-      if (clearDraft && ((_b = drafts.get(cid)) == null ? void 0 : _b.revision) === draftRevision) {
+      if (clearDraft && ((_d = drafts.get(cid)) == null ? void 0 : _d.revision) === draftRevision) {
         drafts.delete(cid);
         S2.drafts[cid] = "";
         Mentions2.clear(cid);
@@ -1363,15 +1846,18 @@
       }
     }
     function sidebar() {
-      const closed = collapsed(), q = S2.search.toLowerCase(), list = S2.friends.filter((u) => (u.name + u.remark + u.account + u.number + (u.note || "")).toLowerCase().includes(q)), groups2 = [{ id: "", name: "我的好友" }, ...S2.contactGroups];
+      const closed = collapsed(), q = S2.search.toLowerCase(), recent = new Set(S2.conversations.filter((c) => c.kind === "direct").map((c) => {
+        var _a;
+        return (_a = c.peer) == null ? void 0 : _a.id;
+      })), peopleSource = q ? S2.friends : S2.friends.filter((u) => recent.has(u.id)), list = peopleSource.filter((u) => (u.name + u.remark + u.account + u.number + u.id + (u.note || "")).toLowerCase().includes(q)), groups2 = [{ id: "", name: "最近联系人" }, ...S2.contactGroups];
       return '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + groups2.map((g) => {
-        const people = list.filter((u) => (u.contactGroupId || "") === g.id), total = S2.friends.filter((u) => (u.contactGroupId || "") === g.id).length, hidden = !q && closed.has(g.id);
+        const people = list.filter((u) => (u.contactGroupId || "") === g.id), total = peopleSource.filter((u) => (u.contactGroupId || "") === g.id).length, hidden = !q && closed.has(g.id);
         if (q && !people.length) return "";
         return '<button class="contact-folder '.concat(hidden ? "collapsed" : "", '" data-contact="toggle" data-group-id="').concat(g.id, '">').concat(icon2("down"), "<b>").concat(esc2(g.name), "</b><small>").concat(people.filter((u) => u.online).length, "/").concat(total, "</small></button>").concat(hidden ? "" : people.map((u) => '<button class="conversation-row contact-row" data-profile="'.concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(title(u)), '</b></div><div class="row-preview"><span>').concat(esc2(u.bio || (u.online ? "[在线]" : "[离线]")), "</span></div></div></button>")).join(""));
-      }).join("") + (!S2.friends.length ? '<div class="empty-list">还没有好友<br>添加好友，开始新的聊天</div>' : q && !list.length ? '<div class="empty-list">没有找到好友</div>' : "");
+      }).join("") + (!peopleSource.length ? '<div class="empty-list">还没有联系人<br>搜索用户，直接开始聊天</div>' : q && !list.length ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u)), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">好友设置</button></div>');
+      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u)), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 号：').concat(esc2(u.number || u.account), '</span><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions"><button class="primary" data-start-chat="').concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-open-space="').concat(u.id, '">查看空间</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button></div>');
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
@@ -1385,12 +1871,12 @@
         bind("contact-add", () => requestFriend2(id, u.name));
         return;
       }
-      modal2("好友设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">好友分组</label><select id="contact-folder"><option value="">我的好友</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">删除好友</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      modal2("联系人设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ').concat(detail.messageBlocked ? "checked" : "", '></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
       bind("contact-save", async () => {
-        await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value } });
+        await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, messageBlocked: $2("#contact-message-blocked").checked } });
         closeModal2();
         await refresh2();
-        toast2("好友设置已保存");
+        toast2("联系人设置已保存");
       });
     }
     function confirmRemove(id, block) {
@@ -1399,17 +1885,17 @@
         var _a2;
         return ((_a2 = c.peer) == null ? void 0 : _a2.id) === id;
       })) == null ? void 0 : _a.peer) || { name: "该用户" };
-      modal2(block ? "加入黑名单" : "删除好友", '<p class="contact-confirm">确定'.concat(block ? "拉黑" : "删除", " ").concat(esc2(title(u)), '？</p><p class="hint">').concat(block ? "将解除好友关系，不再接收对方的私聊和好友申请。" : "解除好友关系后，重新联系需要再次添加好友。", "已有聊天记录与共同群聊会保留，双方的远程协助和单聊会议会结束。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
+      modal2(block ? "加入黑名单" : "从列表移除", '<p class="contact-confirm">确定'.concat(block ? "拉黑" : "删除", " ").concat(esc2(title(u)), '？</p><p class="hint">').concat(block ? "不再接收对方的私聊，双方的远程协助和单聊会议会结束。" : "只从当前列表移除，聊天记录保留。下次收发消息时会重新显示。", "</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
       bind("contact-remove-confirm", async () => {
         await api2((block ? "/api/contact-blocks/" : "/api/contacts/") + id, { method: block ? "POST" : "DELETE", body: block ? {} : void 0 });
         closeModal2();
         await refresh2();
-        toast2(block ? "已加入黑名单" : "已删除好友");
+        toast2(block ? "已加入黑名单" : "已从列表移除");
       });
     }
     async function groups() {
       await refresh2();
-      modal2("好友分组", '<div class="contact-group-item"><span>我的好友</span><small>默认分组</small></div>'.concat(S2.contactGroups.map((g, i) => '<div class="contact-group-item"><span>'.concat(esc2(g.name), "<small>").concat(g.count, ' 位好友</small></span><button data-contact="group-up" data-group-id="').concat(g.id, '" ').concat(i === 0 ? "disabled" : "", ' title="上移">↑</button><button data-contact="group-down" data-group-id="').concat(g.id, '" ').concat(i === S2.contactGroups.length - 1 ? "disabled" : "", ' title="下移">↓</button><button data-contact="group-edit" data-group-id="').concat(g.id, '">重命名</button><button data-contact="group-delete" data-group-id="').concat(g.id, '" class="danger">删除</button></div>')).join(""), '<p class="hint">删除分组会将其中好友移到“我的好友”，保留备注和描述。</p>'), '<button class="secondary" data-action="close-modal">完成</button><button class="primary" data-contact="group-create">新建分组</button>', true);
+      modal2("联系人分组", '<div class="contact-group-item"><span>最近联系人</span><small>默认分组</small></div>'.concat(S2.contactGroups.map((g, i) => '<div class="contact-group-item"><span>'.concat(esc2(g.name), "<small>").concat(g.count, ' 位联系人</small></span><button data-contact="group-up" data-group-id="').concat(g.id, '" ').concat(i === 0 ? "disabled" : "", ' title="上移">↑</button><button data-contact="group-down" data-group-id="').concat(g.id, '" ').concat(i === S2.contactGroups.length - 1 ? "disabled" : "", ' title="下移">↓</button><button data-contact="group-edit" data-group-id="').concat(g.id, '">重命名</button><button data-contact="group-delete" data-group-id="').concat(g.id, '" class="danger">删除</button></div>')).join(""), '<p class="hint">删除分组会将其中好友移到“最近联系人”，保留备注和描述。</p>'), '<button class="secondary" data-action="close-modal">完成</button><button class="primary" data-contact="group-create">新建分组</button>', true);
     }
     function groupForm(id) {
       const g = S2.contactGroups.find((x) => x.id === id);
@@ -1429,16 +1915,10 @@
     }
     async function blocks() {
       const list = await api2("/api/contact-blocks");
-      modal2("黑名单", '<p class="hint">解除拉黑不会自动恢复好友关系，需要重新添加。</p>'.concat(list.map((u) => '<div class="contact-block-row">'.concat(av2(u), "<span><b>").concat(esc2(u.name), "</b><small>").concat(esc2(u.number), '</small></span><button class="secondary" data-contact="unblock" data-user="').concat(u.id, '">解除</button></div>')).join("") || '<p class="empty-list">黑名单为空</p>'), '<button class="secondary" data-contact="privacy">返回</button>');
+      modal2("黑名单", '<p class="hint">解除拉黑后可以再次直接聊天。</p>'.concat(list.map((u) => '<div class="contact-block-row">'.concat(av2(u), "<span><b>").concat(esc2(u.name), "</b><small>").concat(esc2(u.number), '</small></span><button class="secondary" data-contact="unblock" data-user="').concat(u.id, '">解除</button></div>')).join("") || '<p class="empty-list">黑名单为空</p>'), '<button class="secondary" data-contact="privacy">返回</button>');
     }
     async function privacy() {
-      const p = await api2("/api/contact-privacy");
-      modal2("联系人与隐私", '<label class="contact-switch">允许被搜索到<input id="contact-searchable" type="checkbox" '.concat(p.searchable ? "checked" : "", '></label><p class="hint">关闭后，陌生人无法通过号码、别名或昵称搜索到你，已有好友仍能找到你。</p><label class="contact-switch">接收好友申请<input id="contact-requests" type="checkbox" ').concat(p.allowRequests ? "checked" : "", '></label><p class="hint">关闭后不接收新的好友申请，已有待处理申请仍可处理。</p><button class="contact-settings-row" data-contact="blocks">黑名单').concat(icon2("chevron"), '</button><button class="contact-settings-row" data-contact="groups">好友分组').concat(icon2("chevron"), "</button>"), '<button class="primary" id="contact-privacy-save">保存</button>');
-      bind("contact-privacy-save", async () => {
-        await api2("/api/contact-privacy", { method: "PATCH", body: { searchable: $2("#contact-searchable").checked, allowRequests: $2("#contact-requests").checked } });
-        closeModal2();
-        toast2("隐私设置已保存");
-      });
+      modal2("联系人设置", '<p class="hint">不需要添加或批准好友。通过昵称、号码或用户 ID 搜索即可聊天；从列表移除后仍保留聊天记录。</p><button class="contact-settings-row" data-contact="blocks">黑名单' + icon2("chevron") + '</button><button class="contact-settings-row" data-contact="groups">联系人分组' + icon2("chevron") + "</button>", '<button class="primary" data-action="close-modal">完成</button>');
     }
     function syncComposer() {
       var _a;
@@ -1453,12 +1933,12 @@
         banner = $2("#contact-unavailable-banner");
       }
       ;
-      banner.innerHTML = blocked ? '<span>你们暂时无法私聊，请先确认好友关系。</span><button data-contact="edit" data-user="'.concat(c.peer.id, '">查看联系人</button>') : "";
+      banner.innerHTML = blocked ? '<span>当前无法私聊，请检查黑名单或账号状态。</span><button data-contact="edit" data-user="'.concat(c.peer.id, '">查看联系人</button>') : "";
       if (blocked || was) $2("#composer").disabled = blocked;
       if ((c == null ? void 0 : c.kind) === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + '<small id="typing-status">'.concat(((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线", "</small>");
     }
     function menu(id, x, y) {
-      contextMenu2(x, y, '<button data-contact="edit" data-user="'.concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">删除好友</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
+      contextMenu2(x, y, '<button data-contact="edit" data-user="'.concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
     }
     document.addEventListener("contextmenu", (e) => {
       const row = e.target.closest(".contact-row[data-profile]");
@@ -1490,6 +1970,13 @@
       if (!b || !S2.user) return;
       try {
         switch (b.dataset.contact) {
+          case "messages": {
+            const detail = await api2("/api/contacts/" + b.dataset.user);
+            await api2("/api/contacts/" + b.dataset.user, { method: "PATCH", body: { messageBlocked: !detail.messageBlocked } });
+            await refresh2();
+            toast2(detail.messageBlocked ? "已取消屏蔽" : "已屏蔽此人的私聊消息");
+            break;
+          }
           case "edit":
             await edit(b.dataset.user);
             break;
@@ -2109,10 +2596,11 @@
       });
     }
     async function sendVideo(file) {
+      var _a;
       const cid = S2.active, owner = accountScope();
       if (!cid) return;
-      if (file.size > 50 * 1024 * 1024) {
-        toast2("视频不能超过 50 MB");
+      if (((_a = S2.policy) == null ? void 0 : _a.chatMaxAttachmentBytes) > 0 && file.size > S2.policy.chatMaxAttachmentBytes) {
+        toast2("文件超过服务器配置的大小限制");
         return;
       }
       const fallback = (error) => {
@@ -2246,7 +2734,7 @@
           break;
         case "video":
           if (window.WeLinkAndroid) {
-            modal2("发送视频", '<button class="remote-choice" id="video-from-gallery">' + icon2("folder") + '从相册选择</button><button class="remote-choice" id="video-from-camera">' + icon2("video") + '拍摄视频</button><p class="hint">支持 MP4、WebM，单个文件不超过 50 MB。</p>');
+            modal2("发送视频", '<button class="remote-choice" id="video-from-gallery">' + icon2("folder") + '从相册选择</button><button class="remote-choice" id="video-from-camera">' + icon2("video") + '拍摄视频</button><p class="hint">支持 MP4、WebM。文件大小遵循服务器配置。</p>');
             $2("#video-from-gallery").onclick = () => {
               closeModal2();
               $2("#video-input").click();
@@ -2867,6 +3355,95 @@
     return { open, stop, scanned };
   }
 
+  // internal/ui/src/rtc-path.js
+  function directFirstICE(pc, policy, { alive, changed, negotiate }) {
+    const servers = policy.iceServers || [], hasRelay = servers.some((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u) => /^turns?:/.test(u)));
+    let relay = false, closed = false, deadline, recovery, statsTimer, restarts = 0, path = "正在直连";
+    const connected = () => ["connected", "completed"].includes(pc.iceConnectionState) || pc.connectionState === "connected";
+    const valid = () => !closed && alive() && pc.connectionState !== "closed";
+    const setPath = (value) => {
+      if (path !== value) {
+        path = value;
+        changed();
+      }
+    };
+    async function stats() {
+      if (!valid() || !connected()) return;
+      try {
+        const report = await pc.getStats();
+        if (!valid()) return;
+        let pair;
+        for (const value of report.values()) if (value.type === "transport" && value.selectedCandidatePairId) pair = report.get(value.selectedCandidatePairId);
+        if (!pair) {
+          for (const value of report.values()) if (value.type === "candidate-pair" && value.state === "succeeded" && (value.nominated || value.selected)) {
+            pair = value;
+            break;
+          }
+        }
+        if (pair) {
+          const local = report.get(pair.localCandidateId), remote = report.get(pair.remoteCandidateId);
+          setPath((local == null ? void 0 : local.candidateType) === "relay" || (remote == null ? void 0 : remote.candidateType) === "relay" ? "中转连接" : "P2P 直连");
+        }
+      } catch (e) {
+      }
+    }
+    function fallback() {
+      if (!valid() || connected()) return;
+      if (!hasRelay) {
+        setPath("直连未成功");
+        return;
+      }
+      clearTimeout(deadline);
+      relay = true;
+      setPath("正在连接中转");
+      try {
+        pc.setConfiguration(__spreadProps(__spreadValues({}, pc.getConfiguration()), { iceServers: servers, iceTransportPolicy: "all" }));
+        pc.restartIce();
+        Promise.resolve(negotiate()).catch(() => setPath("网络连接不稳定"));
+      } catch (e) {
+        setPath("网络连接不稳定");
+      }
+    }
+    function update() {
+      if (!valid()) return;
+      if (connected()) {
+        clearTimeout(deadline);
+        clearTimeout(recovery);
+        recovery = null;
+        stats();
+        return;
+      }
+      if (pc.iceConnectionState === "failed" || pc.connectionState === "failed") {
+        if (!relay) fallback();
+        else if (restarts++ < 2) {
+          setPath("正在重连");
+          pc.restartIce();
+          Promise.resolve(negotiate()).catch(() => {
+          });
+        } else setPath("网络连接不稳定");
+      } else if (pc.iceConnectionState === "disconnected" && !recovery) {
+        setPath("正在重连");
+        recovery = setTimeout(() => {
+          recovery = null;
+          fallback();
+        }, 5e3);
+      }
+    }
+    deadline = setTimeout(fallback, policy.directTimeoutMs || 8e3);
+    statsTimer = setInterval(stats, 2500);
+    return { update, get path() {
+      return path;
+    }, close() {
+      closed = true;
+      clearTimeout(deadline);
+      clearTimeout(recovery);
+      clearInterval(statsTimer);
+    } };
+  }
+  function directIceServers(policy) {
+    return (policy.iceServers || []).map((s) => __spreadProps(__spreadValues({}, s), { urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => /^stun:/.test(u)) })).filter((s) => s.urls.length);
+  }
+
   // internal/ui/src/meetings.js
   function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
@@ -2965,7 +3542,7 @@
         show();
         return;
       }
-      modal2(mode === "audio" ? "发起语音通话" : "发起会议", '<label>会议名称</label><input id="meeting-title" maxlength="60" value="'.concat(esc2(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议"), '"><p class="hint">').concat(cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。", '最多 8 人，最长 2 小时。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" ').concat(mode === "video" ? "checked" : "", ">入会时开启摄像头</label>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>');
+      modal2(mode === "audio" ? "发起语音通话" : "发起会议", '<label>会议名称</label><input id="meeting-title" maxlength="60" value="'.concat(esc2(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议"), '"><p class="hint">').concat(cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。", "最多 ").concat(S2.policy.meetingMaxParticipants || 8, " 人，最长 ").concat(S2.policy.meetingDurationMinutes || 120, ' 分钟。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" ').concat(mode === "video" ? "checked" : "", ">入会时开启摄像头</label>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>');
       el("meeting-create-submit").onclick = async () => {
         const button = el("meeting-create-submit");
         button.disabled = true;
@@ -3018,13 +3595,15 @@
         return;
       }
       if (!call) await api2("/api/meetings/" + code);
+      const joiningToken = S2.token, rtc = await api2("/api/rtc-config");
+      if (joiningToken !== S2.token || !S2.user || call && !callCurrent(call.id)) return;
       if (call && ((_b = window.WeLinkAndroid) == null ? void 0 : _b.openCall)) {
         nativeCall = call.id;
-        window.WeLinkAndroid.openCall(code, S2.token, S2.user.name, call.id, call.peer.name, call.mode);
+        window.WeLinkAndroid.openCall(code, S2.token, S2.user.name, call.id, call.peer.name, call.mode, JSON.stringify(rtc));
         return;
       }
       if ((_c = window.WeLinkAndroid) == null ? void 0 : _c.openMeeting) {
-        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam, S2.config.server);
+        window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam, S2.config.server, JSON.stringify(rtc));
         (_d = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _d.click();
         return;
       }
@@ -3038,7 +3617,7 @@
         throw Error("未获得麦克风权限，请检查权限后重试");
       }
       const ws = new WebSocket("ws://".concat(location.host, "/api/meetings/").concat(code, "/ws"));
-      room = { code, ws, stream, call, id: "", host: "", states: /* @__PURE__ */ new Map(), peers: /* @__PURE__ */ new Map(), tiles: /* @__PURE__ */ new Map(), screen: null, recording: null, ping: null, started: Date.now(), intentional: false };
+      room = { code, ws, stream, call, rtc, id: "", host: "", states: /* @__PURE__ */ new Map(), peers: /* @__PURE__ */ new Map(), tiles: /* @__PURE__ */ new Map(), screen: null, recording: null, ping: null, started: Date.now(), intentional: false };
       const active = room;
       renderRoom();
       if (call) {
@@ -3048,7 +3627,7 @@
         el("meeting-leave").textContent = "挂断";
         tile(call.peer.id, call.peer.name, null);
         active.callClock = setInterval(() => {
-          if (room === active && call.started) el("meeting-network").textContent = formatDuration((Date.now() - call.started) / 1e3);
+          if (room === active && call.started) renderConnection(active);
         }, 1e3);
       }
       (_e = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _e.click();
@@ -3072,6 +3651,14 @@
           if (!active.intentional) toast2(reason);
         }
       };
+    }
+    function renderConnection(active) {
+      var _a;
+      if (room !== active || !el("meeting-network")) return;
+      const paths2 = [...active.peers.values()].map((p) => p.route.path);
+      let label = paths2.includes("中转连接") ? "中转连接" : paths2.length && paths2.every((p) => p === "P2P 直连") ? "P2P 直连" : paths2.find((p) => p !== "P2P 直连") || "等待其他成员";
+      if ((_a = active.call) == null ? void 0 : _a.started) label = formatDuration((Date.now() - active.call.started) / 1e3) + " · " + label;
+      el("meeting-network").textContent = label;
     }
     function renderRoom() {
       root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize">').concat(icon2("minus"), '</button></header><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
@@ -3159,8 +3746,9 @@
     function peer(id) {
       var _a;
       if (room.peers.has(id)) return room.peers.get(id);
-      const active = room, pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:www.yucg.cn:8233" }] }), entry = { id, pc, makingOffer: false, queue: [], ignore: false };
+      const active = room, pc = new RTCPeerConnection({ iceServers: directIceServers(active.rtc), iceTransportPolicy: "all", bundlePolicy: "max-bundle" }), entry = { id, pc, makingOffer: false, queue: [], ignore: false };
       room.peers.set(id, entry);
+      entry.route = directFirstICE(pc, active.rtc, { alive: () => room === active && active.peers.get(id) === entry, changed: () => renderConnection(active), negotiate: () => offer(entry) });
       for (const track of room.stream.getAudioTracks()) pc.addTrack(track, room.stream);
       const video = ((_a = room.screen) == null ? void 0 : _a.getVideoTracks()[0]) || room.stream.getVideoTracks()[0];
       if (video) pc.addTrack(video, room.screen || room.stream);
@@ -3184,25 +3772,29 @@
       const connectionChanged = () => {
         if (room !== active) return;
         if (active.call && (pc.connectionState === "connected" || ["connected", "completed"].includes(pc.iceConnectionState))) send({ type: "call-connected" });
-        const failed = [...room.peers.values()].some((p) => p.pc.connectionState === "failed");
-        el("meeting-network").textContent = failed ? "网络连接不稳定" : active.call ? "正在连接…" : "会议进行中";
+        entry.route.update();
+        renderConnection(active);
       };
       pc.onconnectionstatechange = connectionChanged;
       pc.oniceconnectionstatechange = connectionChanged;
       return entry;
     }
     async function offer(p) {
-      if (!room || p.makingOffer || p.pc.signalingState !== "stable") return;
+      const active = room;
+      if (!active || p.makingOffer || p.pc.signalingState !== "stable" || active.peers.get(p.id) !== p) return;
+      const epoch = p.offerEpoch = (p.offerEpoch || 0) + 1, live = () => room === active && active.peers.get(p.id) === p && p.offerEpoch === epoch;
       try {
         p.makingOffer = true;
-        await p.pc.setLocalDescription(await p.pc.createOffer());
-        send({ type: "signal", to: p.id, signal: "offer", sdp: p.pc.localDescription.sdp });
+        const description = await p.pc.createOffer();
+        if (!live()) return;
+        await p.pc.setLocalDescription(description);
+        if (live()) send({ type: "signal", to: p.id, signal: "offer", sdp: p.pc.localDescription.sdp });
       } finally {
-        p.makingOffer = false;
+        if (p.offerEpoch === epoch) p.makingOffer = false;
       }
     }
     async function receive(m) {
-      var _a, _b;
+      var _a, _b, _c;
       if (!room) return;
       if (m.type === "call-state" && room.call) {
         room.call.started = m.started || 0;
@@ -3230,9 +3822,10 @@
         return;
       }
       if (m.type === "peer-left") {
-        (_a = room.peers.get(m.id)) == null ? void 0 : _a.pc.close();
+        (_a = room.peers.get(m.id)) == null ? void 0 : _a.route.close();
+        (_b = room.peers.get(m.id)) == null ? void 0 : _b.pc.close();
         room.peers.delete(m.id);
-        (_b = room.tiles.get(m.id)) == null ? void 0 : _b.remove();
+        (_c = room.tiles.get(m.id)) == null ? void 0 : _c.remove();
         room.tiles.delete(m.id);
         room.states.delete(m.id);
         renderMembers();
@@ -3280,7 +3873,12 @@
       const collision = m.signal === "offer" && (p.makingOffer || pc.signalingState !== "stable"), polite = room.id > m.from;
       p.ignore = !polite && collision;
       if (p.ignore) return;
-      if (collision) await pc.setLocalDescription({ type: "rollback" });
+      if (collision) {
+        p.offerEpoch = (p.offerEpoch || 0) + 1;
+        p.makingOffer = false;
+        await pc.setLocalDescription({ type: "rollback" });
+      }
+      ;
       await pc.setRemoteDescription({ type: m.signal, sdp: m.sdp });
       for (const c of p.queue.splice(0)) await pc.addIceCandidate(c);
       if (m.signal === "offer") {
@@ -3289,26 +3887,41 @@
       }
     }
     async function toggle(kind) {
-      if (!room) return;
-      const tracks = kind === "audio" ? room.stream.getAudioTracks() : room.stream.getVideoTracks();
-      if (tracks.length) tracks.forEach((t) => t.enabled = !t.enabled);
-      else {
-        const stream = await navigator.mediaDevices.getUserMedia(kind === "audio" ? { audio: { echoCancellation: true } } : { video: true });
-        for (const t of stream.getTracks()) {
-          room.stream.addTrack(t);
-          for (const p of room.peers.values()) {
-            if (kind === "video" && room.screen) continue;
-            const sender = p.pc.getSenders().find((s) => {
-              var _a;
-              return ((_a = s.track) == null ? void 0 : _a.kind) === kind;
-            });
-            if (sender) await sender.replaceTrack(t);
-            else p.pc.addTrack(t, room.stream);
+      var _a;
+      const active = room;
+      if (!active) return;
+      (_a = active.pendingMedia) != null ? _a : active.pendingMedia = /* @__PURE__ */ new Set();
+      if (active.pendingMedia.has(kind)) return;
+      active.pendingMedia.add(kind);
+      try {
+        const tracks = kind === "audio" ? active.stream.getAudioTracks() : active.stream.getVideoTracks();
+        if (tracks.length) tracks.forEach((t) => t.enabled = !t.enabled);
+        else {
+          const stream = await navigator.mediaDevices.getUserMedia(kind === "audio" ? { audio: { echoCancellation: true } } : { video: true });
+          if (room !== active) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          for (const t of stream.getTracks()) {
+            active.stream.addTrack(t);
+            for (const p of active.peers.values()) {
+              if (room !== active) return;
+              if (kind === "video" && active.screen) continue;
+              const sender = p.pc.getSenders().find((s) => {
+                var _a2;
+                return ((_a2 = s.track) == null ? void 0 : _a2.kind) === kind;
+              });
+              if (sender) await sender.replaceTrack(t);
+              else p.pc.addTrack(t, active.stream);
+            }
           }
         }
+        if (room !== active) return;
+        if (!active.screen) tile(active.id, S2.user.name, active.stream, true);
+        state();
+      } finally {
+        active.pendingMedia.delete(kind);
       }
-      if (!room.screen) tile(room.id, S2.user.name, room.stream, true);
-      state();
     }
     async function replaceVideo(track, stream) {
       for (const p of room.peers.values()) {
@@ -3329,26 +3942,28 @@
       }
       if (!((_a = navigator.mediaDevices) == null ? void 0 : _a.getDisplayMedia)) throw Error("当前系统不支持屏幕共享");
       const active = room, screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 20 } }, audio: false });
-      if (room !== active) {
+      if (room !== active || active.id !== active.host) {
         screen.getTracks().forEach((t) => t.stop());
         return;
       }
       room.screen = screen;
       screen.getVideoTracks()[0].onended = () => stopSharing();
       await replaceVideo(screen.getVideoTracks()[0], screen);
-      tile(room.id, S2.user.name, screen, true);
+      if (room !== active) return;
+      tile(active.id, S2.user.name, screen, true);
       state();
     }
     async function stopSharing() {
       if (!(room == null ? void 0 : room.screen)) return;
-      const screen = room.screen;
-      room.screen = null;
+      const active = room, screen = active.screen;
+      active.screen = null;
       screen.getTracks().forEach((t) => {
         t.onended = null;
         t.stop();
       });
-      await replaceVideo(room.stream.getVideoTracks()[0] || null, room.stream);
-      tile(room.id, S2.user.name, room.stream, true);
+      await replaceVideo(active.stream.getVideoTracks()[0] || null, active.stream);
+      if (room !== active) return;
+      tile(active.id, S2.user.name, active.stream, true);
       state();
     }
     async function record() {
@@ -3537,7 +4152,11 @@
       clearInterval(active.ping);
       clearInterval(active.callClock);
       active.ws.close();
-      for (const p of active.peers.values()) p.pc.close();
+      for (const p of active.peers.values()) {
+        p.route.close();
+        p.pc.close();
+      }
+      ;
       active.stream.getTracks().forEach((t) => t.stop());
       (_a = active.screen) == null ? void 0 : _a.getTracks().forEach((t) => {
         t.onended = null;
@@ -3601,7 +4220,7 @@
   var $ = (s, r = document) => r.querySelector(s);
   var $$ = (s, r = document) => [...r.querySelectorAll(s)];
   var esc = (v) => String(v != null ? v : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  var paths = { chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
+  var paths = { cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
   var icon = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'.concat(paths[n] || paths.chat, '"/></svg>');
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => {
@@ -3609,7 +4228,7 @@
     return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, spaceUser: "me", tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -3648,6 +4267,35 @@
     return r.status === 204 ? null : r.json();
   }
   var action = (p, body = {}) => api(p, { method: "POST", body });
+  function shortTime(value) {
+    const d = new Date(value), today = /* @__PURE__ */ new Date();
+    if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    const yesterday = new Date(Date.now() - 864e5);
+    if (d.toDateString() === yesterday.toDateString()) return "昨天";
+    return "".concat(d.getMonth() + 1, "/").concat(d.getDate());
+  }
+  function fullTime(t) {
+    return new Date(t).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  }
+  function preview(m) {
+    if (!m) return "开始聊天";
+    if (m.kind === "call" && !m.recalled) return Calls.summary(m);
+    if (m.kind === "forward" && !m.recalled) {
+      try {
+        return "[聊天记录] " + JSON.parse(m.text).title;
+      } catch (e) {
+        return "[聊天记录]";
+      }
+    }
+    if (m.kind === "meeting" && !m.recalled) {
+      try {
+        return "[会议] " + JSON.parse(m.text).title;
+      } catch (e) {
+        return "[会议]";
+      }
+    }
+    return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
+  }
   function modal(title, body, footer = "", wide = false) {
     var _a;
     (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
@@ -3670,11 +4318,15 @@
     return '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>");
   }
   function renderAuth(register = false) {
+    if (register && !S.registrationEnabled) {
+      toast("暂未开放自助注册，请联系管理员");
+      register = false;
+    }
     const choices = register ? cartoonChoices(8) : [];
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links"><button type="button" data-action="').concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", '</button><button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "", '<input name="account" autocomplete="username" placeholder="').concat(register ? "登录别名（可选）" : "WeLink 号码 / 登录别名", '" aria-label="账号" minlength="5" maxlength="24" ').concat(register ? "" : "required", '><input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">WeLink 独立账号 · 密码加密保存<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.0 · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -3705,7 +4357,7 @@
         localStorage.setItem("welink_token", S.token);
         S.user = result.user;
         await enter();
-        if (register) modal("注册成功", '<p class="hint">请记住你的 WeLink 号码，可用于登录和添加好友。</p><div class="welink-number">'.concat(esc(S.user.number), "</div>"), '<button class="primary" data-action="close-modal">开始使用</button>');
+        if (register) modal("注册成功", '<p class="hint">请记住你的 WeLink 号码，可用于登录和搜索用户。</p><div class="welink-number">'.concat(esc(S.user.number), "</div>"), '<button class="primary" data-action="close-modal">开始使用</button>');
       } catch (err) {
         $("#auth-error").textContent = err.message;
         submit.disabled = false;
@@ -3714,11 +4366,11 @@
   }
   function nav() {
     const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
-    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["remote", "monitor", "远程协助", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t === "远程协助" ? "远程" : t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
+    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["remote", "monitor", "远程协助", 0], ["drive", "cloud", "网盘", 0], ["space", "notebook", "空间", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t === "远程协助" ? "远程" : t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "添加好友或群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "添加好友或群聊", "add-menu"), '</div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div><div id="main-content" style="display:contents"></div></main></div>');
+    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div><div id="main-content" style="display:contents"></div></main></div>');
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
@@ -3730,49 +4382,20 @@
   function renderSidebar() {
     const list = $("#sidebar-content");
     if (!list) return;
+    const q = S.search.toLowerCase();
     if (S.tab === "contacts") {
-      const pending = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length;
-      list.innerHTML = '<button class="notify-row" data-action="requests">'.concat(icon("bell"), "好友通知").concat(pending ? '<span class="badge">'.concat(pending, "</span>") : "", '</button><button class="notify-row group-notice-row" data-group="requests">').concat(icon("contacts"), "群通知").concat(S.groupRequests.some((q) => q.canReview && q.status === "pending") ? '<span class="badge">' + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length + "</span>" : "", '</button><div class="contact-tab"><button data-contact-tab="friends" class="').concat(S.contactTab === "friends" ? "active" : "", '">好友</button><button data-contact-tab="groups" class="').concat(S.contactTab === "groups" ? "active" : "", '">群聊</button></div>').concat(S.contactTab === "friends" ? Contacts.sidebar() : S.conversations.filter((c) => {
+      list.innerHTML = '<button class="notify-row group-notice-row" data-group="requests">' + icon("contacts") + '群通知</button><div class="contact-tab"><button data-contact-tab="friends" class="' + (S.contactTab === "friends" ? "active" : "") + '">联系人</button><button data-contact-tab="groups" class="' + (S.contactTab === "groups" ? "active" : "") + '">群聊</button></div>' + (S.contactTab === "friends" ? Contacts.sidebar() : S.conversations.filter((c) => {
         var _a;
-        return c.kind === "group" && (c.name + (((_a = c.group) == null ? void 0 : _a.number) || "")).toLowerCase().includes(S.search.toLowerCase());
+        return c.kind === "group" && (c.name + (((_a = c.group) == null ? void 0 : _a.number) || "")).toLowerCase().includes(q);
       }).map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
       return;
     }
-    ;
     const result = S.conversations.filter((c) => {
-      var _a, _b;
-      return "".concat(c.name).concat(((_a = c.group) == null ? void 0 : _a.number) || "").concat(((_b = c.last) == null ? void 0 : _b.text) || "").toLowerCase().includes(S.search.toLowerCase());
+      var _a, _b, _c;
+      return (c.name + (((_a = c.peer) == null ? void 0 : _a.number) || "") + (((_b = c.group) == null ? void 0 : _b.number) || "") + (((_c = c.last) == null ? void 0 : _c.text) || "")).toLowerCase().includes(q);
     });
-    list.innerHTML = result.map(conversationRow).join("") || '<div class="empty-list">'.concat(S.search ? "没有找到相关会话" : "暂无消息<br>添加好友后，消息会出现在这里", "</div>").concat(S.search ? "" : '<button class="search-action" data-action="add-friend">＋ 添加好友</button>');
-  }
-  function shortTime(value) {
-    const d = new Date(value), today = /* @__PURE__ */ new Date();
-    if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-    const yesterday = new Date(Date.now() - 864e5);
-    if (d.toDateString() === yesterday.toDateString()) return "昨天";
-    return "".concat(d.getMonth() + 1, "/").concat(d.getDate());
-  }
-  function fullTime(t) {
-    return new Date(t).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-  }
-  function preview(m) {
-    if (!m) return "开始聊天";
-    if (m.kind === "call" && !m.recalled) return Calls.summary(m);
-    if (m.kind === "forward" && !m.recalled) {
-      try {
-        return "[聊天记录] " + JSON.parse(m.text).title;
-      } catch (e) {
-        return "[聊天记录]";
-      }
-    }
-    if (m.kind === "meeting" && !m.recalled) {
-      try {
-        return "[会议] " + JSON.parse(m.text).title;
-      } catch (e) {
-        return "[会议]";
-      }
-    }
-    return m.recalled ? "消息已撤回" : m.kind === "voice" ? "[语音]" : m.kind === "video" ? "[视频]" : m.kind === "image" ? "[图片]" : m.kind === "file" ? "[文件] ".concat(m.fileName) : m.text;
+    const users = q ? S.friends.filter((u) => (u.name + (u.remark || "") + u.number + u.id + u.account).toLowerCase().includes(q)) : [];
+    list.innerHTML = result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "") + '<button class="search-action" data-action="add-friend">查找用户</button>';
   }
   function conversationRow(c) {
     return '<button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b><time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", "</div></div></button>");
@@ -3784,6 +4407,20 @@
     var _a, _b;
     const main = $("#main-content");
     if (!main) return;
+    if (S.tab === "drive") {
+      Cloud.renderDrive().catch((e) => toast(e.message));
+      return;
+    }
+    if (S.tab === "space") {
+      Cloud.renderSpace(S.spaceUser || "me").catch((e) => {
+        main.innerHTML = empty("空间", e.message);
+      });
+      return;
+    }
+    if (S.tab === "admin") {
+      Admin.render().catch((e) => toast(e.message));
+      return;
+    }
     if (S.tab === "contacts") {
       if (S.profile) {
         renderContactProfile();
@@ -3864,13 +4501,6 @@
       e.target.value = "";
     };
     const area = $("#messages");
-    area.ondragover = (e) => {
-      e.preventDefault();
-    };
-    area.ondrop = (e) => {
-      e.preventDefault();
-      if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
-    };
     renderReply();
     renderSharing();
     Media.mount();
@@ -3879,7 +4509,7 @@
     Mentions.mount();
   }
   function empty(title, sub, add = false) {
-    return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">添加好友</button>' : "", "</div>");
+    return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p>").concat(add ? '<button class="primary" data-action="add-friend">查找用户</button>' : "", "</div>");
   }
   function fileURL(id) {
     return "/api/files/" + encodeURIComponent(id);
@@ -3918,7 +4548,7 @@
       return date + messageHTML(m);
     }).join("");
     if (S.historyMode) area.insertAdjacentHTML("beforeend", '<div class="history-live-bar"><button data-action="load-newer">查看后续消息</button><button data-action="latest-messages">返回最新消息</button></div>');
-    const pending = Outbox.html(S.active);
+    const pending = Outbox.html(S.active) + Transfers.html(S.active);
     if (!S.messages.length && !pending) area.innerHTML = '<div class="timestamp">和好友打个招呼吧</div>';
     area.insertAdjacentHTML("beforeend", pending);
     Forwarding.sync();
@@ -4007,20 +4637,20 @@
     d.closest(".composer").classList.toggle("has-reply", !!S.reply);
     d.innerHTML = S.reply ? "<span>回复 ".concat(esc(S.reply.name), "：").concat(esc(preview(S.reply)), "</span>").concat(btn("close", "取消引用", "cancel-reply")) : "";
   }
-  async function upload(file, forceFile = false) {
-    if (!forceFile && (/^video\//.test(file.type) || /\.(mp4|webm|m4v)$/i.test(file.name))) {
+  async function upload(file, forceFile = false, cid = S.active) {
+    if (cid === S.active && !forceFile && (/^video\//.test(file.type) || /\.(mp4|webm|m4v)$/i.test(file.name))) {
       await Media.sendVideo(file);
       return;
     }
-    if (!S.active) return;
+    if (!cid) return;
     try {
-      await Outbox.enqueue(S.active, { kind: forceFile ? "file" : "auto", text: "" }, file);
+      await Outbox.enqueue(cid, { kind: forceFile ? "file" : "auto", text: "" }, file);
     } catch (e) {
       toast(e.message);
     }
   }
   function bytes(n) {
-    return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.ceil(n / 1024) + " KB" : n + " B";
+    return n >= 1099511627776 ? (n / 1099511627776).toFixed(1) + " TB" : n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.ceil(n / 1024) + " KB" : n + " B";
   }
   async function refresh() {
     var _a, _b;
@@ -4045,7 +4675,7 @@
       S.reply = null;
       closeModal();
       renderShell();
-      toast("你已退出该群或群已解散");
+      toast("会话列表已更新");
     }
     renderSidebar();
     updateRail();
@@ -4059,6 +4689,7 @@
     refreshTimer = setTimeout(() => refresh().catch((e) => toast(e.message)), 200);
   }
   async function enter() {
+    S.policy = await api("/api/config");
     await refresh();
     await Outbox.start();
     renderShell();
@@ -4100,6 +4731,8 @@
       const d = event.data;
       if (event.type === "call") {
         Calls.changed(d);
+      } else if (event.type === "drive" || event.type === "space") {
+        Cloud.changed(event.type);
       } else if (event.type === "call-history") {
         Calls.historyChanged();
       } else if (event.type === "message") {
@@ -4170,6 +4803,9 @@
     S.signingOut = true;
     Calls.stop();
     Outbox.stop();
+    Transfers.stop();
+    Cloud.reset();
+    Admin.reset();
     Avatars.reset();
     Mentions.reset();
     S.drafts = {};
@@ -4196,7 +4832,7 @@
     }
   }
   function addFriend() {
-    modal("添加好友", '<label for="find-user">WeLink 号码 / 昵称</label><input id="find-user" placeholder="输入 WeLink 号码或昵称" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>');
+    modal("查找用户", '<label for="find-user">WeLink 号码 / 昵称</label><input id="find-user" placeholder="输入 WeLink 号码或昵称" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>');
     $("#find-user").oninput = (e) => {
       clearTimeout(searchTimer);
       const q = e.target.value;
@@ -4205,7 +4841,7 @@
           const users = await api("/api/users?q=" + encodeURIComponent(q));
           const list = $("#user-results");
           if (!list) return;
-          list.innerHTML = users.map((u) => '<div class="utility-row">'.concat(av(u), '<div class="body"><b>').concat(esc(u.name), "</b><p>").concat(esc(u.number || u.account), '</p></div><button class="secondary" data-request-user="').concat(u.id, '" data-name="').concat(esc(u.name), '">添加</button></div>')).join("") || '<div class="empty-list">未找到用户</div>';
+          list.innerHTML = users.map((u) => '<div class="utility-row">'.concat(av(u), '<div class="body"><b>').concat(esc(u.name), "</b><p>").concat(esc(u.number || u.account), '</p></div><button class="secondary" data-start-chat="').concat(u.id, '">发消息</button><button class="icon-btn" data-user-call="').concat(u.id, '" data-user-call-mode="audio" title="语音通话">').concat(icon("phone"), '</button><button class="icon-btn" data-user-call="').concat(u.id, '" data-user-call-mode="video" title="视频通话">').concat(icon("video"), "</button></div>")).join("") || '<div class="empty-list">未找到用户</div>';
         } catch (e2) {
           modalError(e2);
         }
@@ -4222,7 +4858,7 @@
     };
   }
   function createGroup() {
-    modal("创建群聊", '<label for="group-name">群名称</label><input id="group-name" maxlength="60" placeholder="给群聊起个名字"><label>选择好友</label><div class="member-select">'.concat(S.friends.map((u) => '<label class="check-row">'.concat(av(u)).concat(esc(u.name), '<input type="checkbox" value="').concat(u.id, '" name="group-member"></label>')).join("") || '<p class="hint">请先添加好友。</p>', "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
+    modal("创建群聊", '<label for="group-name">群名称</label><input id="group-name" maxlength="60" placeholder="给群聊起个名字"><label>选择好友</label><div class="member-select">'.concat(S.friends.map((u) => '<label class="check-row">'.concat(av(u)).concat(esc(u.name), '<input type="checkbox" value="').concat(u.id, '" name="group-member"></label>')).join("") || '<p class="hint">请先查找用户。</p>', "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
     modalHandler = async () => {
       const members = $$("input[name=group-member]:checked").map((x) => x.value);
       const c = await action("/api/conversations", { kind: "group", name: $("#group-name").value, members });
@@ -4236,9 +4872,9 @@
     $("#main-content").innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), '<h2>个人资料</h2></header><div class="contact-profile">').concat(Contacts.profile(u), "</div>");
   }
   async function showRequests() {
-    modal("好友通知", '<div class="inline-loading">正在读取…</div>', "", true);
+    modal("联系人通知", '<div class="inline-loading">正在读取…</div>', "", true);
     await refresh();
-    $(".modal-body").innerHTML = S.requests.map((q) => '<div class="utility-row">'.concat(av(q), '<div class="body"><b>').concat(esc(q.name), "</b><p>").concat(q.sender === S.user.id ? "我：" : "").concat(esc(q.message), "</p><p>").concat(shortTime(q.created), "</p></div>").concat(q.status === "pending" && q.recipient === S.user.id ? '<div class="request-actions"><button class="secondary" data-resolve="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-resolve="').concat(q.id, '" data-accept="true">同意</button></div>') : '<span class="muted">'.concat({ pending: "等待验证", accepted: "已添加", rejected: "已拒绝", cancelled: "已取消" }[q.status], "</span>"), "</div>")).join("") || '<div class="empty-list">暂无好友通知</div>';
+    $(".modal-body").innerHTML = S.requests.map((q) => '<div class="utility-row">'.concat(av(q), '<div class="body"><b>').concat(esc(q.name), "</b><p>").concat(q.sender === S.user.id ? "我：" : "").concat(esc(q.message), "</p><p>").concat(shortTime(q.created), "</p></div>").concat(q.status === "pending" && q.recipient === S.user.id ? '<div class="request-actions"><button class="secondary" data-resolve="'.concat(q.id, '" data-accept="false">拒绝</button><button class="primary" data-resolve="').concat(q.id, '" data-accept="true">同意</button></div>') : '<span class="muted">'.concat({ pending: "等待验证", accepted: "已添加", rejected: "已拒绝", cancelled: "已取消" }[q.status], "</span>"), "</div>")).join("") || '<div class="empty-list">暂无联系人通知</div>';
   }
   async function chatDetail() {
     var _a, _b;
@@ -4309,10 +4945,10 @@
     };
   }
   function renderMyPage() {
-    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
+    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("folder"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="remote">').concat(icon("monitor"), '<div class="body" style="text-align:left">远程协助</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="space">').concat(icon("file"), '<div class="body" style="text-align:left">我的空间</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   function settings() {
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.0 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       document.body.classList.toggle("dark", $("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -4711,7 +5347,9 @@
     if (!b) return;
     try {
       if (b.dataset.nav) {
+        closeModal();
         S.tab = b.dataset.nav;
+        if (S.tab === "space") S.spaceUser = "me";
         S.search = "";
         S.profile = null;
         renderShell();
@@ -4730,6 +5368,14 @@
         S.profile = S.friends.find((u) => u.id === b.dataset.profile);
         renderMain();
         $(".shell").classList.add("in-chat");
+        return;
+      }
+      if (b.dataset.userCall) {
+        closeModal();
+        const c = await action("/api/conversations", { kind: "direct", members: [b.dataset.userCall] });
+        await refresh();
+        await selectConversation(c.id);
+        await Calls.dial(c.id, b.dataset.userCallMode === "video" ? "video" : "audio");
         return;
       }
       if (b.dataset.startChat) {
@@ -4840,7 +5486,7 @@
           break;
         case "add-menu": {
           const r = b.getBoundingClientRect();
-          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="add-friend">'.concat(icon("contacts"), '添加好友</button><button data-group="search">').concat(icon("search"), '查找群聊</button><button data-action="create-group">').concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
+          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="add-friend">'.concat(icon("contacts"), '查找用户</button><button data-group="search">').concat(icon("search"), '查找群聊</button><button data-action="create-group">').concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
           break;
         }
         case "more-menu": {
@@ -5024,11 +5670,14 @@
     }
   });
   if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
+  var Transfers = createTransfers({ S, api, esc, av, bytes, randomID, renderMessages, queueRefresh, toast });
+  var Cloud = createCloud({ S, api, modal, closeModal, toast, esc, icon, bytes, fullTime, renderShell, upload: Transfers.upload });
+  var Admin = createAdmin({ S, api, modal, closeModal, toast, esc, icon, refresh });
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
   var Desktop = createDesktop({ S, modal, closeModal, toast, markRead });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
-  var Outbox = createOutbox({ S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal });
+  var Outbox = createOutbox({ sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
@@ -5040,6 +5689,7 @@
   async function bootstrap() {
     try {
       S.config = await api("/local/config");
+      S.registrationEnabled = (await api("/api/public-config")).registrationEnabled;
       if (S.token) {
         try {
           S.user = await api("/api/me");
@@ -5063,4 +5713,49 @@
     }
   }
   bootstrap();
+  var fileDragDepth = 0;
+  var fileDrag = (e) => {
+    var _a;
+    return Array.from(((_a = e.dataTransfer) == null ? void 0 : _a.types) || []).includes("Files");
+  };
+  document.addEventListener("dragenter", (e) => {
+    var _a;
+    if (!fileDrag(e) || !S.user) return;
+    e.preventDefault();
+    if (S.tab === "drive" || S.tab === "messages" && S.active) {
+      fileDragDepth++;
+      (_a = document.querySelector(".shell")) == null ? void 0 : _a.classList.add("file-drop-active");
+    }
+  });
+  document.addEventListener("dragover", (e) => {
+    if (fileDrag(e)) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    }
+  });
+  document.addEventListener("dragleave", (e) => {
+    var _a;
+    if (fileDrag(e) && --fileDragDepth <= 0) (_a = document.querySelector(".shell")) == null ? void 0 : _a.classList.remove("file-drop-active");
+  });
+  document.addEventListener("drop", async (e) => {
+    var _a;
+    if (!fileDrag(e)) return;
+    e.preventDefault();
+    fileDragDepth = 0;
+    (_a = document.querySelector(".shell")) == null ? void 0 : _a.classList.remove("file-drop-active");
+    const files = Array.from(e.dataTransfer.files || []), cid = S.active, owner = S.token;
+    if (!S.user) return;
+    if (S.tab === "drive") {
+      await Cloud.sendFiles(files);
+      return;
+    }
+    if (S.tab !== "messages" || !cid) {
+      toast("请先打开聊天或网盘");
+      return;
+    }
+    for (const file of files) {
+      if (S.token !== owner) return;
+      await upload(file, false, cid);
+    }
+  });
 })();

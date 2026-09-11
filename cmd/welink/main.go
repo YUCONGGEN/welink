@@ -17,6 +17,7 @@ func main() {
 	dir := flag.String("data", "", "client private directory")
 	server := flag.String("server", "", "server URL override")
 	pin := flag.String("fingerprint", "", "server certificate SHA-256")
+	assets := flag.String("assets", "", "optional local UI directory for development")
 	flag.Parse()
 	if *dir == "" {
 		root, e := os.UserConfigDir()
@@ -60,7 +61,7 @@ func main() {
 	}
 	var window windowHost
 	var windowMu sync.RWMutex
-	c, e := client.New(client.Options{Directory: *dir, Listen: *listen, Server: *server, Fingerprint: *pin, WindowAction: func(action string) {
+	c, e := client.New(client.Options{AssetsDirectory: *assets, Directory: *dir, Listen: *listen, Server: *server, Fingerprint: *pin, WindowAction: func(action string) {
 		windowMu.RLock()
 		target := window
 		windowMu.RUnlock()

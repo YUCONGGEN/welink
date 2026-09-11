@@ -1,6 +1,6 @@
 import {openLocalStore,transaction,scopedRows,localGet,localPut} from './local-store.js';
 
-export function createOutbox({S,api,toast,esc,av,bytes,randomID,Mentions,renderMessages,renderReply,queueRefresh,modal,closeModal}){
+export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentions,renderMessages,renderReply,queueRefresh,modal,closeModal}){
  const $=selector=>document.querySelector(selector);
  let scope='',generation=0,rows=[],drafts=new Map(),timer,working=false,controller,saveChain=Promise.resolve(),storageWarning=false;
  const scopeFor=()=>JSON.stringify([new URL(S.config.server).href.replace(/\/$/,''),(S.config.fingerprint||'').toLowerCase(),S.user?.id]);
@@ -22,13 +22,13 @@ export function createOutbox({S,api,toast,esc,av,bytes,randomID,Mentions,renderM
   try{let m=S.messages.find(m=>m.id===d.replyId);if(!m){const messages=await api('/api/conversations/'+cid+'/messages?around='+encodeURIComponent(d.replyId));m=messages.find(m=>m.id===d.replyId)}if(!alive(g,key)||S.active!==cid||drafts.get(cid)!==d)return;if(m&&!m.recalled){S.reply=m;renderReply()}else{d.replyId='';S.reply=null;renderReply();await localPut('drafts',d);toast('草稿引用的消息已撤回或不可访问')}}catch(error){if(!alive(g,key)||S.active!==cid||drafts.get(cid)!==d)return;if(error.status===400||error.status===403||error.status===404){d.replyId='';S.reply=null;renderReply();await localPut('drafts',d)}else toast('引用暂未恢复，请联网后重试')}
  }
  async function enqueue(cid,body,file,metadata={},clearDraft=false){
-  if(!scope||!S.user||S.signingOut)throw Error('请先登录再发送');if(file?.size>50*1024*1024)throw Error('文件不能超过 50 MB');
+  if(!scope||!S.user||S.signingOut)throw Error('请先登录再发送');if(file&&S.policy?.chatMaxAttachmentBytes>0&&file.size>S.policy.chatMaxAttachmentBytes)throw Error('文件超过服务器配置的大小限制');if(file?.size>(S.policy.chatPersistAttachmentBytes??50*1024*1024))return sendLarge(cid,body,file,metadata);
   const g=generation,key=scope,id=randomID(),draftRevision=drafts.get(cid)?.revision,record={id,scope:key,cid,body:{...body,clientId:id},created:Date.now(),state:'waiting',attempts:0,next:0,file:file?{name:file.name,type:file.type,size:file.size}:null,metadata};
   await saveChain;if(!alive(g,key))throw Error('登录账号已变化，请重新选择内容');
-  await transaction(['queue','blobs','drafts'],'readwrite',(stores,done,abort)=>{const request=stores.queue.index('scope').getAll(key);request.onsuccess=()=>{
-   if(request.result.length>=100||request.result.reduce((n,r)=>n+(r.file?.size||0),0)+(file?.size||0)>250*1024*1024){abort(Error('待发送内容已达上限（100 条 / 250 MB），请先处理发送队列'));return}
+  try{await transaction(['queue','blobs','drafts'],'readwrite',(stores,done,abort)=>{const request=stores.queue.index('scope').getAll(key);request.onsuccess=()=>{
+   if(request.result.length>=(S.policy.chatOfflineQueueMessages||100)||request.result.reduce((n,r)=>n+(r.file?.size||0),0)+(file?.size||0)>(S.policy.chatOfflineQueueBytes??250*1024*1024)){abort(Error('本机待发送队列已满，请先处理已有消息'));return}
    stores.queue.add(record);if(file)stores.blobs.put(file,id);if(clearDraft){const draft=stores.drafts.get(JSON.stringify([key,cid]));draft.onsuccess=()=>{if(draft.result?.revision===draftRevision)stores.drafts.delete(JSON.stringify([key,cid]))}}
-  }});
+  }});}catch(error){if(file&&alive(g,key))return sendLarge(cid,body,file,metadata);throw error}
   if(!alive(g,key))return;storageWarning=false;if(clearDraft&&drafts.get(cid)?.revision===draftRevision){drafts.delete(cid);S.drafts[cid]='';Mentions.clear(cid)}await refreshRows(g,key).catch(storageError);kick();
  }
  async function update(id,changes){await transaction(['queue'],'readwrite',stores=>{const r=stores.queue.get(id);r.onsuccess=()=>{if(r.result)stores.queue.put({...r.result,...changes})}})}

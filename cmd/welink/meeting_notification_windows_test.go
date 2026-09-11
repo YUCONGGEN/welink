@@ -14,7 +14,15 @@ func TestNativeMeetingNotificationWhileHidden(t *testing.T) {
 	if os.Getenv("WELINK_NATIVE_DESKTOP_TEST") != "1" {
 		t.Skip("opt-in native meeting notification")
 	}
-	dir := t.TempDir()
+	if err := os.MkdirAll(".local/native-desktop-tests", 0700); err != nil {
+		t.Fatal(err)
+	}
+	// The WebView loader remains mapped until process exit, so Go's per-test
+	// TempDir cleanup cannot remove it while this executable is still running.
+	dir, err := os.MkdirTemp(".local/native-desktop-tests", "invite-")
+	if err != nil {
+		t.Fatal(err)
+	}
 	window, err := newWindow("about:blank", dir)
 	if err != nil {
 		t.Fatal(err)

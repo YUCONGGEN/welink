@@ -123,7 +123,7 @@ func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	room := &meetingRoom{Code: code, Title: p.Title, Owner: uid(r), ConversationID: p.ConversationID, Created: now(), Expires: now() + 7200000, HostID: uid(r), Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}}
+	room := &meetingRoom{Code: code, Title: p.Title, Owner: uid(r), ConversationID: p.ConversationID, Created: now(), Expires: now() + int64(s.settings.Meetings.DurationMinutes)*60000, HostID: uid(r), Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}}
 	s.meetings.rooms[code] = room
 	s.meetings.Unlock()
 	if p.ConversationID != "" {
@@ -140,7 +140,7 @@ func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Timers terminate idle rooms too, so abandoned invites do not remain joinable.
-	time.AfterFunc(2*time.Hour, func() { s.finishMeeting(code, "会议已到期") })
+	time.AfterFunc(time.Duration(s.settings.Meetings.DurationMinutes)*time.Minute, func() { s.finishMeeting(code, "会议已到期") })
 	s.push(ids, "meeting-invite", map[string]any{"code": code, "title": p.Title, "from": uid(r), "conversationId": p.ConversationID, "expires": room.Expires})
 	ok(w, room)
 }
@@ -287,7 +287,7 @@ func (s *Server) meetingSocket(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "只有当前群成员可以加入群会议")
 		return
 	}
-	if len(room.Peers) >= maxMeetingPeers || room.Peers[u.ID] != nil {
+	if len(room.Peers) >= s.settings.Meetings.MaxParticipants || room.Peers[u.ID] != nil {
 		s.meetings.Unlock()
 		fail(w, 409, "会议已满或当前账号已入会")
 		return

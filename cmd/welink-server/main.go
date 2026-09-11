@@ -26,6 +26,11 @@ import (
 )
 
 func main() {
+	configPath := flag.String("config", "", "JSON server configuration file")
+	bootstrapPasswordFile := flag.String("bootstrap-admin-password-file", "", "private file containing the initial administrator password")
+	bootstrapAlias := flag.String("bootstrap-admin-account", "", "initial administrator login alias")
+	bootstrapName := flag.String("bootstrap-admin-name", "", "initialize the first account in an empty database")
+	bootstrapOutput := flag.String("bootstrap-admin-output", "", "private file for initial credentials")
 	addr := flag.String("listen", ":8250", "API listen address")
 	data := flag.String("data", "data", "database and uploads directory")
 	downloads := flag.String("downloads", "downloads", "public downloads directory")
@@ -34,13 +39,38 @@ func main() {
 	initTLS := flag.Bool("init-tls", false, "create local TLS certificate and print fingerprint")
 	web := flag.String("download-listen", "", "optional HTTP listener serving only downloads")
 	flag.Parse()
+	settings, configErr := server.LoadSettings(*configPath)
+	if configErr != nil {
+		log.Fatal(configErr)
+	}
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "listen":
+			settings.Listen = *addr
+		case "download-listen":
+			settings.DownloadListen = *web
+		case "data":
+			settings.DataDir = *data
+		case "downloads":
+			settings.DownloadsDir = *downloads
+		}
+	})
+	*addr, *web, *data, *downloads = settings.Listen, settings.DownloadListen, settings.DataDir, settings.DownloadsDir
+	if *bootstrapName != "" {
+		id, err := server.BootstrapAdmin(settings, *bootstrapName, *bootstrapAlias, *bootstrapPasswordFile, *bootstrapOutput)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("administrator account created; configure admin.users with immutable ID %s", id)
+		return
+	}
 	if *initTLS {
 		if err := generateTLS(*data); err != nil {
 			log.Fatal(err)
 		}
 		return
 	}
-	s, e := server.New(server.Config{DataDir: *data, DownloadsDir: *downloads})
+	s, e := server.New(server.Config{DataDir: *data, DownloadsDir: *downloads, Settings: &settings})
 	if e != nil {
 		log.Fatal(e)
 	}

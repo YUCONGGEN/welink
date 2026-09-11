@@ -1,0 +1,62 @@
+{
+  "listen": ":8250",
+  "download_listen": ":8251",
+  "data_dir": "/Users/yu/bin/welink/data",
+  "downloads_dir": "/Users/yu/bin/welink/downloads",
+  "public_url": "http://www.yucg.cn:8250",
+  "download_url": "http://www.yucg.cn:8251",
+  "storage": {
+    "primary_enabled": true,
+    "root": "/Volumes/My1TB/yuconggen/welink",
+    "require_marker": true,
+    "reserve_bytes": 268435456,
+    "concurrent_uploads": 4,
+    "volumes": []
+  },
+  "chat": {
+    "max_attachment_bytes": 0,
+    "persist_attachment_bytes": 52428800,
+    "offline_queue_bytes": 262144000,
+    "offline_queue_messages": 100,
+    "uploads_per_hour": 0
+  },
+  "drive": {
+    "quota_gb": 100,
+    "max_files": 10000
+  },
+  "spaces": {
+    "max_document_bytes": 2097152,
+    "max_documents": 10000
+  },
+  "directory": {
+    "all_users": true
+  },
+  "admin": {
+    "users": []
+  },
+  "registration": {
+    "enabled": false
+  },
+  "media": {
+    "enabled": false,
+    "listen": ":8252",
+    "public_address": "www.yucg.cn",
+    "urls": ["turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"],
+    "secret_file": "/Users/yu/bin/welink/media-secret",
+    "realm": "welink",
+    "credential_seconds": 21600,
+    "direct_timeout_ms": 8000,
+    "relay_min_port": 20000,
+    "relay_max_port": 20127,
+    "max_allocations_per_user": 32,
+    "bytes_per_second": 4194304,
+    "allowed_peer_cidrs": []
+  },
+  "meetings": {
+    "max_participants": 8,
+    "duration_minutes": 120,
+    "stun_urls": [
+      "stun:www.yucg.cn:8252"
+    ]
+  }
+}

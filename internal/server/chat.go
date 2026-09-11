@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.db.Query(`SELECT c.id,c.kind,c.name,c.owner,c.announcement,c.created,x.pinned,x.muted,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id AND m.seq>x.read_seq AND m.sender<>x.user_id AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),COALESCE((SELECT MAX(m.created) FROM messages m WHERE m.conversation_id=c.id AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),c.created) FROM conversations c JOIN members x ON x.conversation_id=c.id WHERE x.user_id=? ORDER BY x.pinned DESC,10 DESC`, uid(r))
+	rows, e := s.db.Query(`SELECT c.id,c.kind,c.name,c.owner,c.announcement,c.created,x.pinned,x.muted,(SELECT COUNT(*) FROM messages m WHERE m.conversation_id=c.id AND m.seq>x.read_seq AND m.sender<>x.user_id AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),COALESCE((SELECT MAX(m.created) FROM messages m WHERE m.conversation_id=c.id AND NOT EXISTS(SELECT 1 FROM message_deletions md WHERE md.message_id=m.id AND md.user_id=x.user_id)),c.created) FROM conversations c JOIN members x ON x.conversation_id=c.id WHERE x.user_id=? AND NOT EXISTS(SELECT 1 FROM hidden_conversations h WHERE h.user_id=x.user_id AND h.conversation_id=c.id AND h.after_seq>=COALESCE((SELECT MAX(seq) FROM messages WHERE conversation_id=c.id),0)) ORDER BY x.pinned DESC,10 DESC,COALESCE((SELECT MAX(seq) FROM messages WHERE conversation_id=c.id),0) DESC`, uid(r))
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -86,7 +86,7 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, id)
 		if id != uid(r) {
 			if !contactAllowed(tx, uid(r), id) {
-				fail(w, 403, "只能与已添加的好友创建会话")
+				fail(w, 403, "无法与这个用户创建会话")
 				return
 			}
 		}
@@ -97,6 +97,14 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 		direct = strings.Join(ids, ":")
 		var old string
 		if tx.QueryRow("SELECT id FROM conversations WHERE direct_key=?", direct).Scan(&old) == nil {
+			if _, e = tx.Exec("DELETE FROM hidden_conversations WHERE user_id=? AND conversation_id=?", uid(r), old); e != nil {
+				s.dbError(w, e)
+				return
+			}
+			if e = tx.Commit(); e != nil {
+				s.dbError(w, e)
+				return
+			}
 			ok(w, map[string]string{"id": old})
 			return
 		}
@@ -232,7 +240,7 @@ func (s *Server) addMembers(w http.ResponseWriter, r *http.Request) {
 		added, pending := 0, 0
 		for _, target := range ids {
 			var n int
-			if e = tx.QueryRow("SELECT 1 FROM friends WHERE user_id=? AND peer_id=?", user, target).Scan(&n); e != nil {
+			if e = tx.QueryRow("SELECT 1 FROM directory_friends WHERE user_id=? AND peer_id=?", user, target).Scan(&n); e != nil {
 				return nil, nil, groupFail(403, "只能邀请自己的好友")
 			}
 			if forwardMember(tx, cid, target) {

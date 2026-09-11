@@ -61,7 +61,7 @@ func newWindow(address, dir string) (windowHost, error) {
 		v.Bind("welinkDiagnostic", func(report string) {
 			_ = os.WriteFile(filepath.Join(dir, "native-diagnostic.json"), []byte(report), 0600)
 		})
-		v.Init(`addEventListener('DOMContentLoaded',()=>{const t=setInterval(async()=>{if(!document.querySelector('#auth-form'))return;clearInterval(t);try{const cfg=await fetch('/local/config').then(r=>r.json());const status=(await fetch('/api/me')).status;document.querySelector('[data-action=register]').click();const registration=!!document.querySelector('[name=name]');document.querySelector('[data-action=login]').click();await welinkDiagnostic(JSON.stringify({ready:true,server:cfg.server,status,registration,width:innerWidth,height:innerHeight}));}catch(e){await welinkDiagnostic(JSON.stringify({error:String(e)}))}},200)});`)
+		v.Init(`addEventListener('DOMContentLoaded',()=>{const t=setInterval(async()=>{if(!document.querySelector('#auth-form'))return;clearInterval(t);try{const cfg=await fetch('/local/config').then(r=>r.json());const status=(await fetch('/api/me')).status;const signup=document.querySelector('[data-action=register]');if(signup)signup.click();const registration=!!document.querySelector('[name=name]');document.querySelector('[data-action=login]')?.click();await welinkDiagnostic(JSON.stringify({ready:true,server:cfg.server,status,registration,width:innerWidth,height:innerHeight}));}catch(e){await welinkDiagnostic(JSON.stringify({error:String(e)}))}},200)});`)
 		// Bind/Init must also cover the first document if its load already started.
 		v.Navigate(address)
 	}

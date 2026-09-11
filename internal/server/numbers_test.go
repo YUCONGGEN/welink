@@ -10,7 +10,7 @@ import (
 func TestNumbersLoginSearchAndStability(t *testing.T) {
 	f := setup(t)
 	a, b := f.register("number_alice"), f.register("number_bobby")
-	if !regexp.MustCompile(`^[1-9][0-9]{8,}$`).MatchString(a.User.Number) || a.User.Number == b.User.Number {
+	if !regexp.MustCompile(`^[1-9][0-9]{5}$`).MatchString(a.User.Number) || a.User.Number == b.User.Number {
 		t.Fatal("invalid or duplicate WeLink numbers")
 	}
 	var login account
@@ -43,7 +43,7 @@ func TestNumberMigrationPreservesExistingNumericAliases(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = db.Exec(`CREATE TABLE users(id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password BLOB NOT NULL, avatar TEXT NOT NULL DEFAULT 'blue', bio TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL); INSERT INTO users(id,account,name,password,created) VALUES('legacy','100000001','旧账号',X'00',1);`)
+	_, e = db.Exec(`CREATE TABLE users(id TEXT PRIMARY KEY, account TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password BLOB NOT NULL, avatar TEXT NOT NULL DEFAULT 'blue', bio TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL); INSERT INTO users(id,account,name,password,created) VALUES('legacy','100001','旧账号',X'00',1);`)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -56,7 +56,7 @@ func TestNumberMigrationPreservesExistingNumericAliases(t *testing.T) {
 	if e = store.QueryRow("SELECT number FROM user_numbers WHERE user_id='legacy'").Scan(&number); e != nil {
 		t.Fatal(e)
 	}
-	if number != "100000002" {
+	if number != "100002" {
 		t.Fatal("migration did not preserve numeric alias namespace", number)
 	}
 	store.Close()
@@ -70,4 +70,32 @@ func TestNumberMigrationPreservesExistingNumericAliases(t *testing.T) {
 	if again != number {
 		t.Fatal("number changed on restart")
 	}
+}
+
+func TestSixDigitUpgradeKeepsIdentityAndOldLogin(t *testing.T) {
+	f := setupCommunity(t)
+	a := f.register("preview_number")
+	if _, err := f.s.db.Exec("UPDATE user_numbers SET number=100000001 WHERE user_id=?", a.User.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.db.Exec("UPDATE sqlite_sequence SET seq=100000001 WHERE name='user_numbers'"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateNumbers(f.s.db); err != nil {
+		t.Fatal(err)
+	}
+	var user User
+	f.request("GET", "/api/me", a.Token, nil, 200, &user)
+	if user.ID != a.User.ID || user.Number != "100001" {
+		t.Fatal("identity changed during six-digit upgrade")
+	}
+	var login account
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": "100000001", "password": "test-password-937!"}, 200, &login)
+	if login.User.ID != a.User.ID || login.User.Number != "100001" {
+		t.Fatal("old login no longer resolves to the same user")
+	}
+	if _, err := f.s.db.Exec("UPDATE sqlite_sequence SET seq=999999 WHERE name='user_numbers'"); err != nil {
+		t.Fatal(err)
+	}
+	f.request("POST", "/api/auth/register", "", map[string]string{"account": "beyond_six", "name": "no more numbers", "password": "test-password-937!"}, 409, nil)
 }

@@ -213,7 +213,7 @@ func (s *Server) profileChanged(user string) {
 	if e != nil {
 		return
 	}
-	rows, e := s.db.Query("SELECT ? UNION SELECT peer_id FROM friends WHERE user_id=? UNION SELECT b.user_id FROM members a JOIN members b ON b.conversation_id=a.conversation_id WHERE a.user_id=?", user, user, user)
+	rows, e := s.db.Query("SELECT ? UNION SELECT peer_id FROM directory_friends WHERE user_id=? UNION SELECT b.user_id FROM members a JOIN members b ON b.conversation_id=a.conversation_id WHERE a.user_id=?", user, user, user)
 	if e != nil {
 		return
 	}

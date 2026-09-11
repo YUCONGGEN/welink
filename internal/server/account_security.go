@@ -230,6 +230,9 @@ func (s *Server) disconnectSessions(keys map[string]bool) {
 	if len(keys) == 0 {
 		return
 	}
+	if s.media != nil {
+		s.media.prune()
+	}
 	sockets := map[*socket]bool{}
 	s.mu.Lock()
 	for _, clients := range s.clients {

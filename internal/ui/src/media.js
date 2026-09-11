@@ -68,7 +68,7 @@ export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileUR
     v.onloadedmetadata=()=>{check();if(!done&&!Number.isFinite(v.duration))try{v.currentTime=1e10}catch{}};v.ondurationchange=v.ontimeupdate=check;v.onerror=()=>finish(Error('当前设备无法播放这段视频'));timer=setTimeout(()=>finish(Error('无法读取视频信息')),15000);v.src=url;
   })}
   async function sendVideo(file){
-    const cid=S.active,owner=accountScope();if(!cid)return;if(file.size>50*1024*1024){toast('视频不能超过 50 MB');return}
+    const cid=S.active,owner=accountScope();if(!cid)return;if(S.policy?.chatMaxAttachmentBytes>0&&file.size>S.policy.chatMaxAttachmentBytes){toast('文件超过服务器配置的大小限制');return}
     const fallback=error=>{if(accountScope()!==owner)return;modal('无法直接发送视频',`<p class="hint">${esc(error.message)}，可以作为普通文件发送给对方。</p>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');$('#video-send-file').onclick=()=>{closeModal();if(S.active===cid&&accountScope()===owner)upload(file,true);else toast('聊天已切换，请重新选择文件')}};
     let metadata;try{metadata=await videoMetadata(file)}catch(error){fallback(error);return}
     if(accountScope()!==owner)return;try{await sendMedia(file,'video',metadata,cid)}catch(error){if(error.status===400)fallback(error);else showRetry(error)}
@@ -99,7 +99,7 @@ export function createMedia({S,api,action,modal,closeModal,toast,esc,icon,fileUR
     switch(button.dataset.media){
       case 'voice-mode':finish(true);mode=!mode;if(mode)$('#composer')?.blur();mount();break;
       case 'voice-start':begin(false);break;case 'voice-cancel':finish(true);break;case 'voice-finish':finish(false);break;
-      case 'video':if(window.WeLinkAndroid){modal('发送视频','<button class="remote-choice" id="video-from-gallery">'+icon('folder')+'从相册选择</button><button class="remote-choice" id="video-from-camera">'+icon('video')+'拍摄视频</button><p class="hint">支持 MP4、WebM，单个文件不超过 50 MB。</p>');$('#video-from-gallery').onclick=()=>{closeModal();$('#video-input').click()};$('#video-from-camera').onclick=()=>{closeModal();$('#video-capture-input').click()}}else $('#video-input').click();break;
+      case 'video':if(window.WeLinkAndroid){modal('发送视频','<button class="remote-choice" id="video-from-gallery">'+icon('folder')+'从相册选择</button><button class="remote-choice" id="video-from-camera">'+icon('video')+'拍摄视频</button><p class="hint">支持 MP4、WebM。文件大小遵循服务器配置。</p>');$('#video-from-gallery').onclick=()=>{closeModal();$('#video-input').click()};$('#video-from-camera').onclick=()=>{closeModal();$('#video-capture-input').click()}}else $('#video-input').click();break;
     }
   });
   document.addEventListener('pointerdown',e=>{const button=e.target.closest('[data-media=voice-hold]');if(!button||e.button!==0)return;e.preventDefault();hold={pointer:e.pointerId,y:e.clientY,cancel:false};button.setPointerCapture(e.pointerId);begin(true)});

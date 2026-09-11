@@ -26,5 +26,6 @@ APK=mobile/android/app/build/outputs/apk/debug/app-debug.apk
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
 "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$APK"
 python3 scripts/verify-android-assets.py "$APK"
+sh scripts/android-assets-test.sh "$APK"
 mkdir -p dist
 cp "$APK" dist/WeLink-Android.apk

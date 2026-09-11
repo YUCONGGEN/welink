@@ -8,20 +8,25 @@ import (
 )
 
 const contactSchema = `
+CREATE TABLE IF NOT EXISTS message_blocks(user_id TEXT NOT NULL REFERENCES users(id),peer_id TEXT NOT NULL REFERENCES users(id),created INTEGER NOT NULL,PRIMARY KEY(user_id,peer_id));
+CREATE TRIGGER IF NOT EXISTS blocked_direct_message BEFORE INSERT ON messages WHEN EXISTS(SELECT 1 FROM conversations c JOIN members m ON m.conversation_id=c.id JOIN message_blocks b ON b.user_id=m.user_id AND b.peer_id=NEW.sender WHERE c.id=NEW.conversation_id AND c.kind='direct' AND m.user_id<>NEW.sender) BEGIN SELECT RAISE(ABORT,'message_blocked'); END;
 CREATE TABLE IF NOT EXISTS contact_groups(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),name TEXT NOT NULL,position INTEGER NOT NULL DEFAULT 0,UNIQUE(user_id,name));
 CREATE TABLE IF NOT EXISTS contact_preferences(user_id TEXT NOT NULL,peer_id TEXT NOT NULL,group_id TEXT REFERENCES contact_groups(id) ON DELETE SET NULL,note TEXT NOT NULL DEFAULT '',PRIMARY KEY(user_id,peer_id),FOREIGN KEY(user_id,peer_id) REFERENCES friends(user_id,peer_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS contact_blocks(user_id TEXT NOT NULL REFERENCES users(id),peer_id TEXT NOT NULL REFERENCES users(id),created INTEGER NOT NULL,PRIMARY KEY(user_id,peer_id));
 CREATE TABLE IF NOT EXISTS contact_privacy(user_id TEXT PRIMARY KEY REFERENCES users(id),searchable INTEGER NOT NULL DEFAULT 1,allow_requests INTEGER NOT NULL DEFAULT 1);
 CREATE TRIGGER IF NOT EXISTS contact_request_permission BEFORE INSERT ON requests WHEN EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.sender AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.sender)) OR EXISTS(SELECT 1 FROM contact_privacy WHERE user_id=NEW.recipient AND allow_requests=0) BEGIN SELECT RAISE(ABORT,'contact_request_forbidden'); END;
 CREATE TRIGGER IF NOT EXISTS contact_friend_permission BEFORE INSERT ON friends WHEN EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.user_id AND peer_id=NEW.peer_id) OR (user_id=NEW.peer_id AND peer_id=NEW.user_id)) BEGIN SELECT RAISE(ABORT,'contact_request_forbidden'); END;
-CREATE TRIGGER IF NOT EXISTS direct_message_permission BEFORE INSERT ON messages WHEN EXISTS(SELECT 1 FROM conversations WHERE id=NEW.conversation_id AND kind='direct') AND (NOT EXISTS(SELECT 1 FROM members m JOIN friends f ON f.user_id=NEW.sender AND f.peer_id=m.user_id JOIN friends b ON b.user_id=m.user_id AND b.peer_id=NEW.sender WHERE m.conversation_id=NEW.conversation_id AND m.user_id<>NEW.sender) OR EXISTS(SELECT 1 FROM contact_blocks b JOIN members m ON m.conversation_id=NEW.conversation_id AND m.user_id<>NEW.sender WHERE (b.user_id=NEW.sender AND b.peer_id=m.user_id) OR (b.peer_id=NEW.sender AND b.user_id=m.user_id))) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
-CREATE TRIGGER IF NOT EXISTS remote_contact_insert BEFORE INSERT ON remotes WHEN NOT EXISTS(SELECT 1 FROM friends f JOIN friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=NEW.requester AND f.peer_id=NEW.recipient) OR EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.requester AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.requester)) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
-CREATE TRIGGER IF NOT EXISTS remote_contact_accept BEFORE UPDATE OF state ON remotes WHEN NEW.state='accepted' AND (NOT EXISTS(SELECT 1 FROM friends f JOIN friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=NEW.requester AND f.peer_id=NEW.recipient) OR EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.requester AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.requester))) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
+DROP TRIGGER IF EXISTS direct_message_permission;
+CREATE TRIGGER direct_message_permission BEFORE INSERT ON messages WHEN EXISTS(SELECT 1 FROM conversations WHERE id=NEW.conversation_id AND kind='direct') AND (NOT EXISTS(SELECT 1 FROM members m JOIN directory_friends f ON f.user_id=NEW.sender AND f.peer_id=m.user_id JOIN directory_friends b ON b.user_id=m.user_id AND b.peer_id=NEW.sender WHERE m.conversation_id=NEW.conversation_id AND m.user_id<>NEW.sender) OR EXISTS(SELECT 1 FROM contact_blocks b JOIN members m ON m.conversation_id=NEW.conversation_id AND m.user_id<>NEW.sender WHERE (b.user_id=NEW.sender AND b.peer_id=m.user_id) OR (b.peer_id=NEW.sender AND b.user_id=m.user_id))) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
+DROP TRIGGER IF EXISTS remote_contact_insert;
+CREATE TRIGGER remote_contact_insert BEFORE INSERT ON remotes WHEN NOT EXISTS(SELECT 1 FROM directory_friends f JOIN directory_friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=NEW.requester AND f.peer_id=NEW.recipient) OR EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.requester AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.requester)) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
+DROP TRIGGER IF EXISTS remote_contact_accept;
+CREATE TRIGGER remote_contact_accept BEFORE UPDATE OF state ON remotes WHEN NEW.state='accepted' AND (NOT EXISTS(SELECT 1 FROM directory_friends f JOIN directory_friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=NEW.requester AND f.peer_id=NEW.recipient) OR EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=NEW.requester AND peer_id=NEW.recipient) OR (user_id=NEW.recipient AND peer_id=NEW.requester))) BEGIN SELECT RAISE(ABORT,'contact_send_forbidden'); END;
 `
 
 func contactAllowed(q rowQuery, user, peer string) bool {
 	var n int
-	return q.QueryRow(`SELECT 1 FROM friends f JOIN friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=? AND f.peer_id=? AND NOT EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=? AND peer_id=?) OR (user_id=? AND peer_id=?))`, user, peer, user, peer, peer, user).Scan(&n) == nil
+	return q.QueryRow(`SELECT 1 FROM directory_friends f JOIN directory_friends b ON b.user_id=f.peer_id AND b.peer_id=f.user_id WHERE f.user_id=? AND f.peer_id=? AND NOT EXISTS(SELECT 1 FROM contact_blocks WHERE (user_id=? AND peer_id=?) OR (user_id=? AND peer_id=?))`, user, peer, user, peer, peer, user).Scan(&n) == nil
 }
 func contactBlocked(q rowQuery, user, peer string) bool {
 	var n int
@@ -140,7 +145,10 @@ func (s *Server) deleteContactGroup(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]bool{"ok": true})
 }
 func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
-	var p struct{ Remark, GroupID, Note *string }
+	var p struct {
+		Remark, GroupID, Note *string
+		MessageBlocked        *bool
+	}
 	if !decode(w, r, &p) {
 		return
 	}
@@ -152,6 +160,9 @@ func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
 	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
 		if !contactAllowed(tx, user, peer) {
 			return nil, nil, groupFail(403, "只能设置当前好友的备注和分组")
+		}
+		if _, e := tx.Exec("INSERT OR IGNORE INTO friends(user_id,peer_id) VALUES(?,?)", user, peer); e != nil {
+			return nil, nil, e
 		}
 		if _, e := tx.Exec("INSERT OR IGNORE INTO contact_preferences(user_id,peer_id) VALUES(?,?)", user, peer); e != nil {
 			return nil, nil, e
@@ -179,6 +190,17 @@ func (s *Server) updateContact(w http.ResponseWriter, r *http.Request) {
 				return nil, nil, e
 			}
 		}
+		if p.MessageBlocked != nil {
+			var e error
+			if *p.MessageBlocked {
+				_, e = tx.Exec("INSERT OR IGNORE INTO message_blocks VALUES(?,?,?)", user, peer, now())
+			} else {
+				_, e = tx.Exec("DELETE FROM message_blocks WHERE user_id=? AND peer_id=?", user, peer)
+			}
+			if e != nil {
+				return nil, nil, e
+			}
+		}
 		return map[string]bool{"ok": true}, []string{user}, nil
 	})
 }
@@ -199,7 +221,7 @@ func (s *Server) contactDetail(w http.ResponseWriter, r *http.Request) {
 	if friend {
 		_ = s.db.QueryRow("SELECT f.remark,COALESCE(p.group_id,''),COALESCE(p.note,'') FROM friends f LEFT JOIN contact_preferences p ON p.user_id=f.user_id AND p.peer_id=f.peer_id WHERE f.user_id=? AND f.peer_id=?", user, peer).Scan(&u.Remark, &u.ContactGroupID, &u.Note)
 	}
-	ok(w, map[string]any{"user": u, "friend": friend, "blocked": blocked == 1, "canAdd": allow && !contactBlocked(s.db, user, peer) && peer != user})
+	ok(w, map[string]any{"user": u, "friend": friend, "blocked": blocked == 1, "messageBlocked": messagesBlocked(s.db, user, peer), "canAdd": allow && !contactBlocked(s.db, user, peer) && peer != user})
 }
 func (s *Server) listBlocks(w http.ResponseWriter, r *http.Request) {
 	rows, e := s.db.Query("SELECT u.id,u.name,u.avatar,n.number,b.created FROM contact_blocks b JOIN users u ON u.id=b.peer_id JOIN user_numbers n ON n.user_id=u.id WHERE b.user_id=? ORDER BY b.created DESC", uid(r))
@@ -233,8 +255,14 @@ func (s *Server) unblockContact(w http.ResponseWriter, r *http.Request) {
 	s.push([]string{uid(r)}, "contacts", map[string]bool{"ok": true})
 	ok(w, map[string]bool{"ok": true})
 }
-func (s *Server) deleteContact(w http.ResponseWriter, r *http.Request) { s.removeContact(w, r, false) }
-func (s *Server) blockContact(w http.ResponseWriter, r *http.Request)  { s.removeContact(w, r, true) }
+func (s *Server) deleteContact(w http.ResponseWriter, r *http.Request) {
+	if s.settings.Directory.AllUsers {
+		s.hidePeerConversation(w, r)
+		return
+	}
+	s.removeContact(w, r, false)
+}
+func (s *Server) blockContact(w http.ResponseWriter, r *http.Request) { s.removeContact(w, r, true) }
 func (s *Server) removeContact(w http.ResponseWriter, r *http.Request, block bool) {
 	user, peer := uid(r), r.PathValue("user")
 	if user == peer {
@@ -354,4 +382,9 @@ func (s *Server) updateContactPrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.push([]string{uid(r)}, "contacts", map[string]bool{"ok": true})
 	s.contactPrivacy(w, r)
+}
+
+func messagesBlocked(q rowQuery, receiver, sender string) bool {
+	var exists int
+	return q.QueryRow("SELECT 1 FROM message_blocks WHERE user_id=? AND peer_id=?", receiver, sender).Scan(&exists) == nil
 }

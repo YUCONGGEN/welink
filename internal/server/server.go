@@ -21,6 +21,7 @@ import (
 type Config struct {
 	DataDir, DownloadsDir string
 	Logger                *log.Logger
+	Settings              *Settings
 }
 type Server struct {
 	db                   *sql.DB
@@ -36,6 +37,11 @@ type Server struct {
 	avatarSlots          chan struct{}
 	callsStop, callsDone chan struct{}
 	callsClose           sync.Once
+	settings             Settings
+	storage              string
+	uploadSlots          chan struct{}
+	storageDone          chan struct{}
+	media                *mediaRelay
 }
 type bucket struct {
 	count int
@@ -52,6 +58,20 @@ type userKey struct{}
 type sessionKey struct{}
 
 func New(cfg Config) (*Server, error) {
+	settings := DefaultSettings()
+	if cfg.Settings != nil {
+		settings = *cfg.Settings
+	}
+	if cfg.DataDir != "" {
+		settings.DataDir = cfg.DataDir
+	}
+	if cfg.DownloadsDir != "" {
+		settings.DownloadsDir = cfg.DownloadsDir
+	}
+	if err := settings.Validate(); err != nil {
+		return nil, err
+	}
+	cfg.DataDir, cfg.DownloadsDir = settings.DataDir, settings.DownloadsDir
 	db, err := openStore(cfg.DataDir)
 	if err != nil {
 		return nil, err
@@ -60,15 +80,36 @@ func New(cfg Config) (*Server, error) {
 		cfg.Logger = log.New(os.Stderr, "welink ", log.LstdFlags)
 	}
 	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux()}
+	s.settings = settings
+	mode := "0"
+	if settings.Directory.AllUsers {
+		mode = "1"
+	}
+	if _, err = db.Exec("UPDATE app_settings SET value=? WHERE key='all_users'", mode); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = s.initStorage(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = s.startMediaRelay(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s.routes()
 	s.meetings.rooms = map[string]*meetingRoom{}
 	s.avatarSlots = make(chan struct{}, 2)
 	s.qrLogins.items = map[string]*qrLogin{}
 	s.startCalls()
+	s.startStorageCleanup()
 	return s, nil
 }
 func (s *Server) Close() error {
-	s.callsClose.Do(func() { close(s.callsStop); <-s.callsDone })
+	if s.media != nil {
+		s.media.close()
+	}
+	s.callsClose.Do(func() { close(s.callsStop); <-s.callsDone; <-s.storageDone })
 	s.meetings.Lock()
 	if records, e := s.activeCallRecords(); e == nil {
 		for _, c := range records {
@@ -111,6 +152,11 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, r *http.Request) {
+		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled})
+	})
+	s.mux.HandleFunc("GET /share/{token}", s.publicDriveShare)
+	s.mux.HandleFunc("GET /space/{user}", s.publicSpace)
 	s.mux.HandleFunc("GET /join/{code}", s.meetingLink)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.PingContext(r.Context()); err != nil {
@@ -125,9 +171,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
-		"GET /api/meetings/{code}": s.meetingInfo,
-		"PATCH /api/me/avatar":     s.selectCartoonAvatar,
-		"POST /api/me/avatar":      s.uploadAvatar, "DELETE /api/me/avatar": s.resetAvatar,
+		"GET /api/drive": s.listDrive, "POST /api/drive/files": s.uploadDrive, "GET /api/drive/files/{id}": s.downloadDrive, "PATCH /api/drive/files/{id}": s.renameDrive, "DELETE /api/drive/files/{id}": s.deleteDrive, "POST /api/drive/files/{id}/share": s.shareDrive, "DELETE /api/drive/files/{id}/share": s.revokeDriveShare,
+		"GET /api/spaces/{user}": s.listSpace, "PATCH /api/spaces/me/access": s.setSpaceAccess, "GET /api/spaces/{user}/documents/{id}": s.readSpaceDocument, "POST /api/spaces/me/documents": s.saveSpaceDocument, "PUT /api/spaces/me/documents/{id}": s.saveSpaceDocument, "DELETE /api/spaces/me/documents/{id}": s.deleteSpaceDocument,
+		"POST /api/admin/users/{id}/password": s.adminResetPassword,
+		"GET /api/admin/users":                s.adminUsers, "POST /api/admin/users": s.adminCreateUser, "DELETE /api/admin/users/{id}": s.adminDeleteUser,
+		"DELETE /api/conversations/{id}": s.hideConversation,
+		"GET /api/config":                s.publicConfig,
+		"GET /api/meetings/{code}":       s.meetingInfo,
+		"PATCH /api/me/avatar":           s.selectCartoonAvatar,
+		"POST /api/me/avatar":            s.uploadAvatar, "DELETE /api/me/avatar": s.resetAvatar,
 		"POST /api/groups/{id}/avatar": s.uploadAvatar, "DELETE /api/groups/{id}/avatar": s.resetAvatar, "GET /api/avatars/{image}": s.avatar,
 		"POST /api/contact-groups/order": s.orderContactGroups,
 		"GET /api/contact-groups":        s.listContactGroups, "POST /api/contact-groups": s.saveContactGroup, "PATCH /api/contact-groups/{id}": s.saveContactGroup, "DELETE /api/contact-groups/{id}": s.deleteContactGroup,
@@ -136,6 +188,7 @@ func (s *Server) routes() {
 		"GET /api/groups": s.searchGroups, "POST /api/groups/{id}/join": s.joinGroup, "GET /api/group-requests": s.groupRequests, "POST /api/group-requests/{request}": s.resolveGroupRequest,
 		"PATCH /api/groups/{id}": s.updateGroup, "PATCH /api/groups/{id}/members/{user}": s.updateGroupMember, "POST /api/groups/{id}/transfer": s.transferGroup, "DELETE /api/groups/{id}": s.dissolveGroup,
 		"GET /api/auth/sessions": s.listSessions, "DELETE /api/auth/sessions/{id}": s.revokeDevice, "POST /api/auth/sessions/revoke-others": s.revokeOtherDevices, "POST /api/auth/password": s.changePassword,
+		"GET /api/rtc-config":    s.rtcConfig,
 		"POST /api/auth/qr/scan": s.scanQRLogin, "POST /api/auth/qr/confirm": s.confirmQRLogin,
 		"POST /api/meetings": s.createMeeting, "GET /api/meetings": s.listMeetings, "POST /api/meetings/{code}/invite": s.inviteMeeting, "POST /api/meetings/{code}/end": s.endMeeting, "GET /api/meetings/{code}/ws": s.meetingSocket,
 		"POST /api/auth/logout": s.logout, "GET /api/me": s.me, "PATCH /api/me": s.updateMe,
@@ -189,7 +242,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			}
 		}
 		var id string
-		if len(token) != 64 || s.db.QueryRow("SELECT user_id FROM sessions WHERE token=? AND expires>?", hashToken(token), now()).Scan(&id) != nil {
+		if len(token) != 64 || s.db.QueryRow("SELECT user_id FROM sessions WHERE token=? AND expires>? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=sessions.user_id)", hashToken(token), now()).Scan(&id) != nil {
 			fail(w, 401, "请重新登录")
 			return
 		}
@@ -277,6 +330,14 @@ func (s *Server) dbError(w http.ResponseWriter, err error) {
 	var permission *groupError
 	if errors.As(err, &permission) {
 		fail(w, permission.status, permission.text)
+		return
+	}
+	if strings.Contains(err.Error(), "message_blocked") {
+		fail(w, 403, "该用户暂不接收你的私聊消息")
+		return
+	}
+	if strings.Contains(err.Error(), "account_deleted") {
+		fail(w, 401, "账号已被删除，请重新登录")
 		return
 	}
 	if strings.Contains(err.Error(), "contact_send_forbidden") {
@@ -370,7 +431,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) notifyPresence(id string, online bool) {
-	rows, e := s.db.Query("SELECT peer_id FROM friends WHERE user_id=?", id)
+	rows, e := s.db.Query("SELECT peer_id FROM directory_friends WHERE user_id=?", id)
 	if e != nil {
 		return
 	}

@@ -28,7 +28,10 @@ type account struct {
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
-	s, e := New(Config{DataDir: t.TempDir()})
+	settings := DefaultSettings()
+	settings.Directory.AllUsers = false
+	settings.Registration.Enabled = true
+	s, e := New(Config{DataDir: t.TempDir(), Settings: &settings})
 	if e != nil {
 		t.Fatal(e)
 	}

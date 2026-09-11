@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -8,27 +9,116 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-const maxUpload = 50 << 20
-
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
-	if !s.rate(r, "upload:"+uid(r), 60, time.Hour) {
+	if s.settings.Chat.UploadsPerHour > 0 && !s.rate(r, "upload:"+uid(r), s.settings.Chat.UploadsPerHour, time.Hour) {
 		fail(w, 429, "上传过于频繁")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+(1<<20))
-	if e := r.ParseMultipartForm(1 << 20); e != nil {
-		fail(w, 400, "文件不能超过 50 MB")
+	if !s.uploadSlot(w, r) {
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
-	cid := r.FormValue("conversationId")
-	clientID := r.FormValue("clientId")
+	defer func() { <-s.uploadSlots }()
+	reader, e := r.MultipartReader()
+	if e != nil {
+		fail(w, 400, "请选择文件")
+		return
+	}
+	fields := url.Values{}
+	id := newID()
+	volume, e := s.selectStorage(r.ContentLength)
+	if e != nil {
+		s.dbError(w, e)
+		return
+	}
+	path := objectPath(volume, "uploads", "", id)
+	if e = os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+		s.dbError(w, e)
+		return
+	}
+	var name, typ string
+	var size int64
+	var digestValue string
+	seenFile, committed := false, false
+	defer func() {
+		if !committed {
+			_ = os.Remove(path)
+		}
+	}()
+	for parts := 0; ; parts++ {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil || parts >= 20 {
+			fail(w, 400, "文件数据不完整")
+			return
+		}
+		if part.FormName() == "file" && part.FileName() != "" {
+			if seenFile {
+				part.Close()
+				fail(w, 400, "每次上传一个文件")
+				return
+			}
+			seenFile = true
+			name = filepath.Base(strings.ReplaceAll(part.FileName(), "\\", "/"))
+			if !safeFileName(name) {
+				part.Close()
+				fail(w, 400, "文件名无效")
+				return
+			}
+			// The app puts conversationId before the file. Reject before writing when
+			// provided, and always recheck permissions after the complete body.
+			if cid := fields.Get("conversationId"); cid != "" && !s.canSpeak(cid, uid(r)) {
+				part.Close()
+				fail(w, 403, "无法向该会话发送文件")
+				return
+			}
+			out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+			if err != nil {
+				part.Close()
+				s.dbError(w, err)
+				return
+			}
+			header := make([]byte, 512)
+			n, err := io.ReadFull(part, header)
+			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+				out.Close()
+				part.Close()
+				fail(w, 400, "读取文件失败")
+				return
+			}
+			typ = http.DetectContentType(header[:n])
+			digest := sha256.New()
+			size, e = s.copyUpload(volume, io.MultiWriter(out, digest), io.MultiReader(bytes.NewReader(header[:n]), part), s.settings.Chat.MaxAttachmentBytes)
+			closeErr := out.Close()
+			part.Close()
+			if e != nil || closeErr != nil {
+				fail(w, 507, "上传未完成，请检查文件、网络或服务器可用空间")
+				return
+			}
+			digestValue = fmt.Sprintf("%x", digest.Sum(nil))
+		} else {
+			raw, err := io.ReadAll(io.LimitReader(part, 8193))
+			part.Close()
+			if err != nil || len(raw) > 8192 {
+				fail(w, 400, "上传字段过长")
+				return
+			}
+			fields.Set(part.FormName(), string(raw))
+		}
+	}
+	if !seenFile {
+		fail(w, 400, "请选择文件")
+		return
+	}
+	cid, clientID := fields.Get("conversationId"), fields.Get("clientId")
 	if clientID != "" && (len(clientID) < 8 || len(clientID) > 100) {
 		fail(w, 400, "上传标识无效")
 		return
@@ -37,55 +127,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无法向该会话发送文件")
 		return
 	}
-	f, h, e := r.FormFile("file")
-	if e != nil {
-		fail(w, 400, "请选择文件")
-		return
-	}
-	defer f.Close()
-	name := filepath.Base(strings.ReplaceAll(h.Filename, `\`, "/"))
-	if !validText(name, 240) || name == "." || name == "" || strings.ContainsAny(name, "\r\n") {
-		fail(w, 400, "文件名无效")
-		return
-	}
-	id := newID()
-	path := filepath.Join(s.dir, "uploads", id)
-	out, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if e != nil {
-		s.dbError(w, e)
-		return
-	}
-	committed := false
-	defer func() {
-		out.Close()
-		if !committed {
-			_ = os.Remove(path)
-		}
-	}()
-	header := make([]byte, 512)
-	n, e := io.ReadFull(f, header)
-	if e != nil && e != io.EOF && e != io.ErrUnexpectedEOF {
-		fail(w, 400, "读取文件失败")
-		return
-	}
-	typ := http.DetectContentType(header[:n])
-	digest := sha256.New()
-	destination := io.MultiWriter(out, digest)
-	if _, e = destination.Write(header[:n]); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	rest, e := io.Copy(destination, io.LimitReader(f, maxUpload+1))
-	size := int64(n) + rest
-	if e != nil || size > maxUpload {
-		fail(w, 400, "文件上传失败或超过 50 MB")
-		return
-	}
-	if e = out.Close(); e != nil {
-		s.dbError(w, e)
-		return
-	}
-	media, typ, e := inspectMedia(path, r.FormValue("mediaKind"), typ, r.PostForm)
+	media, typ, e := inspectMedia(path, fields.Get("mediaKind"), typ, fields)
 	if e != nil {
 		fail(w, 400, e.Error())
 		return
@@ -101,7 +143,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无法向该会话发送文件")
 		return
 	}
-	identity, _ := json.Marshal([]any{cid, name, typ, size, media, fmt.Sprintf("%x", digest.Sum(nil))})
+	identity, _ := json.Marshal([]any{cid, name, typ, size, media, digestValue})
 	fingerprint := fmt.Sprintf("%x", sha256.Sum256(identity))
 	if clientID != "" {
 		var previousID, previousFingerprint string
@@ -135,6 +177,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if e = storeLocation(tx, "uploads", "", id, volume); e != nil {
+		s.dbError(w, e)
+		return
+	}
 	if e = tx.Commit(); e != nil {
 		s.dbError(w, e)
 		return
@@ -143,6 +189,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]any{"id": id, "name": name, "mime": typ, "size": size, "media": media})
 }
 func (s *Server) download(w http.ResponseWriter, r *http.Request) {
+	if err := s.storageReady(); err != nil {
+		fail(w, 503, err.Error())
+		return
+	}
 	var cid, name, typ, blob string
 	if s.db.QueryRow("SELECT a.conversation_id,a.name,a.mime,COALESCE(b.blob_id,a.id) FROM attachments a LEFT JOIN attachment_blobs b ON b.attachment_id=a.id WHERE a.id=?", r.PathValue("id")).Scan(&cid, &name, &typ, &blob) != nil {
 		fail(w, 404, "文件不存在")
@@ -152,9 +202,9 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无权下载该文件")
 		return
 	}
-	f, e := os.Open(filepath.Join(s.dir, "uploads", blob))
+	f, e := s.openStored("uploads", "", blob)
 	if e != nil {
-		fail(w, 404, "文件已不可用")
+		fail(w, 503, "文件所在磁盘暂不可用，请恢复磁盘挂载")
 		return
 	}
 	defer f.Close()

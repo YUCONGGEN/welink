@@ -51,7 +51,7 @@ func canSpeak(q rowQuery, cid, user string) bool {
 	g, err := readGroup(q, cid, user)
 	if err == sql.ErrNoRows {
 		var peer string
-		return q.QueryRow("SELECT m.user_id FROM members m JOIN conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.kind='direct' AND m.user_id<>?", cid, user).Scan(&peer) == nil && contactAllowed(q, user, peer)
+		return q.QueryRow("SELECT m.user_id FROM members m JOIN conversations c ON c.id=m.conversation_id WHERE c.id=? AND c.kind='direct' AND m.user_id<>?", cid, user).Scan(&peer) == nil && contactAllowed(q, user, peer) && !messagesBlocked(q, peer, user)
 	}
 	return err == nil && (g.manager() || (!g.AllMuted && g.MuteUntil <= now()))
 }

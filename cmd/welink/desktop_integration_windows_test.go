@@ -25,7 +25,9 @@ func TestNativeDesktopChatAndDuplicateProcess(t *testing.T) {
 	if os.Getenv("WELINK_NATIVE_DESKTOP_TEST") != "1" {
 		t.Skip("opt-in native WebView2 chat and process integration")
 	}
-	s, err := server.New(server.Config{DataDir: t.TempDir()})
+	settings := server.DefaultSettings()
+	settings.Registration.Enabled = true
+	s, err := server.New(server.Config{DataDir: t.TempDir(), Settings: &settings})
 	if err != nil {
 		t.Fatal(err)
 	}
