@@ -10,6 +10,15 @@ import android.view.WindowManager;
 
 /** Keep every Activity's content inside system bars, cutouts and the keyboard. */
 final class ScreenInsets {
+    static void theme(Activity activity,boolean dark) {
+        Window window=activity.getWindow();int color=dark?0xff22252b:Color.WHITE;
+        window.setStatusBarColor(color);window.setNavigationBarColor(color);
+        activity.findViewById(android.R.id.content).setBackgroundColor(color);
+        int light=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        int flags=window.getDecorView().getSystemUiVisibility();
+        window.getDecorView().setSystemUiVisibility(dark?flags&~light:flags|light);
+        if(Build.VERSION.SDK_INT>=30){android.view.WindowInsetsController controller=window.getInsetsController();if(controller!=null){int mask=android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;controller.setSystemBarsAppearance(dark?0:mask,mask);}}
+    }
     static void install(Activity activity) {
         Window window=activity.getWindow();
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);

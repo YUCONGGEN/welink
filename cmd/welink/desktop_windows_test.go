@@ -101,6 +101,29 @@ func TestNativeDesktopLifecycle(t *testing.T) {
 				if h.desktop.icon.Icon == 0 || h.desktop.icon.Icon == fallback {
 					return fmt.Errorf("tray must use the WeLink resource instead of the generic application icon")
 				}
+				var before, after noticeRect
+				user32.NewProc("GetWindowRect").Call(h.hwnd, uintptr(unsafe.Pointer(&before)))
+				point := [2]int32{}
+				user32.NewProc("ClientToScreen").Call(h.hwnd, uintptr(unsafe.Pointer(&point)))
+				if point[0] != before.Left || point[1] != before.Top {
+					return fmt.Errorf("unpainted non-client strip remains: %v %v", point, before)
+				}
+				h.theme(true)
+				if err := h.meetingFullscreen(true); err != nil {
+					return err
+				}
+				user32.NewProc("GetWindowRect").Call(h.hwnd, uintptr(unsafe.Pointer(&after)))
+				if after != h.monitorBounds().Monitor {
+					return fmt.Errorf("fullscreen does not cover display: %v", after)
+				}
+				if err := h.meetingFullscreen(false); err != nil {
+					return err
+				}
+				user32.NewProc("GetWindowRect").Call(h.hwnd, uintptr(unsafe.Pointer(&after)))
+				if after != before {
+					return fmt.Errorf("fullscreen lost original position: %v %v", before, after)
+				}
+				h.theme(false)
 				return nil
 			}); err != nil {
 				return err

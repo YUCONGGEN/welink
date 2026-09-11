@@ -63,6 +63,14 @@ var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref ui
 	if value, ok := desktopWindows.Load(hwnd); ok {
 		h := value.(*windowsHost)
 		switch message {
+		case 0x83: // WM_NCCALCSIZE
+			if h.clientFrame(wp, lp) {
+				return 0
+			}
+		case 0x84: // WM_NCHITTEST
+			if hit := h.frameHit(lp); hit != 0 {
+				return hit
+			}
 		case 0x0312: // WM_HOTKEY
 			if h.desktop.hotkeys != nil {
 				switch h.desktop.hotkeys.action(wp) {

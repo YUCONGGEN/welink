@@ -19,6 +19,18 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/theme.js
+  function applyTheme(dark) {
+    var _a, _b, _c, _d;
+    document.body.classList.toggle("dark", dark);
+    document.documentElement.style.backgroundColor = dark ? "#22252b" : "#f5f6f7";
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    (_a = document.querySelector("meta[name=theme-color]")) == null ? void 0 : _a.setAttribute("content", dark ? "#22252b" : "#0099ff");
+    (_c = (_b = window.WeLinkAndroid) == null ? void 0 : _b.setDarkTheme) == null ? void 0 : _c.call(_b, dark);
+    (_d = window.welinkTheme) == null ? void 0 : _d.call(window, dark).catch(() => {
+    });
+  }
+
   // internal/ui/src/message-sounds.js
   function createMessageSounds({ toast: toast2, native, hidden }) {
     const key = "welink_message_sound";
@@ -240,7 +252,11 @@
       }
     });
     window.WeLinkGoBack = handleBack;
-    return { open, clear, back, handleBack };
+    function complete() {
+      if (stack.some((item) => item.title === "设置")) back();
+      else clear();
+    }
+    return { open, clear, back, handleBack, complete };
   }
 
   // internal/ui/src/conversation-actions.js
@@ -251,25 +267,20 @@
       if (!c) return;
       contextMenu2(x, y, '<button data-conversation-action="pin" data-cid="'.concat(id, '">').concat(icon2("pin")).concat(c.pinned ? "取消置顶" : "置顶聊天", '</button><button data-conversation-action="mute" data-cid="').concat(id, '">').concat(icon2("mute")).concat(c.muted ? "开启消息提醒" : "消息免打扰", "</button>").concat(c.unread ? '<button data-conversation-action="read" data-cid="'.concat(id, '">').concat(icon2("check"), "标为已读</button>") : "", '<button class="destructive" data-conversation-action="remove" data-cid="').concat(id, '">').concat(icon2("trash"), "从消息列表移除</button>"));
     }
-    function remove(id) {
-      const c = find(id);
-      if (!c) return;
-      modal2("从消息列表移除", "<p>移除与「".concat(esc2(c.name), '」的会话？</p><p class="hint">聊天记录会保留，下次收发消息时重新显示。').concat(c.kind === "group" ? "你仍在群内，不会退出群聊。" : "", "</p>"), '<button class="secondary" data-action="modal-back">取消</button><button class="primary" id="conversation-remove-confirm">移除会话</button>');
-      const confirm = document.getElementById("conversation-remove-confirm");
-      confirm.onclick = async () => {
-        confirm.disabled = true;
-        try {
-          await api2("/api/conversations/" + id, { method: "DELETE" });
-          closeModal2();
-          await refresh2();
-          toast2("已从消息列表移除，聊天记录保留");
-        } catch (error) {
-          if (confirm.isConnected) {
-            document.getElementById("modal-error").textContent = error.message;
-            confirm.disabled = false;
-          }
-        }
-      };
+    const removing = /* @__PURE__ */ new Set();
+    async function remove(id) {
+      if (!find(id) || removing.has(id)) return;
+      removing.add(id);
+      try {
+        await api2("/api/conversations/" + id, { method: "DELETE" });
+        closeModal2();
+        await refresh2();
+        toast2("已从消息列表移除，聊天记录保留");
+      } catch (error) {
+        toast2(error.message);
+      } finally {
+        removing.delete(id);
+      }
     }
     document.addEventListener("click", async (event) => {
       const button = event.target.closest("[data-conversation-menu],[data-conversation-action]");
@@ -4219,7 +4230,7 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.8-preview</small></main>');
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.9-preview</small></main>');
       el("qr-refresh").onclick = open;
       try {
         const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
@@ -4322,6 +4333,50 @@
       clearTimeout(active == null ? void 0 : active.timer);
     });
     return { open, stop, scanned };
+  }
+
+  // internal/ui/src/meeting-window.js
+  function meetingWindow({ active, changed, toast: toast2 }) {
+    let nativeFull = false, busy = false;
+    const full = () => nativeFull || !!document.fullscreenElement;
+    async function exit() {
+      if (nativeFull) {
+        await window.welinkMeetingFullscreen(false);
+        nativeFull = false;
+      }
+      if (document.fullscreenElement) await document.exitFullscreen();
+      changed(full());
+    }
+    async function toggle() {
+      if (busy || !active()) return;
+      busy = true;
+      try {
+        if (full()) await exit();
+        else if (window.welinkMeetingFullscreen) {
+          await window.welinkMeetingFullscreen(true);
+          nativeFull = true;
+          changed(true);
+        } else {
+          await document.documentElement.requestFullscreen();
+          changed(true);
+        }
+        if (!active()) await exit();
+      } catch (e) {
+        toast2("无法进入全屏，请重试");
+      } finally {
+        busy = false;
+      }
+    }
+    document.addEventListener("fullscreenchange", () => changed(full()));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && full() && active()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        exit().catch(() => {
+        });
+      }
+    }, true);
+    return { toggle, exit, full };
   }
 
   // internal/ui/src/rtc-path.js
@@ -4472,9 +4527,29 @@
   }
 
   // internal/ui/src/meetings.js
-  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
+  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
     const el = (id) => document.getElementById(id);
+    const display = meetingWindow({ active: () => !!room, toast: toast2, changed: (full) => {
+      const b = el("meeting-fullscreen");
+      if (b) {
+        b.classList.toggle("on", full);
+        b.querySelector("span").textContent = full ? "退出全屏" : "全屏";
+        b.setAttribute("aria-pressed", String(full));
+      }
+    } });
+    async function minimize() {
+      if (!room) return;
+      try {
+        await display.exit();
+        if (room) {
+          root().classList.add("meeting-minimized");
+          toast2("会议继续进行，点击“返回会议”恢复");
+        }
+      } catch (e) {
+        toast2("暂时无法最小化，请先退出全屏");
+      }
+    }
     const root = () => {
       let n = el("meeting-layer");
       if (!n) {
@@ -4570,7 +4645,7 @@
         show();
         return;
       }
-      modal2(mode === "audio" ? "发起语音通话" : "发起会议", '<label>会议名称</label><input id="meeting-title" maxlength="60" value="'.concat(esc2(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议"), '"><p class="hint">').concat(cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。", "最多 ").concat(S2.policy.meetingMaxParticipants || 8, " 人，最长 ").concat(S2.policy.meetingDurationMinutes || 120, ' 分钟。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" ').concat(mode === "video" ? "checked" : "", ">入会时开启摄像头</label>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>');
+      modal2(mode === "audio" ? "发起语音通话" : "发起会议", '<label>会议名称</label><input id="meeting-title" maxlength="60" value="'.concat(esc2(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议"), '"><p class="hint">').concat(cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。", "最多 ").concat(S2.policy.meetingMaxParticipants || 8, " 人，最长 ").concat(S2.policy.meetingDurationMinutes || 120, ' 分钟。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" >入会时开启摄像头</label>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>');
       el("meeting-create-submit").onclick = async () => {
         const button = el("meeting-create-submit");
         button.disabled = true;
@@ -4615,7 +4690,7 @@
       }
     }
     async function join(code, mic = false, cam = false, host = false, call = null) {
-      var _a, _b, _c, _d, _e;
+      var _a, _b, _c;
       if (!/^[1-9]\d{8}$/.test(code)) throw Error("请输入 9 位会议号");
       if (room) {
         if (call && ((_a = room.call) == null ? void 0 : _a.id) !== call.id) throw Error("请先结束当前会议");
@@ -4632,7 +4707,7 @@
       }
       if ((_c = window.WeLinkAndroid) == null ? void 0 : _c.openMeeting) {
         window.WeLinkAndroid.openMeeting(code, S2.token, S2.user.name, host, mic, cam, S2.config.server, JSON.stringify(rtc));
-        (_d = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _d.click();
+        closeModal2();
         return;
       }
       const owner = S2.token, stream = await initialMedia(mic, cam);
@@ -4658,7 +4733,7 @@
           if (room === active && call.started) renderConnection(active);
         }, 1e3);
       }
-      (_e = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _e.click();
+      closeModal2();
       ws.onmessage = (event) => {
         if (room !== active) return;
         let m;
@@ -4689,7 +4764,7 @@
       el("meeting-network").textContent = label;
     }
     function renderRoom() {
-      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize">').concat(icon2("minus"), '</button></header><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
+      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">').concat(icon2("minus"), '</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
       el("meeting-copy").onclick = () => {
         if (root().classList.contains("meeting-minimized")) {
           show();
@@ -4697,15 +4772,11 @@
         }
         copyInvitation(room.code);
       };
-      el("meeting-minimize").onclick = () => {
-        root().classList.add("meeting-minimized");
-        toast2("会议在后台继续，点击会议入口返回");
-      };
+      el("meeting-minimize").onclick = minimize;
+      el("meeting-restore").onclick = show;
+      el("meeting-mini-leave").onclick = () => leave(false);
       for (const [id, fn] of [["meeting-audio", () => toggle("audio")], ["meeting-video", () => toggle("video")], ["meeting-share", share], ["meeting-record", record]]) el(id).onclick = () => fn().catch((e) => toast2(e.message));
-      el("meeting-fullscreen").onclick = () => {
-        if (document.fullscreenElement) document.exitFullscreen();
-        else el("meeting-layer").requestFullscreen().catch((e) => toast2(e.message));
-      };
+      el("meeting-fullscreen").onclick = display.toggle;
       const meter = document.createElement("div");
       meter.id = "meeting-mic-level";
       meter.className = "microphone-level";
@@ -4739,7 +4810,7 @@
       if (!n) {
         n = document.createElement("div");
         n.className = "meeting-tile";
-        n.innerHTML = '<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-tile-label"></div>';
+        n.innerHTML = '<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-sharing-status">正在共享屏幕<br><small>本机不回显共享画面</small></div><div class="meeting-tile-label"></div>';
         room.tiles.set(id, n);
         el("meeting-grid").append(n);
         n.classList.toggle("meeting-self", self);
@@ -4767,8 +4838,9 @@
       for (const [id, p] of room.states) {
         const n = room.tiles.get(id);
         if (n) {
-          n.classList.toggle("has-video", !!p.camera || !!p.screen);
+          n.classList.toggle("has-video", !(id === room.id && p.screen) && (!!p.camera || !!p.screen));
           n.classList.toggle("is-screen", !!p.screen);
+          n.classList.toggle("sharing-local", id === room.id && !!p.screen);
         }
       }
       el("meeting-recording").classList.toggle("hidden", ![...room.states.values()].some((p) => p.recording));
@@ -5015,33 +5087,53 @@
     }
     async function replaceVideo(track, stream) {
       for (const p of room.peers.values()) {
-        const sender = p.pc.getSenders().find((s) => {
-          var _a;
-          return ((_a = s.track) == null ? void 0 : _a.kind) === "video";
+        const transceiver = p.pc.getTransceivers().find((t) => {
+          var _a, _b;
+          return ((_a = t.sender.track) == null ? void 0 : _a.kind) === "video" || ((_b = t.receiver.track) == null ? void 0 : _b.kind) === "video";
         });
-        if (sender) await sender.replaceTrack(track);
-        else if (track) p.pc.addTrack(track, stream);
+        if (transceiver) {
+          if (track && transceiver.direction === "recvonly") transceiver.direction = "sendrecv";
+          await transceiver.sender.replaceTrack(track);
+        } else if (track) p.pc.addTrack(track, stream);
       }
     }
     async function share() {
       var _a;
-      if (!room || room.id !== room.host) return;
-      if (room.screen) {
+      const active = room;
+      if (!active || active.id !== active.host || active.sharePending) return;
+      if (active.screen) {
         await stopSharing();
         return;
       }
       if (!((_a = navigator.mediaDevices) == null ? void 0 : _a.getDisplayMedia)) throw Error("当前系统不支持屏幕共享");
-      const active = room, screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 20 } }, audio: false });
-      if (room !== active || active.id !== active.host) {
-        screen.getTracks().forEach((t) => t.stop());
-        return;
+      active.sharePending = true;
+      el("meeting-share").disabled = true;
+      try {
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 20 } }, audio: false, selfBrowserSurface: "exclude" });
+        if (room !== active || active.id !== active.host) {
+          screen.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        active.screen = screen;
+        screen.getVideoTracks()[0].onended = () => {
+          if (room === active) stopSharing().catch((e) => toast2(e.message));
+        };
+        try {
+          await replaceVideo(screen.getVideoTracks()[0], screen);
+        } catch (e) {
+          await stopSharing();
+          throw e;
+        }
+        if (room !== active) return;
+        tile(active.id, S2.user.name, active.stream, true);
+        state();
+        toast2("正在共享屏幕，本机已关闭共享画面回显");
+      } catch (e) {
+        if (e.name !== "NotAllowedError" && e.name !== "AbortError") throw e;
+      } finally {
+        active.sharePending = false;
+        if (room === active) updateButtons();
       }
-      room.screen = screen;
-      screen.getVideoTracks()[0].onended = () => stopSharing();
-      await replaceVideo(screen.getVideoTracks()[0], screen);
-      if (room !== active) return;
-      tile(active.id, S2.user.name, screen, true);
-      state();
     }
     async function stopSharing() {
       if (!(room == null ? void 0 : room.screen)) return;
@@ -5118,20 +5210,61 @@
       state();
     }
     function invite() {
-      if (!room) return;
-      modal2("邀请好友入会", '<p class="hint">会议号：'.concat(grouped(room.code), '</p><button class="secondary" id="meeting-copy-invitation">复制邀请链接和会议号</button><div class="member-select">').concat(S2.friends.map((u) => '<label class="check-row">'.concat(esc2(u.name), '<input type="checkbox" value="').concat(u.id, '" name="meeting-invite-user"></label>')).join("") || '<p class="hint">还没有好友，可以复制会议号分享。</p>', "</div>"), '<button class="primary" id="meeting-send-invites">发送邀请</button>');
-      el("meeting-copy-invitation").onclick = () => copyInvitation(room.code);
-      el("meeting-send-invites").onclick = async () => {
+      const active = room;
+      if (!active) return;
+      modal2("邀请好友入会", '<p class="hint">会议号：' + grouped(active.code) + '</p><button class="secondary" id="meeting-copy-invitation">复制邀请链接和会议号</button><label for="meeting-invite-search">搜索姓名或 6 位账号</label><input id="meeting-invite-search" placeholder="搜索用户"><div id="meeting-invite-results" class="member-select"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-send-invites">发送邀请</button>');
+      const panel = el("meeting-invite-results"), selected = /* @__PURE__ */ new Map();
+      let version = 0, timer;
+      const valid = () => room === active && panel.isConnected;
+      function render(users) {
+        if (!valid()) return;
+        const found = new Map([...selected, ...users.filter((u) => u.id !== S2.user.id && !active.states.has(u.id)).map((u) => [u.id, u])]);
+        panel.innerHTML = [...found.values()].map((u) => '<label class="check-row">' + esc2(u.remark || u.name) + " · " + esc2(u.number) + '<input type="checkbox" value="' + u.id + '" name="meeting-invite-user" ' + (selected.has(u.id) ? "checked" : "") + "></label>").join("") || '<p class="hint">暂无可邀请的联系人，可搜索用户或复制邀请链接。</p>';
+        panel.onchange = (e) => {
+          const u = found.get(e.target.value);
+          if (u) {
+            if (e.target.checked) selected.set(u.id, u);
+            else selected.delete(u.id);
+          }
+        };
+      }
+      render(S2.friends);
+      el("meeting-invite-search").oninput = (e) => {
+        clearTimeout(timer);
+        const q = e.target.value.trim(), v = ++version;
+        if (!q) {
+          render(S2.friends);
+          return;
+        }
+        timer = setTimeout(async () => {
+          try {
+            const users = await api2("/api/users?q=" + encodeURIComponent(q));
+            if (v === version) render(users);
+          } catch (e2) {
+            if (valid() && v === version) toast2(e2.message);
+          }
+        }, 220);
+      };
+      el("meeting-copy-invitation").onclick = () => copyInvitation(active.code);
+      const button = el("meeting-send-invites");
+      button.onclick = async () => {
+        if (!valid()) return;
+        if (!selected.size) {
+          el("modal-error").textContent = "请选择要邀请的好友";
+          return;
+        }
+        button.disabled = true;
         try {
-          await action2("/api/meetings/".concat(room.code, "/invite"), { members: (() => {
-            const ids = [...document.querySelectorAll("[name=meeting-invite-user]:checked")].map((x) => x.value);
-            if (!ids.length) throw Error("请选择要邀请的好友");
-            return ids;
-          })() });
-          document.querySelector("[data-action=close-modal]").click();
-          toast2("会议邀请已发送");
+          await action2("/api/meetings/" + active.code + "/invite", { members: [...selected.keys()] });
+          if (valid()) {
+            closeModal2();
+            toast2("会议邀请已发送");
+          }
         } catch (e) {
-          toast2(e.message);
+          if (valid()) {
+            el("modal-error").textContent = e.message;
+            button.disabled = false;
+          }
         }
       };
     }
@@ -5209,9 +5342,9 @@
       (_b = window.welinkMeetingClear) == null ? void 0 : _b.call(window);
     }
     function leave(end) {
-      if (!room) return;
-      if (room.call) {
-        const active = room;
+      const active = room;
+      if (!active) return;
+      if (active.call) {
         send({ type: "call-end" });
         active.intentional = true;
         cleanup(active);
@@ -5219,22 +5352,34 @@
         });
         return;
       }
-      modal2(end ? "结束会议" : "离开会议", '<p class="hint">'.concat(end ? "结束后所有成员将离开，会议号立即失效。" : "会议中的其他成员可以继续交流。", "</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-confirm-leave">确认</button>');
-      el("meeting-confirm-leave").onclick = async () => {
-        var _a;
-        const active = room;
+      modal2(end ? "结束会议" : "离开会议", '<p class="hint">' + (end ? "结束后所有成员将离开，会议号立即失效。" : "其他成员可继续交流；主持人离开后会自动转交权限。") + "</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-confirm-leave">确认</button>');
+      const button = el("meeting-confirm-leave");
+      button.onclick = async () => {
+        if (room !== active) {
+          closeModal2();
+          return;
+        }
+        button.disabled = true;
         try {
-          if (end) await action2("/api/meetings/".concat(active.code, "/end"));
-          active.intentional = true;
-          cleanup(active);
-          (_a = document.querySelector("[data-action=close-modal]")) == null ? void 0 : _a.click();
+          if (end) await action2("/api/meetings/" + active.code + "/end");
+          if (room === active) {
+            active.intentional = true;
+            cleanup(active);
+          }
+          closeModal2();
         } catch (e) {
-          toast2(e.message);
+          if (button.isConnected) {
+            el("modal-error").textContent = e.message;
+            button.disabled = false;
+          }
         }
       };
     }
     function cleanup(active) {
       var _a, _b;
+      display.exit().catch(() => {
+      });
+      closeModal2();
       if (room === active) {
         stopRecording();
         room = null;
@@ -5407,6 +5552,9 @@
   function closeModal() {
     Navigation.clear();
   }
+  function finishModal() {
+    Navigation.complete();
+  }
   var pageHistory = [];
   function pageBack() {
     var _a;
@@ -5484,7 +5632,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.8-preview · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.9-preview · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -6139,9 +6287,9 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.8 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.9 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
-      document.body.classList.toggle("dark", $("#pref-dark").checked);
+      applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
       closeModal();
     };
@@ -6626,7 +6774,7 @@
         case "close-modal":
           if (((_d = S.remote) == null ? void 0 : _d.state) === "pending" && $(".remote-invite")) Navigation.back();
           else if (b.closest(".modal-footer") && b.textContent.trim() === "取消") Navigation.back();
-          else closeModal();
+          else finishModal();
           break;
         case "modal-back":
           Navigation.back();
@@ -6852,7 +7000,7 @@
     });
   });
   document.addEventListener("pointerdown", (e) => {
-    if (e.button === 0 && window.welinkDrag && !e.target.closest("#overlays,button,input,textarea,a") && (e.target.closest(".chat-head") || e.clientY < 28)) window.welinkDrag();
+    if (e.button === 0 && window.welinkDrag && !e.target.closest("#overlays,#meeting-layer,button,input,textarea,a") && (e.target.closest(".chat-head") || e.clientY < 28)) window.welinkDrag();
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !e.defaultPrevented && (!S.remote || S.remote.state === "pending") && Navigation.handleBack()) {
@@ -6862,8 +7010,8 @@
   window.addEventListener("storage", (event) => {
     if ((event.key === "welink_token" || event.key === null) && S.token && localStorage.getItem("welink_token") !== S.token) logout(false);
   });
-  if (localStorage.getItem("welink_dark") === "true") document.body.classList.add("dark");
-  var Received = createReceivedCache({ S, toast, modal, closeModal, esc, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
+  applyTheme(localStorage.getItem("welink_dark") === "true");
+  var Received = createReceivedCache({ S, toast, modal, closeModal: finishModal, esc, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
     if (S.active !== cid) return;
     const live = new Map(messages.map((m) => [m.id, m])), checked = new Set(ids);
     S.messages = denied ? [] : S.messages.filter((m) => !checked.has(m.id) || live.has(m.id)).map((m) => live.get(m.id) || m);
@@ -6878,17 +7026,17 @@
   createConversationActions({ S, api, modal, closeModal, toast, esc, icon, contextMenu, refresh });
   var Admin = createAdmin({ S, api, modal, closeModal, toast, esc, icon, refresh });
   var Media = createMedia({ S, api, action, modal, closeModal, toast, esc, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
-  var Desktop = createDesktop({ S, modal, closeModal, toast, markRead, esc });
+  var Desktop = createDesktop({ S, modal, closeModal: finishModal, toast, markRead, esc });
   var Sounds = createMessageSounds({ toast, native: Desktop.native, hidden: Desktop.hidden });
   var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc, upload });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
-  var Outbox = createOutbox({ sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal });
+  var Outbox = createOutbox({ sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
-  var Contacts = createContacts({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
+  var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
-  var Meetings = createMeetings({ api, action, S, modal, toast, esc, icon, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
+  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc, icon, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
   var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, renderMessages, queueRefresh, fullTime });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });

@@ -1,0 +1,31 @@
+import {chromium} from 'playwright';
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const base='http://127.0.0.1:18246',password='Meeting-controls-test-2026!',errors=[];
+async function api(path,token,body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});assert.equal(r.status,200,path);return r.json()}
+const credential=JSON.parse(await fs.readFile('.local/storage-admin.json','utf8')),admin=await api('/api/auth/login','',credential),people=[];
+for(const name of ['会议操作测试','受邀用户']){const {user}=await api('/api/admin/users',admin.token,{name,password});people.push(await api('/api/auth/login','',{account:user.number,password}))}
+const [owner,guest]=people;await api('/api/conversations',owner.token,{kind:'direct',members:[guest.user.id]});
+const entry=(await fs.readFile('.local/dev-client/client.url','utf8')).trim(),browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
+let code='';
+async function login(person){const ctx=await browser.newContext({viewport:{width:1100,height:740},permissions:['microphone','camera','clipboard-read','clipboard-write']});await ctx.addInitScript(()=>{
+ window.mediaRequests=[];window.screenStreams=[];window.nativeInvitations=[];window.welinkMeetingNotify=async(...args)=>{nativeInvitations.push(args);return true};
+ const media=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async options=>{mediaRequests.push(options);return media(options)};
+ navigator.mediaDevices.getDisplayMedia=async()=>{await new Promise(r=>setTimeout(r,100));const stream=await media({video:true});screenStreams.push(stream);return stream};
+});const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(entry);await p.getByLabel('账号',{exact:true}).fill(person.user.number);await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录',exact:true}).click();await p.locator('.rail').waitFor();return p}
+const topHit=(p,selector)=>p.locator(selector).evaluate(node=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return node===hit||node.contains(hit)});
+async function fullscreen(p){await p.locator('#meeting-fullscreen').click();await p.waitForFunction(()=>document.fullscreenElement===document.documentElement)}
+try{
+ const a=await login(owner),b=await login(guest);
+ await a.locator('[data-nav=meetings]').click();await a.locator('[data-action=meeting-create]').click();assert.equal(await a.locator('#meeting-camera').isChecked(),false);await a.locator('#meeting-create-submit').click();await a.waitForFunction(()=>document.querySelector('#meeting-count')?.textContent==='1');code=(await a.locator('#meeting-copy').textContent()).replace(/\D/g,'');assert.equal(await a.evaluate(()=>mediaRequests.some(r=>r.video)),false);
+ await fullscreen(a);await a.locator('#meeting-copy').click();await a.getByText('邀请链接和会议号已复制',{exact:true}).waitFor();assert.equal(await topHit(a,'#toasts .toast'),false);assert.ok((await a.evaluate(()=>navigator.clipboard.readText())).includes('/join/'+code));
+ await a.locator('#meeting-invite').click();assert.equal(await topHit(a,'#meeting-send-invites'),true);await a.locator('#meeting-send-invites').click();await a.locator('#modal-error').getByText('请选择要邀请的好友').waitFor();await a.locator('#meeting-invite-search').fill(guest.user.number);await a.locator('[name=meeting-invite-user][value="'+guest.user.id+'"]').check();await a.locator('#meeting-send-invites').click();await b.waitForFunction(()=>nativeInvitations.length===1);
+ await a.locator('#meeting-leave').click();assert.equal(await topHit(a,'#meeting-confirm-leave'),true);await a.locator('.modal-footer .secondary').click();assert.equal(await a.locator('.meeting-room').count(),1);
+ await a.locator('#meeting-minimize').click();await a.waitForFunction(()=>!document.fullscreenElement&&document.querySelector('.meeting-minimized'));assert.equal(await topHit(a,'#meeting-restore'),true);assert.equal(await topHit(a,'[data-action=meeting-create]'),true);await a.locator('#meeting-restore').click();
+ await b.locator('[data-nav=meetings]').click();await b.locator('[data-action=meeting-join]').click();await b.locator('#meeting-code').fill(code);assert.equal(await b.locator('#meeting-camera').isChecked(),false);await b.locator('#meeting-join-submit').click();await a.waitForFunction(()=>document.querySelector('#meeting-count')?.textContent==='2');
+ await a.locator('#meeting-share').click();await a.waitForFunction(()=>document.querySelector('.sharing-local')&&screenStreams.length===1);assert.equal(await a.locator('.sharing-local video').isVisible(),false);await b.waitForFunction(()=>[...document.querySelectorAll('.meeting-tile.is-screen video')].some(v=>v.videoWidth>0));
+ await a.locator('#meeting-share').click();await a.waitForFunction(()=>screenStreams.every(s=>s.getTracks().every(t=>t.readyState==='ended')));await a.locator('#meeting-share').click();await b.waitForFunction(()=>[...document.querySelectorAll('.meeting-tile.is-screen video')].some(v=>v.videoWidth>0));await a.locator('#meeting-share').click();
+ await fullscreen(b);await b.locator('#meeting-leave').click();await b.locator('#meeting-confirm-leave').click();await b.locator('.meeting-room').waitFor({state:'detached'});await a.waitForFunction(()=>document.querySelector('#meeting-count')?.textContent==='1');
+ await fullscreen(a);await a.locator('#meeting-end').click();assert.equal(await topHit(a,'#meeting-confirm-leave'),true);await a.locator('#meeting-confirm-leave').click();await a.locator('.meeting-room').waitFor({state:'detached'});await a.waitForFunction(()=>!document.fullscreenElement);assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({ok:true,cameraOffByDefault:true,fullscreenCopyInviteLeaveEnd:true,minimizeRestore:true,repeatedShareDeliveredWithoutSelfPreview:true}));
+}finally{if(code)await api('/api/meetings/'+code+'/end',owner.token,{}).catch(()=>{});await browser.close()}

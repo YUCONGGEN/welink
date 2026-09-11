@@ -20,9 +20,10 @@ var user32 = syscall.NewLazyDLL("user32.dll")
 const windowsIconResource = 2 // RT_GROUP_ICON; resource 1 is the application manifest.
 
 type windowsHost struct {
-	view    webview.WebView
-	hwnd    uintptr
-	desktop desktopState
+	view         webview.WebView
+	hwnd         uintptr
+	desktop      desktopState
+	presentation windowPresentation
 }
 
 func newWindow(address, dir string) (windowHost, error) {
@@ -52,6 +53,9 @@ func newWindow(address, dir string) (windowHost, error) {
 		v.Destroy()
 		return nil, err
 	}
+	v.Bind("welinkTheme", h.theme)
+	v.Bind("welinkMeetingFullscreen", h.meetingFullscreen)
+	user32.NewProc("SetWindowPos").Call(h.hwnd, 0, 0, 0, 0, 0, 0x0037)
 	v.Bind("welinkDrag", func() {
 		user32.NewProc("ReleaseCapture").Call()
 		user32.NewProc("SendMessageW").Call(h.hwnd, 0x00A1, 2, 0)

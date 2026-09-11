@@ -46,5 +46,7 @@ export function createNavigation({getHandler,setHandler,beforeOpen,esc,icon,onPa
   if(event.shiftKey&&document.activeElement===first){event.preventDefault();focus(last)}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();focus(first)}
  });
  window.WeLinkGoBack=handleBack;
- return {open,clear,back,handleBack};
+ // Completing a settings subpage returns to the controls the user came from.
+ function complete(){if(stack.some(item=>item.title==='设置'))back();else clear()}
+ return {open,clear,back,handleBack,complete};
 }
