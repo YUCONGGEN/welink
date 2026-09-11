@@ -28,7 +28,7 @@ public final class QrScannerActivity extends Activity implements SurfaceHolder.C
     private final AtomicBoolean decoding=new AtomicBoolean();
     private boolean resumed,finished;
     private long lastFrame;
-    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    @Override public void onCreate(Bundle state){super.onCreate(state);ScreenInsets.install(this);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.WHITE);
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setPadding(dp(14),0,dp(14),0);
         Button back=new Button(this);back.setText("返回");back.setOnClickListener(v->finish());top.addView(back);

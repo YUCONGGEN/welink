@@ -35,7 +35,7 @@ public final class MainActivity extends Activity {
     private final java.util.concurrent.ExecutorService io=Executors.newSingleThreadExecutor();
     private boolean starting;
     private WeLinkApp app(){return (WeLinkApp)getApplication();}
-    @Override public void onCreate(Bundle state){super.onCreate(state);MainActivity previous=current.get();if(previous!=null&&previous!=this&&!previous.isFinishing()&&getIntent().getData()!=null){previous.receiveMeetingIntent(getIntent());finish();return;}current=new java.lang.ref.WeakReference<>(this);receiveMeetingIntent(getIntent());getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);start();}
+    @Override public void onCreate(Bundle state){super.onCreate(state);ScreenInsets.install(this);MainActivity previous=current.get();if(previous!=null&&previous!=this&&!previous.isFinishing()&&getIntent().getData()!=null){previous.receiveMeetingIntent(getIntent());finish();return;}current=new java.lang.ref.WeakReference<>(this);receiveMeetingIntent(getIntent());start();}
     private void receiveMeetingIntent(Intent intent){Uri uri=intent==null?null:intent.getData();if(uri==null||!"welink".equals(uri.getScheme())||!"meeting".equals(uri.getAuthority())||uri.getQuery()!=null||uri.getFragment()!=null)return;String path=uri.getPath();if(path!=null&&path.matches("/[1-9][0-9]{8}"))getSharedPreferences("meeting-invitation",MODE_PRIVATE).edit().putString("code",path.substring(1)).putLong("created",System.currentTimeMillis()).apply();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);receiveMeetingIntent(intent);}
     private void start(){
@@ -60,7 +60,7 @@ public final class MainActivity extends Activity {
             @Override public void onPermissionRequest(PermissionRequest request){main.post(()->requestWebPermission(request));}
             @Override public void onPermissionRequestCanceled(PermissionRequest request){main.post(()->{if(pendingWebPermission==request)pendingWebPermission=null;});}
         });
-        setContentView(web);getWindow().getDecorView();if(Build.VERSION.SDK_INT>=30){getWindow().setDecorFitsSystemWindows(true);}web.loadUrl(url);
+        setContentView(web);web.loadUrl(url);
     }
     private boolean isLocal(Uri uri){return origin!=null&&uri.toString().startsWith(origin+"/");}
     private boolean isLocalOrigin(Uri uri){return origin!=null&&(origin.equals(uri.toString())||(origin+"/").equals(uri.toString()));}

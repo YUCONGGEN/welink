@@ -4,6 +4,8 @@ Go 服务端与共享客户端内核，Windows 原生 WebView2、Android 原生�
 
 ## 使用
 
+最新客户端修复记录：[0.1.2 · 系统安全边距、麦克风波动、Windows 黑屏与托盘图标](docs/CLIENT_STABILITY_20260911.md)。
+
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`
 - Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
@@ -76,6 +78,7 @@ node scripts/ui-test.mjs
 node scripts/meeting-test.mjs
 node scripts/calls-test.mjs
 node scripts/media-path-test.mjs
+node scripts/microphone-meter-test.mjs
 sh scripts/android-assets-test.sh dist/WeLink-Android.apk
 node scripts/qr-login-test.mjs
 node scripts/message-operations-test.mjs
@@ -93,7 +96,7 @@ node scripts/outbox-test.mjs
 
 存储、会议和媒体路径联调脚本需要 `.local/storage-admin.json` 中的本地测试管理员，关闭自助注册时由管理员创建测试账号；旧脚本需启用本地测试注册或通过测试管理员预置账号。媒体路径测试需本地启用 TURN 及测试用回环地址许可。Android 资源测试需要 JDK 17+，直接用 APK 验证 100 个头像的递归安装、覆盖更新、失败清理和重试。Windows 原生窗口测试每项单独启动测试进程，WebView2 DLL 在进程退出前保持映射。
 
-界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。
+界面联调脚本使用本地测试 API `127.0.0.1:18246` 和 `.local/dev-client/client.url`，当前测试客户端使用 18749，避开用户客户端 18746，不应直接改为生产地址运行。会议脚本使用 Chrome 合成麦克风 / 摄像头验证三人传输、静音和主持人控制；这不等同于手机真机或公网弱网验证。
 
 Windows 用户数据默认在 `%APPDATA%/WeLink`；安装路径默认 `%LOCALAPPDATA%/Programs/WeLink`。SSH 私钥、APK 签名密钥、数据库、构建产物不纳入版本控制。
 

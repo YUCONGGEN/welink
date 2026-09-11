@@ -78,6 +78,11 @@ final class ConferenceController {
     private final Map<String,Peer> peers=new LinkedHashMap<>();
     private final EglBase egl;
     private final PeerConnectionFactory factory;
+    private final org.webrtc.audio.JavaAudioDeviceModule audioDevice;
+    private volatile float capturedMicrophoneLevel;
+    private volatile long microphoneSampleTime;
+    private float displayedMicrophoneLevel;
+    private final Runnable microphoneMeter=new Runnable(){public void run(){if(closed)return;boolean enabled=audioTrack!=null&&audioTrack.enabled();float level=enabled&&android.os.SystemClock.elapsedRealtime()-microphoneSampleTime<500?capturedMicrophoneLevel:0;displayedMicrophoneLevel=enabled?Math.max(level,displayedMicrophoneLevel*.65f):0;presentation.setMicrophoneLevel(displayedMicrophoneLevel);main.postDelayed(this,100);}};
     private final ConferenceUi presentation;
     private final AudioManager audioManager;
     private final int oldAudioMode;
@@ -102,7 +107,9 @@ final class ConferenceController {
         this.activity=activity;this.channel=channel;this.code=code;this.localName=name;this.requestedHost=host;this.callMode=!callMode.isEmpty();
         initializeWebRTC(activity.getApplicationContext());
         egl=EglBase.create();
+        audioDevice=org.webrtc.audio.JavaAudioDeviceModule.builder(activity.getApplicationContext()).setAudioFormat(android.media.AudioFormat.ENCODING_PCM_16BIT).setSamplesReadyCallback(samples->{capturedMicrophoneLevel=MicrophoneLevel.pcm16(samples.getData());microphoneSampleTime=android.os.SystemClock.elapsedRealtime();}).createAudioDeviceModule();
         factory=PeerConnectionFactory.builder()
+                .setAudioDeviceModule(audioDevice)
                 .setVideoEncoderFactory(new DefaultVideoEncoderFactory(egl.getEglBaseContext(),true,true))
                 .setVideoDecoderFactory(new DefaultVideoDecoderFactory(egl.getEglBaseContext()))
                 .createPeerConnectionFactory();
@@ -123,7 +130,7 @@ final class ConferenceController {
         local.microphone=audioTrack!=null&&audioTrack.enabled();local.camera=cameraTrack!=null&&cameraTrack.enabled();
         presentation.upsert(local.view(true));if(cameraTrack!=null)presentation.attachVideo("local",cameraTrack,true);render();
         ConferenceProjectionService.onStopped=projectionStopped;
-        reader.execute(this::readLoop);if(this.callMode)main.post(callClock);
+        reader.execute(this::readLoop);main.post(microphoneMeter);if(this.callMode)main.post(callClock);
     }
 
     android.view.View view(){return presentation.root;}
@@ -231,9 +238,9 @@ final class ConferenceController {
     private void notice(String message){activity.conferenceNotice(message);}
     private String safeName(String value){value=value==null?"":value.trim();return value.isEmpty()?"参会者":value;}
 
-    private void finish(String reason,boolean unexpected){if(closed)return;closed=true;main.removeCallbacks(callClock);ConferenceProjectionService.onStopped=null;
+    private void finish(String reason,boolean unexpected){if(closed)return;closed=true;main.removeCallbacks(callClock);main.removeCallbacks(microphoneMeter);ConferenceProjectionService.onStopped=null;
         // Detach renderers while the local and remote tracks are still alive.
-        presentation.release();for(Peer peer:new ArrayList<>(peers.values()))peer.close();peers.clear();if(screenSharing||screenCapturer!=null)stopScreenShare();if(recording||recorder!=null)stopRecording(false);channel.close();reader.shutdownNow();writer.shutdown();if(cameraCapturer!=null){try{cameraCapturer.stopCapture();}catch(Exception ignored){}cameraCapturer.dispose();}if(cameraTrack!=null)cameraTrack.dispose();if(cameraSource!=null)cameraSource.dispose();if(cameraTexture!=null)cameraTexture.dispose();if(audioTrack!=null)audioTrack.dispose();if(audioSource!=null)audioSource.dispose();factory.dispose();egl.release();audioManager.setMode(oldAudioMode);audioManager.setSpeakerphoneOn(oldSpeaker);activity.onConferenceClosed(reason,unexpected&&!intentional);}
+        presentation.release();for(Peer peer:new ArrayList<>(peers.values()))peer.close();peers.clear();if(screenSharing||screenCapturer!=null)stopScreenShare();if(recording||recorder!=null)stopRecording(false);channel.close();reader.shutdownNow();writer.shutdown();if(cameraCapturer!=null){try{cameraCapturer.stopCapture();}catch(Exception ignored){}cameraCapturer.dispose();}if(cameraTrack!=null)cameraTrack.dispose();if(cameraSource!=null)cameraSource.dispose();if(cameraTexture!=null)cameraTexture.dispose();if(audioTrack!=null)audioTrack.dispose();if(audioSource!=null)audioSource.dispose();factory.dispose();audioDevice.release();egl.release();audioManager.setMode(oldAudioMode);audioManager.setSpeakerphoneOn(oldSpeaker);activity.onConferenceClosed(reason,unexpected&&!intentional);}
 
     private final class Peer implements PeerConnection.Observer {final String id;PeerConnection pc;IcePathController route;RtpSender audioSender,videoSender;boolean remoteSet,makingOffer,needsOffer,ignoreOffer;int offerEpoch;final List<IceCandidate> candidates=new ArrayList<>();Peer(String id){this.id=id;}void close(){offerEpoch++;if(route!=null)route.close();if(pc!=null){pc.close();pc.dispose();pc=null;}}
         @Override public void onSignalingChange(PeerConnection.SignalingState state){}

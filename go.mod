@@ -1,5 +1,7 @@
 module welink
 
+replace github.com/jchv/go-webview2 => ./third_party/go-webview2
+
 go 1.25.0
 
 replace github.com/wlynxg/anet => ./third_party/anet

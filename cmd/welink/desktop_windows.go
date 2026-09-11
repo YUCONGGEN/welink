@@ -110,7 +110,7 @@ func (h *windowsHost) installDesktop(directory string) error {
 		return fmt.Errorf("初始化桌面窗口失败: %v", err)
 	}
 	module, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
-	icon, _, _ := user32.NewProc("LoadImageW").Call(module, 1, 1, 32, 32, 0x8000) // resource icon, LR_SHARED
+	icon, _, _ := user32.NewProc("LoadImageW").Call(module, windowsIconResource, 1, 32, 32, 0x8000) // resource icon, LR_SHARED
 	if icon == 0 {
 		icon, _, _ = user32.NewProc("LoadIconW").Call(0, 32512)
 	}
@@ -220,6 +220,9 @@ func (h *windowsHost) showWindow() {
 		user32.NewProc("ShowWindow").Call(h.hwnd, 5)
 	}
 	user32.NewProc("SetForegroundWindow").Call(h.hwnd)
+	if err := h.view.SetVisible(true); err != nil {
+		log.Printf("restore WebView2 controller: %v", err)
+	}
 	h.visibility(false)
 }
 
@@ -232,6 +235,9 @@ func (h *windowsHost) closeWindow() {
 		return
 	}
 	if h.desktop.trayAvailable {
+		if err := h.view.SetVisible(false); err != nil {
+			log.Printf("hide WebView2 controller: %v", err)
+		}
 		user32.NewProc("ShowWindow").Call(h.hwnd, 0)
 	} else {
 		user32.NewProc("ShowWindow").Call(h.hwnd, 6)

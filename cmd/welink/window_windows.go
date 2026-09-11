@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	webview "github.com/jchv/go-webview2"
 	"log"
@@ -15,6 +16,8 @@ import (
 )
 
 var user32 = syscall.NewLazyDLL("user32.dll")
+
+const windowsIconResource = 2 // RT_GROUP_ICON; resource 1 is the application manifest.
 
 type windowsHost struct {
 	view    webview.WebView
@@ -32,7 +35,7 @@ func newWindow(address, dir string) (windowHost, error) {
 	if dpi == 0 {
 		dpi = 96
 	}
-	v := webview.NewWithOptions(webview.WebViewOptions{Debug: os.Getenv("WELINK_DEBUG") == "1", DataPath: filepath.Join(dir, "webview"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "WeLink", Width: uint(1100 * dpi / 96), Height: uint(740 * dpi / 96), IconId: 1, Center: true}})
+	v := webview.NewWithOptions(webview.WebViewOptions{Debug: os.Getenv("WELINK_DEBUG") == "1", DataPath: filepath.Join(dir, "webview"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "WeLink", Width: uint(1100 * dpi / 96), Height: uint(740 * dpi / 96), IconId: windowsIconResource, Center: true}})
 	if v == nil {
 		return nil, errors.New("无法启动 WebView2，请安装 Microsoft Edge WebView2 Runtime")
 	}
@@ -57,8 +60,18 @@ func newWindow(address, dir string) (windowHost, error) {
 	// StartupInfo from a launcher may request SW_HIDE. Show the user window
 	// explicitly after WebView initialization so installation launches are visible.
 	user32.NewProc("ShowWindow").Call(h.hwnd, 5)
+	if err := v.SetVisible(true); err != nil {
+		log.Printf("show WebView2 controller: %v", err)
+	}
 	if os.Getenv("WELINK_DEBUG") == "1" {
 		v.Bind("welinkDiagnostic", func(report string) {
+			var data map[string]any
+			if json.Unmarshal([]byte(report), &data) == nil {
+				data["browserVisible"] = h.browserVisible()
+				if encoded, err := json.Marshal(data); err == nil {
+					report = string(encoded)
+				}
+			}
 			_ = os.WriteFile(filepath.Join(dir, "native-diagnostic.json"), []byte(report), 0600)
 		})
 		v.Init(`addEventListener('DOMContentLoaded',()=>{const t=setInterval(async()=>{if(!document.querySelector('#auth-form'))return;clearInterval(t);try{const cfg=await fetch('/local/config').then(r=>r.json());const status=(await fetch('/api/me')).status;const signup=document.querySelector('[data-action=register]');if(signup)signup.click();const registration=!!document.querySelector('[name=name]');document.querySelector('[data-action=login]')?.click();await welinkDiagnostic(JSON.stringify({ready:true,server:cfg.server,status,registration,width:innerWidth,height:innerHeight}));}catch(e){await welinkDiagnostic(JSON.stringify({error:String(e)}))}},200)});`)
@@ -66,6 +79,15 @@ func newWindow(address, dir string) (windowHost, error) {
 		v.Navigate(address)
 	}
 	return h, nil
+}
+func (h *windowsHost) browserVisible() bool {
+	class, _ := syscall.UTF16PtrFromString("Chrome_WidgetWin_0")
+	child, _, _ := user32.NewProc("FindWindowExW").Call(h.hwnd, 0, uintptr(unsafe.Pointer(class)), 0)
+	if child == 0 {
+		return false
+	}
+	visible, _, _ := user32.NewProc("IsWindowVisible").Call(child)
+	return visible != 0
 }
 func (h *windowsHost) Run() { h.view.Run() }
 func (h *windowsHost) Close() {

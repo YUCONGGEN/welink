@@ -3444,6 +3444,64 @@
     return (policy.iceServers || []).map((s) => __spreadProps(__spreadValues({}, s), { urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => /^stun:/.test(u)) })).filter((s) => s.urls.length);
   }
 
+  // internal/ui/src/microphone-meter.js
+  function microphoneMeter(track, node) {
+    if (!track || !node) return null;
+    let context, source, analyser, frame = 0, last = 0, level = 0, closed = false;
+    const bars = [...node.children], history = Array(bars.length).fill(0), values = new Float32Array(512);
+    const display = (value) => {
+      node.dataset.level = String(Math.round(value * 100));
+      node.setAttribute("aria-valuenow", String(Math.round(value * 100)));
+      if (value <= 0) history.fill(0);
+      else {
+        history.shift();
+        history.push(value);
+      }
+      bars.forEach((bar, i) => {
+        bar.style.height = Math.max(15, history[i] * 100) + "%";
+        bar.classList.toggle("active", history[i] > 0.02);
+      });
+    };
+    try {
+      context = new (window.AudioContext || window.webkitAudioContext)();
+      source = context.createMediaStreamSource(new MediaStream([track]));
+      analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      context.resume().catch(() => {
+      });
+      const draw = (time) => {
+        if (closed) return;
+        frame = requestAnimationFrame(draw);
+        if (time - last < 90) return;
+        last = time;
+        analyser.getFloatTimeDomainData(values);
+        let sum = 0;
+        for (const value of values) sum += value * value;
+        const sample = Math.max(0, Math.min(1, (20 * Math.log10(Math.max(Math.sqrt(sum / values.length), 1e-6)) + 60) / 60));
+        level = track.enabled && track.readyState === "live" ? Math.max(sample, level * 0.65) : 0;
+        display(level);
+      };
+      frame = requestAnimationFrame(draw);
+    } catch (e) {
+      source == null ? void 0 : source.disconnect();
+      context == null ? void 0 : context.close().catch(() => {
+      });
+      display(0);
+      return null;
+    }
+    return { track, close() {
+      if (closed) return;
+      closed = true;
+      cancelAnimationFrame(frame);
+      source.disconnect();
+      analyser.disconnect();
+      context.close().catch(() => {
+      });
+      display(0);
+    } };
+  }
+
   // internal/ui/src/meetings.js
   function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
@@ -3519,6 +3577,7 @@
     }
     function state() {
       if (!(room == null ? void 0 : room.id)) return;
+      startMicrophoneMeter(room);
       const local = room.states.get(room.id);
       if (!local) return;
       local.microphone = room.stream.getAudioTracks().some((t) => t.enabled);
@@ -3678,10 +3737,29 @@
         if (document.fullscreenElement) document.exitFullscreen();
         else el("meeting-layer").requestFullscreen().catch((e) => toast2(e.message));
       };
+      const meter = document.createElement("div");
+      meter.id = "meeting-mic-level";
+      meter.className = "microphone-level";
+      meter.setAttribute("role", "meter");
+      meter.setAttribute("aria-label", "麦克风输入音量");
+      meter.setAttribute("aria-valuemin", "0");
+      meter.setAttribute("aria-valuemax", "100");
+      meter.setAttribute("aria-valuenow", "0");
+      meter.innerHTML = "<i></i>".repeat(7);
+      el("meeting-audio").append(meter);
+      startMicrophoneMeter(room);
       el("meeting-invite").onclick = invite;
       el("meeting-leave").onclick = () => leave(false);
       el("meeting-end").onclick = () => leave(true);
       updateButtons();
+    }
+    function startMicrophoneMeter(active) {
+      var _a, _b;
+      if (room !== active) return;
+      const track = active.stream.getAudioTracks()[0];
+      if (((_a = active.microphoneMeter) == null ? void 0 : _a.track) === track) return;
+      (_b = active.microphoneMeter) == null ? void 0 : _b.close();
+      active.microphoneMeter = microphoneMeter(track, el("meeting-mic-level"));
     }
     function show() {
       if (room) root().classList.remove("meeting-minimized");
@@ -4144,11 +4222,12 @@
       };
     }
     function cleanup(active) {
-      var _a;
+      var _a, _b;
       if (room === active) {
         stopRecording();
         room = null;
       }
+      (_a = active.microphoneMeter) == null ? void 0 : _a.close();
       clearInterval(active.ping);
       clearInterval(active.callClock);
       active.ws.close();
@@ -4158,7 +4237,7 @@
       }
       ;
       active.stream.getTracks().forEach((t) => t.stop());
-      (_a = active.screen) == null ? void 0 : _a.getTracks().forEach((t) => {
+      (_b = active.screen) == null ? void 0 : _b.getTracks().forEach((t) => {
         t.onended = null;
         t.stop();
       });

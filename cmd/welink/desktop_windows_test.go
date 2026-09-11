@@ -94,6 +94,13 @@ func TestNativeDesktopLifecycle(t *testing.T) {
 				if !registered() {
 					return fmt.Errorf("tray not registered")
 				}
+				if !h.browserVisible() {
+					return fmt.Errorf("WebView2 child hidden after startup")
+				}
+				fallback, _, _ := user32.NewProc("LoadIconW").Call(0, 32512)
+				if h.desktop.icon.Icon == 0 || h.desktop.icon.Icon == fallback {
+					return fmt.Errorf("tray must use the WeLink resource instead of the generic application icon")
+				}
 				return nil
 			}); err != nil {
 				return err
@@ -116,7 +123,7 @@ func TestNativeDesktopLifecycle(t *testing.T) {
 			user32.NewProc("PostMessageW").Call(h.hwnd, desktopTrayMessage, 0, uintptr(1<<16|0x401))
 			if err := invoke(func() error {
 				visible, _, _ := user32.NewProc("IsWindowVisible").Call(h.hwnd)
-				if visible == 0 || h.desktop.hidden {
+				if visible == 0 || h.desktop.hidden || !h.browserVisible() {
 					return fmt.Errorf("keyboard tray activation did not restore window")
 				}
 				shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))

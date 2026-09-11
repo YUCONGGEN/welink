@@ -28,6 +28,8 @@ import java.util.Locale;
 
 /** Native light meeting UI matching the WeLink / QQ white, gray and blue palette. */
 final class ConferenceUi {
+    private MicrophoneMeter microphoneMeter;
+    void setMicrophoneLevel(float value){if(microphoneMeter!=null)microphoneMeter.setLevel(value);}
     interface Actions {
         void invite();
         void copyInvitation();
@@ -76,6 +78,7 @@ final class ConferenceUi {
         HorizontalScrollView toolbarScroll=new HorizontalScrollView(activity);toolbarScroll.setHorizontalScrollBarEnabled(false);toolbarScroll.setFillViewport(true);toolbarScroll.setBackgroundColor(0xffffffff);
         LinearLayout toolbar=row();toolbar.setGravity(Gravity.CENTER);toolbar.setPadding(dp(8),dp(4),dp(8),dp(4));
         invite=tool("邀请",this.actions::invite);mic=tool("麦克风",this.actions::microphone);camera=tool("摄像头",this.actions::camera);switchCamera=tool("切换镜头",this.actions::switchCamera);share=tool("共享屏幕",this.actions::share);members=tool("成员",()->setMembersOpen(!memberPanelOpen));record=tool("录制",this.actions::record);leave=tool(callMode.isEmpty()?"离开":"挂断",this.actions::leave);leave.label.setTextColor(0xffff7272);
+        microphoneMeter=new MicrophoneMeter(activity);mic.root.addView(microphoneMeter,1,new LinearLayout.LayoutParams(dp(34),dp(10)));
         for(Tool tool:new Tool[]{mic,camera,switchCamera,invite,share,members,record,leave})toolbar.addView(tool.root,new LinearLayout.LayoutParams(dp(72),dp(70)));
         toolbarScroll.addView(toolbar,new HorizontalScrollView.LayoutParams(-1,-1));
         FrameLayout.LayoutParams toolbarParams=new FrameLayout.LayoutParams(-1,dp(78),Gravity.BOTTOM);root.addView(toolbarScroll,toolbarParams);
@@ -148,6 +151,13 @@ final class ConferenceUi {
         @Override protected void onLayout(boolean changed,int left,int top,int right,int bottom){if(!callMode.isEmpty()){layoutCall();return;}int count=getChildCount(),columns=count<=1?1:count<=4?2:count<=6?3:4,rows=Math.max(1,(count+columns-1)/columns),gap=dp(getContext(),8),innerW=getWidth()-getPaddingLeft()-getPaddingRight(),innerH=getHeight()-getPaddingTop()-getPaddingBottom(),cellW=(innerW-gap*(columns-1))/columns,cellH=(innerH-gap*(rows-1))/rows;for(int i=0;i<count;i++){int col=i%columns,row=i/columns,x=getPaddingLeft()+col*(cellW+gap),y=getPaddingTop()+row*(cellH+gap);getChildAt(i).layout(x,y,x+cellW,y+cellH);}}
     }
 
+    private static final class MicrophoneMeter extends View {
+        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float[] levels=new float[7];
+        MicrophoneMeter(Context context){super(context);setContentDescription("麦克风输入音量");}
+        void setLevel(float value){if(value<=0)java.util.Arrays.fill(levels,0);else{System.arraycopy(levels,1,levels,0,levels.length-1);levels[levels.length-1]=Math.min(1,value);}invalidate();}
+        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);float slot=getWidth()/7f,width=slot*.55f;for(int i=0;i<7;i++){float height=Math.max(getHeight()*.15f,levels[i]*getHeight());paint.setColor(levels[i]>.02f?0xff0099ff:0xffc8d7e3);float x=i*slot+(slot-width)/2,y=(getHeight()-height)/2;canvas.drawRoundRect(x,y,x+width,y+height,width/2,width/2,paint);}}
+    }
     private final class Tool {final LinearLayout root;final MeetingIcon glyph;final TextView label;Tool(String title,Runnable action){root=column();root.setGravity(Gravity.CENTER);root.setBackground(ripple(Color.TRANSPARENT,10));glyph=new MeetingIcon(activity,title);label=text(title,11,0xff657382);label.setGravity(Gravity.CENTER);root.addView(glyph,new LinearLayout.LayoutParams(dp(24),dp(24)));root.addView(label,new LinearLayout.LayoutParams(-1,dp(30)));root.setOnClickListener(v->action.run());root.setContentDescription(title);}void setActive(boolean active,String title){glyph.active=active;glyph.invalidate();label.setText(title);label.setTextColor(active?0xff0099ff:0xff657382);root.setContentDescription(title);}}
     private static final class MeetingIcon extends View {
         final String kind;final Paint pen=new Paint(Paint.ANTI_ALIAS_FLAG);boolean active;

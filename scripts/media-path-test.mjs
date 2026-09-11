@@ -39,6 +39,8 @@ async function media(p,relay,tcp){
   if(value.connected&&value.relay===relay&&(!tcp||value.tcp)&&previous&&value.audio>previous.audio&&value.frames>previous.frames)return value;
   previous=value;await p.waitForTimeout(500);
  }
+ const diagnostic=await p.evaluate(async()=>Promise.all(window.mediaPeers.map(async pc=>({connection:pc.connectionState,ice:pc.iceConnectionState,signaling:pc.signalingState,stats:[...((await pc.getStats()).values())].filter(value=>['inbound-rtp','candidate-pair','local-candidate','remote-candidate'].includes(value.type))}))));
+ await fs.writeFile('.local/media-path-stats-'+(relay?'relay':'direct')+'.json',JSON.stringify(diagnostic,null,2));
  throw Error('Media did not sustain '+(relay?'relay':'direct')+' reception');
 }
 const results=[];

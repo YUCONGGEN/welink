@@ -23,7 +23,7 @@ public final class MeetingActivity extends Activity {
     private static java.lang.ref.WeakReference<MeetingActivity> current=new java.lang.ref.WeakReference<>(null);
     static void closeCall(String id){MeetingActivity active=current.get();if(active!=null&&active.callID.equals(id))active.finish();}
     private boolean host,microphone,camera,opening;
-    @Override public void onCreate(Bundle saved){super.onCreate(saved);current=new java.lang.ref.WeakReference<>(this);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    @Override public void onCreate(Bundle saved){super.onCreate(saved);ScreenInsets.install(this);current=new java.lang.ref.WeakReference<>(this);
         code=getIntent().getStringExtra("code");token=getIntent().getStringExtra("token");name=getIntent().getStringExtra("name");
         callID=getIntent().getStringExtra("call_id");callID=callID==null?"":callID;callMode=getIntent().getStringExtra("call_mode");callMode=callMode==null?"":callMode;peerName=getIntent().getStringExtra("peer_name");peerName=peerName==null?"":peerName;
         host=getIntent().getBooleanExtra("host",false);microphone=getIntent().getBooleanExtra("microphone",false);camera=getIntent().getBooleanExtra("camera",false);
