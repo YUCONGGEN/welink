@@ -19,6 +19,123 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/long-press.js
+  function bindLongPress(selector, onHold, { delay = 500, distance = 10 } = {}) {
+    let timer, start, held = false, ghostUntil = 0, target = null, started = 0;
+    const cancel = () => {
+      clearTimeout(timer);
+      timer = null;
+    };
+    const key = (node) => (node == null ? void 0 : node.dataset.message) || (node == null ? void 0 : node.dataset.conversation) || (node == null ? void 0 : node.dataset.profile);
+    const fire = () => {
+      var _a;
+      const node = (_a = document.elementFromPoint(start.x, start.y)) == null ? void 0 : _a.closest(selector);
+      if (node && key(node) === key(target)) {
+        held = true;
+        onHold(node, start.x, start.y);
+      }
+    };
+    document.addEventListener("touchstart", (event) => {
+      cancel();
+      ghostUntil = 0;
+      held = false;
+      start = null;
+      target = null;
+      const node = event.target.closest(selector);
+      if (!node || event.touches.length !== 1) return;
+      const p = event.touches[0];
+      start = { x: p.clientX, y: p.clientY };
+      target = node;
+      started = Date.now();
+      timer = setTimeout(fire, delay);
+    }, { passive: true });
+    document.addEventListener("touchmove", (event) => {
+      const p = event.touches[0];
+      if (!p || !start || Math.hypot(p.clientX - start.x, p.clientY - start.y) > distance) cancel();
+    }, { passive: true });
+    document.addEventListener("touchend", () => {
+      if (timer && !held && Date.now() - started >= delay) fire();
+      cancel();
+      if (held) ghostUntil = Date.now() + 900;
+      held = false;
+    }, { passive: true });
+    document.addEventListener("touchcancel", () => {
+      cancel();
+      held = false;
+      ghostUntil = 0;
+    }, { passive: true });
+    document.addEventListener("click", (event) => {
+      var _a;
+      if ((held || Date.now() < ghostUntil) && event.detail !== 0 && ((_a = event.sourceCapabilities) == null ? void 0 : _a.firesTouchEvents) !== false) {
+        cancel();
+        held = false;
+        ghostUntil = 0;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  // internal/ui/src/directory-search.js
+  function createDirectorySearch({ S: S2, api: api2, esc: esc2, av: av2, icon: icon2, renderSidebar: renderSidebar2, contextMenu: contextMenu2 }) {
+    let key = "", version = 0, timer, data = null, loading = false, error = "";
+    const matches = (u, q) => (u.name + " " + (u.remark || "") + " " + u.number).toLowerCase().includes(q.toLowerCase());
+    const group = (g) => g.group ? __spreadProps(__spreadValues({ id: g.id, name: g.name }, g.group), { joined: true }) : g;
+    const unique = (items) => [...new Map(items.map((u) => [u.id, u])).values()];
+    function render(query) {
+      const q = query.trim(), next = S2.token + "\n" + q;
+      const users = unique([S2.user, ...S2.friends].filter((u) => u && matches(u, q))), groups = unique([...S2.myGroups || [], ...S2.conversations.filter((c) => c.kind === "group").map(group)].filter((g) => matches(g, q)));
+      if (next !== key) {
+        key = next;
+        data = null;
+        loading = true;
+        error = "";
+        clearTimeout(timer);
+        const v = ++version;
+        timer = setTimeout(async () => {
+          try {
+            const [people, rooms] = await Promise.all([api2("/api/users?q=" + encodeURIComponent(q)), api2("/api/groups?q=" + encodeURIComponent(q))]);
+            if (v !== version || key !== next) return;
+            data = { users: people, groups: rooms };
+          } catch (e) {
+            if (v !== version) return;
+            error = e.message;
+          } finally {
+            if (v === version) {
+              loading = false;
+              if (S2.search.trim() === q) renderSidebar2();
+            }
+          }
+        }, 180);
+      }
+      const foundUsers = unique([...users, ...(data == null ? void 0 : data.users) || []]), foundGroups = unique([...groups, ...(data == null ? void 0 : data.groups) || []]);
+      return '<div class="directory-results">' + (foundUsers.length ? '<div class="search-section-label">用户</div>' + foundUsers.map((u) => '<div class="user-search-result" data-search-user="'.concat(u.id, '"><button class="conversation-row" ').concat(u.id === S2.user.id ? "data-profile" : "data-start-chat", '="').concat(u.id, '">').concat(av2(u, "", true), '<div class="row-text"><div class="row-title"><b>').concat(esc2(u.remark || u.name)).concat(u.id === S2.user.id ? "（我）" : "", '</b></div><div class="row-preview">').concat(esc2(u.number), "</div></div></button>").concat(u.id !== S2.user.id ? '<div class="user-search-actions"><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话">' + icon2("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话">' + icon2("video") + "</button></div>" : "", "</div>")).join("") : "") + (foundGroups.length ? '<div class="search-section-label">群聊</div>' + foundGroups.map((g) => '<button class="conversation-row directory-group" data-group-join="'.concat(g.id, '" data-joined="').concat(g.joined === true, '" data-mode="').concat(esc2(g.joinMode), '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(av2({ kind: "group", avatar: g.avatar }), '<div class="row-text"><div class="row-title"><b>').concat(esc2(g.name), '</b></div><div class="row-preview">').concat(esc2(g.number), " · ").concat(g.count || 0, " 人 · ").concat(g.joined ? "发消息" : g.joinMode === "closed" ? "暂不开放" : g.joinMode === "approval" ? "申请加入" : "加入群聊", "</div></div></button>")).join("") : "") + (loading ? '<div class="directory-status">正在搜索…</div>' : error ? '<div class="directory-status" role="status">' + esc2(error) + "</div>" : !foundUsers.length && !foundGroups.length ? '<div class="empty-list">没有找到用户或群聊</div>' : "") + "</div>";
+    }
+    function userMenu(id, x, y) {
+      var _a;
+      if (id === ((_a = S2.user) == null ? void 0 : _a.id)) return;
+      contextMenu2(x, y, '<button data-start-chat="' + id + '">发消息</button><button data-create-group-user="' + id + '">创建群聊</button>');
+    }
+    document.addEventListener("contextmenu", (e) => {
+      const row = e.target.closest("[data-search-user]");
+      if (row) {
+        e.preventDefault();
+        userMenu(row.dataset.searchUser, e.clientX, e.clientY);
+      }
+    });
+    bindLongPress("[data-search-user]", (row, x, y) => userMenu(row.dataset.searchUser, x, y));
+    return { render, changed() {
+      key = "";
+      version++;
+      clearTimeout(timer);
+    }, reset() {
+      key = "";
+      version++;
+      clearTimeout(timer);
+      data = null;
+    } };
+  }
+
   // internal/ui/src/theme.js
   function applyTheme(dark) {
     var _a, _b, _c, _d;
@@ -110,63 +227,6 @@
       context = null;
       last = 0;
     } };
-  }
-
-  // internal/ui/src/long-press.js
-  function bindLongPress(selector, onHold, { delay = 500, distance = 10 } = {}) {
-    let timer, start, held = false, ghostUntil = 0, target = null, started = 0;
-    const cancel = () => {
-      clearTimeout(timer);
-      timer = null;
-    };
-    const key = (node) => (node == null ? void 0 : node.dataset.message) || (node == null ? void 0 : node.dataset.conversation) || (node == null ? void 0 : node.dataset.profile);
-    const fire = () => {
-      var _a;
-      const node = (_a = document.elementFromPoint(start.x, start.y)) == null ? void 0 : _a.closest(selector);
-      if (node && key(node) === key(target)) {
-        held = true;
-        onHold(node, start.x, start.y);
-      }
-    };
-    document.addEventListener("touchstart", (event) => {
-      cancel();
-      ghostUntil = 0;
-      held = false;
-      start = null;
-      target = null;
-      const node = event.target.closest(selector);
-      if (!node || event.touches.length !== 1) return;
-      const p = event.touches[0];
-      start = { x: p.clientX, y: p.clientY };
-      target = node;
-      started = Date.now();
-      timer = setTimeout(fire, delay);
-    }, { passive: true });
-    document.addEventListener("touchmove", (event) => {
-      const p = event.touches[0];
-      if (!p || !start || Math.hypot(p.clientX - start.x, p.clientY - start.y) > distance) cancel();
-    }, { passive: true });
-    document.addEventListener("touchend", () => {
-      if (timer && !held && Date.now() - started >= delay) fire();
-      cancel();
-      if (held) ghostUntil = Date.now() + 900;
-      held = false;
-    }, { passive: true });
-    document.addEventListener("touchcancel", () => {
-      cancel();
-      held = false;
-      ghostUntil = 0;
-    }, { passive: true });
-    document.addEventListener("click", (event) => {
-      var _a;
-      if ((held || Date.now() < ghostUntil) && event.detail !== 0 && ((_a = event.sourceCapabilities) == null ? void 0 : _a.firesTouchEvents) !== false) {
-        cancel();
-        held = false;
-        ghostUntil = 0;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    }, true);
   }
 
   // internal/ui/src/navigation.js
@@ -265,7 +325,7 @@
     function menu(id, x, y) {
       const c = find(id);
       if (!c) return;
-      contextMenu2(x, y, '<button data-conversation-action="pin" data-cid="'.concat(id, '">').concat(icon2("pin")).concat(c.pinned ? "取消置顶" : "置顶聊天", '</button><button data-conversation-action="mute" data-cid="').concat(id, '">').concat(icon2("mute")).concat(c.muted ? "开启消息提醒" : "消息免打扰", "</button>").concat(c.unread ? '<button data-conversation-action="read" data-cid="'.concat(id, '">').concat(icon2("check"), "标为已读</button>") : "", '<button class="destructive" data-conversation-action="remove" data-cid="').concat(id, '">').concat(icon2("trash"), "从消息列表移除</button>"));
+      contextMenu2(x, y, "".concat(c.kind === "direct" ? '<button data-create-group-user="' + c.peer.id + '">创建群聊</button>' : "", '<button data-conversation-action="pin" data-cid="').concat(id, '">').concat(icon2("pin")).concat(c.pinned ? "取消置顶" : "置顶聊天", '</button><button data-conversation-action="mute" data-cid="').concat(id, '">').concat(icon2("mute")).concat(c.muted ? "开启消息提醒" : "消息免打扰", "</button>").concat(c.unread ? '<button data-conversation-action="read" data-cid="'.concat(id, '">').concat(icon2("check"), "标为已读</button>") : "", '<button class="destructive" data-conversation-action="remove" data-cid="').concat(id, '">').concat(icon2("trash"), "从消息列表移除</button>"));
     }
     const removing = /* @__PURE__ */ new Set();
     async function remove(id) {
@@ -275,7 +335,6 @@
         await api2("/api/conversations/" + id, { method: "DELETE" });
         closeModal2();
         await refresh2();
-        toast2("已从消息列表移除，聊天记录保留");
       } catch (error) {
         toast2(error.message);
       } finally {
@@ -620,13 +679,27 @@
       bind("admin-create", create);
     }
     function create() {
-      modal2("注册用户账号", '<label>昵称</label><input id="admin-name" maxlength="32" placeholder="用户昵称"><label>初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" maxlength="72" placeholder="留空则生成随机密码"><p class="hint">系统自动分配永久 6 位数字账号。昵称可以重名，登录只用数字账号。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user">注册账号</button>');
-      bind("admin-save-user", async () => {
-        const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value, password: $2("#admin-password").value } });
-        modal2("账号已注册", "<p>昵称：".concat(esc2(result.user.name), "</p><p>登录账号：<b>").concat(esc2(result.user.number), "</b></p>").concat(result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
-        await refresh2();
-        await render();
-      });
+      modal2("注册用户账号", '<form id="admin-register-form"><label for="admin-name">名字（选填）</label><input id="admin-name" maxlength="32" autocomplete="name" placeholder="留空使用新分配的六位账号"><label for="admin-password">初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="留空生成随机密码"><p class="hint">系统自动分配六位账号。名字以后可修改，登录使用账号。</p></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user" type="submit" form="admin-register-form">注册账号</button>');
+      const form = $2("#admin-register-form"), button = $2("#admin-save-user");
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        if (button.disabled) return;
+        button.disabled = true;
+        $2("#modal-error").textContent = "";
+        try {
+          const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value.trim(), password: $2("#admin-password").value } });
+          if (!form.isConnected) return;
+          closeModal2();
+          modal2("账号已注册", "<p>名字：" + esc2(result.user.name) + '</p><p>登录账号：<b id="admin-created-number">' + esc2(result.user.number) + "</b></p>" + (result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input id="admin-created-password" readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
+          await refresh2();
+          await render();
+        } catch (e) {
+          if (form.isConnected) {
+            $2("#modal-error").textContent = e.message;
+            button.disabled = false;
+          } else toast2(e.message);
+        }
+      };
     }
     document.addEventListener("click", (event) => {
       var _a, _b;
@@ -2918,7 +2991,7 @@
     }
     function menu(id, x, y) {
       const u = S2.friends.find((u2) => u2.id === id);
-      contextMenu2(x, y, '<button data-contact="attention" data-user="'.concat(id, '">').concat((u == null ? void 0 : u.specialCare) ? "取消特别关心" : "设为特别关心", '</button><button data-contact="edit" data-user="').concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
+      contextMenu2(x, y, '<button data-create-group-user="'.concat(id, '">创建群聊</button><button data-contact="attention" data-user="').concat(id, '">').concat((u == null ? void 0 : u.specialCare) ? "取消特别关心" : "设为特别关心", '</button><button data-contact="edit" data-user="').concat(id, '">备注与分组</button><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button>'));
     }
     document.addEventListener("contextmenu", (e) => {
       const row = e.target.closest(".contact-row[data-profile]");
@@ -3106,7 +3179,7 @@
       detailState = c;
       const g = c.group;
       if (!manager(g)) throw Error("你已没有群管理权限");
-      modal2("群管理", '<label for="group-edit-name">群名称</label><input id="group-edit-name" value="'.concat(esc2(c.name), '" maxlength="60"><label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">').concat(esc2(g.description), '</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ').concat(g.discoverable ? "checked" : "", '></label><label for="group-join-mode">加群方式</label><select id="group-join-mode">').concat(Object.entries(modes).map(([v, t]) => '<option value="'.concat(v, '" ').concat(g.joinMode === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ').concat(g.membersInvite ? "checked" : "", '></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ').concat(g.allMuted ? "checked" : "", '></label><p class="hint">全员禁言时，群主和管理员仍可发言。需审核的群，普通成员邀请好友也需要审核。</p>').concat(row("设置管理员", "在成员资料中设置，最多 10 人", "members")).concat(g.role === "owner" ? row("转让群主", "", "transfer") : ""), '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
+      modal2("群管理", '<label for="group-edit-name">群名称</label><input id="group-edit-name" value="'.concat(esc2(c.name), '" maxlength="60"><label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">').concat(esc2(g.description), '</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ').concat(g.discoverable ? "checked" : "", '></label><label for="group-join-mode">搜索入群方式</label><select id="group-join-mode">').concat(Object.entries(modes).map(([v, t]) => '<option value="'.concat(v, '" ').concat(g.joinMode === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ').concat(g.membersInvite ? "checked" : "", '></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ').concat(g.allMuted ? "checked" : "", '></label><p class="hint">全员禁言时，群主和管理员仍可发言。成员邀请会直接拉人入群，不需要再次申请。</p>').concat(row("设置管理员", "在成员资料中设置，最多 10 人", "members")).concat(g.role === "owner" ? row("转让群主", "", "transfer") : ""), '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
       bind("group-manage-save", async () => {
         await api2("/api/groups/" + c.id, { method: "PATCH", body: { name: $2("#group-edit-name").value, description: $2("#group-description").value, discoverable: $2("#group-discoverable").checked, joinMode: $2("#group-join-mode").value, membersInvite: $2("#group-members-invite").checked, allMuted: $2("#group-all-muted").checked } });
         await refresh2();
@@ -3127,10 +3200,9 @@
       const c = await api2("/api/conversations/" + detailState.id);
       detailState = c;
       const list = S2.friends.filter((u) => !c.members.some((m) => m.id === u.id));
-      modal2("邀请好友入群", '<p class="hint">'.concat(manager(c.group) || c.group.joinMode === "open" ? "选择好友加入群聊" : "邀请会提交给群主和管理员审核", '</p><div class="member-select">').concat(list.map((u) => '<label class="check-row">'.concat(av2(u)).concat(esc2(u.name), '<input type="checkbox" name="group-invite" value="').concat(u.id, '"></label>')).join("") || '<p class="hint">好友都已在群里</p>', "</div>"), '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-invite-send">邀请</button>');
+      modal2("邀请好友入群", '<p class="hint">选择一位或多位用户，直接加入群聊</p><div class="member-select">'.concat(list.map((u) => '<label class="check-row">'.concat(av2(u)).concat(esc2(u.name), '<input type="checkbox" name="group-invite" value="').concat(u.id, '"></label>')).join("") || '<p class="hint">好友都已在群里</p>', "</div>"), '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-invite-send">邀请</button>');
       bind("group-invite-send", async () => {
         const result = await action2("/api/conversations/" + c.id + "/members", { members: [...document.querySelectorAll("[name=group-invite]:checked")].map((x) => x.value) });
-        toast2(result.pending ? "邀请已提交，等待审核" : "好友已加入");
         await refresh2();
         await detail(c.id);
       });
@@ -3164,18 +3236,31 @@
         try {
           const results = await api2("/api/groups?q=" + encodeURIComponent(query));
           if (searchVersion !== revision || request !== requestVersion || !document.contains(list)) return;
-          list.innerHTML = results.map((g) => '<article class="group-search-result">'.concat(av2({ kind: "group", avatar: g.avatar || "group" }), "<div><b>").concat(esc2(g.name), "</b><p>群号 ").concat(esc2(g.number), " · ").concat(g.count, ' 人</p><p class="hint">').concat(esc2(g.description), "</p><small>").concat(modes[g.joinMode], '</small></div><button class="').concat(g.joined ? "secondary" : "primary", '" data-group-join="').concat(g.id, '" data-joined="').concat(g.joined, '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(g.joined ? "发消息" : "加入", "</button></article>")).join("") || '<p class="hint">没有找到群聊</p>';
+          list.innerHTML = results.map((g) => '<article class="group-search-result">'.concat(av2({ kind: "group", avatar: g.avatar || "group" }), "<div><b>").concat(esc2(g.name), "</b><p>群号 ").concat(esc2(g.number), " · ").concat(g.count, ' 人</p><p class="hint">').concat(esc2(g.description), "</p><small>").concat(modes[g.joinMode], '</small></div><button class="').concat(g.joined ? "secondary" : "primary", '" data-group-join="').concat(g.id, '" data-joined="').concat(g.joined, '" data-mode="').concat(g.joinMode, '" data-name="').concat(esc2(g.name), '" ').concat(!g.joined && g.joinMode === "closed" ? "disabled" : "", ">").concat(g.joined ? "发消息" : "加入", "</button></article>")).join("") || '<p class="hint">没有找到群聊</p>';
         } catch (e2) {
           if (request === requestVersion && document.contains(list)) list.textContent = e2.message;
         }
       };
       $2("#group-search-query").focus();
     }
-    function join(button) {
+    async function join(button) {
       const cid = button.dataset.groupJoin;
       if (button.dataset.joined === "true") {
         closeModal2();
-        selectConversation2(cid);
+        await selectConversation2(cid);
+        return;
+      }
+      ;
+      if (button.dataset.mode === "open") {
+        button.disabled = true;
+        try {
+          await action2("/api/groups/" + cid + "/join");
+          closeModal2();
+          await refresh2();
+          await selectConversation2(cid);
+        } finally {
+          button.disabled = false;
+        }
         return;
       }
       ;
@@ -3234,7 +3319,7 @@
         }
         ;
         if (b.dataset.groupJoin) {
-          join(b);
+          await join(b);
           return;
         }
         ;
@@ -4230,7 +4315,7 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.9-preview</small></main>');
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.10-preview</small></main>');
       el("qr-refresh").onclick = open;
       try {
         const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
@@ -5464,7 +5549,7 @@
     return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
-  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
+  var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], myGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
   var toastTimer;
@@ -5632,7 +5717,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.9-preview · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.10-preview · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -5676,7 +5761,7 @@
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索" aria-label="搜索会话或联系人"></label>').concat(btn("plus", "查找用户或创建群聊", "add-menu"), '</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div>').concat(utility ? pageNavigation() : "", '<div id="main-content" style="display:contents"></div></main></div>');
+    $("#app").innerHTML = '<div class="shell '.concat(S.active && S.tab === "messages" ? "in-chat" : "", " ").concat(utility ? "in-utility" : "", '">').concat(nav(), '<aside class="sidebar"><div class="mobile-title"><button data-action="profile">').concat(av(S.user), "</button><h2>").concat(S.tab === "contacts" ? "联系人" : "消息", "</h2>").concat(btn("plus", "创建群聊或扫一扫", "add-menu"), '</div><div class="searchbar"><label class="searchbox">').concat(icon("search"), '<input id="sidebar-search" value="').concat(esc(S.search), '" placeholder="搜索用户或群聊" aria-label="搜索用户或群聊" maxlength="60"></label>').concat(btn("plus", "创建群聊或扫一扫", "add-menu"), '</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">').concat(windows(), '<div id="connection-status"></div>').concat(utility ? pageNavigation() : "", '<div id="main-content" style="display:contents"></div></main></div>');
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
@@ -5689,11 +5774,12 @@
     const list = $("#sidebar-content");
     if (!list) return;
     const q = S.search.toLowerCase();
+    if (q.trim()) {
+      list.innerHTML = Directory.render(S.search);
+      return;
+    }
     if (S.tab === "contacts") {
-      list.innerHTML = '<button class="notify-row group-notice-row" data-group="requests">' + icon("contacts") + '群通知</button><div class="contact-tab"><button data-contact-tab="friends" class="' + (S.contactTab === "friends" ? "active" : "") + '">联系人</button><button data-contact-tab="groups" class="' + (S.contactTab === "groups" ? "active" : "") + '">群聊</button></div>' + (S.contactTab === "friends" ? Contacts.sidebar() : S.conversations.filter((c) => {
-        var _a;
-        return c.kind === "group" && (c.name + (((_a = c.group) == null ? void 0 : _a.number) || "")).toLowerCase().includes(q);
-      }).map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
+      list.innerHTML = '<button class="notify-row group-notice-row" data-group="requests">' + icon("contacts") + '群通知</button><div class="contact-tab"><button data-contact-tab="friends" class="' + (S.contactTab === "friends" ? "active" : "") + '">联系人</button><button data-contact-tab="groups" class="' + (S.contactTab === "groups" ? "active" : "") + '">群聊</button></div>' + (S.contactTab === "friends" ? Contacts.sidebar() : S.myGroups.map((g) => S.conversations.find((c) => c.id === g.id) || { id: g.id, kind: "group", name: g.name, avatar: g.avatar, group: g, unread: 0 }).map(conversationRow).join("") || '<div class="empty-list">还没有群聊</div>');
       return;
     }
     const result = S.conversations.filter((c) => {
@@ -5856,6 +5942,11 @@
   }
   async function selectConversation(id) {
     var _a;
+    if (!S.conversations.some((c) => c.id === id)) {
+      await action("/api/conversations/" + id + "/open");
+      await refresh();
+      if (!S.conversations.some((c) => c.id === id)) return;
+    }
     Mentions.select(id);
     Media.reset();
     Forwarding.reset(false);
@@ -5952,13 +6043,15 @@
     var _a, _b;
     if (!S.user) return;
     const userId = S.user.id;
-    const [conversations, friends, requests, groupRequests, contactGroups] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests"), api("/api/contact-groups")]);
+    const [conversations, friends, requests, groupRequests, contactGroups, myGroups] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests"), api("/api/contact-groups"), api("/api/groups?mine=1").catch(() => null)]);
     if (((_a = S.user) == null ? void 0 : _a.id) !== userId) return;
     S.conversations = conversations;
     S.friends = friends;
     S.requests = requests;
     S.groupRequests = groupRequests;
     S.contactGroups = contactGroups;
+    S.myGroups = myGroups || conversations.filter((c2) => c2.kind === "group").map((c2) => __spreadProps(__spreadValues({ id: c2.id, name: c2.name }, c2.group), { joined: true }));
+    Directory.changed();
     if (S.profile) {
       const updated = friends.find((u) => u.id === S.profile.id);
       S.profile = updated ? __spreadValues(__spreadValues({}, S.profile), updated) : null;
@@ -5972,7 +6065,6 @@
       S.reply = null;
       closeModal();
       renderShell();
-      toast("会话列表已更新");
     }
     renderSidebar();
     updateRail();
@@ -6145,6 +6237,8 @@
       S.active = null;
       S.messages = [];
       S.conversations = [];
+      S.myGroups = [];
+      Directory.reset();
       S.friends = [];
       S.offline = false;
       S.cacheView = false;
@@ -6184,7 +6278,7 @@
     };
   }
   function createGroup() {
-    modal("创建群聊", '<label for="group-name">群名称</label><input id="group-name" maxlength="60" placeholder="给群聊起个名字"><label>选择好友</label><div class="member-select">'.concat(S.friends.map((u) => '<label class="check-row">'.concat(av(u)).concat(esc(u.name), '<input type="checkbox" value="').concat(u.id, '" name="group-member"></label>')).join("") || '<p class="hint">请先查找用户。</p>', "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
+    modal("创建群聊", '<label for="group-name">群名称（选填）</label><input id="group-name" maxlength="60" placeholder="默认用你和第一位成员的名字命名"><label>选择好友</label><div class="member-select">'.concat(S.friends.map((u) => '<label class="check-row">'.concat(av(u)).concat(esc(u.name), '<input type="checkbox" value="').concat(u.id, '" name="group-member"></label>')).join("") || '<p class="hint">请先查找用户。</p>', "</div>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
     modalHandler = async () => {
       const members = $$("input[name=group-member]:checked").map((x) => x.value);
       const c = await action("/api/conversations", { kind: "group", name: $("#group-name").value, members });
@@ -6287,7 +6381,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.9 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.10 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -6831,7 +6925,7 @@
           break;
         case "add-menu": {
           const r = b.getBoundingClientRect();
-          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="add-friend">'.concat(icon("contacts"), '查找用户</button><button data-group="search">').concat(icon("search"), '查找群聊</button><button data-action="create-group">').concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
+          contextMenu(r.left - 120, r.bottom + 5, '<button data-action="create-group">'.concat(icon("chat"), "创建群聊</button>").concat(S.config.platform === "android" ? '<button data-action="scan-qr">扫一扫</button>' : ""));
           break;
         }
         case "more-menu": {
@@ -7011,6 +7105,7 @@
     if ((event.key === "welink_token" || event.key === null) && S.token && localStorage.getItem("welink_token") !== S.token) logout(false);
   });
   applyTheme(localStorage.getItem("welink_dark") === "true");
+  var Directory = createDirectorySearch({ S, api, esc, av, icon, renderSidebar, contextMenu });
   var Received = createReceivedCache({ S, toast, modal, closeModal: finishModal, esc, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
     if (S.active !== cid) return;
     const live = new Map(messages.map((m) => [m.id, m])), checked = new Set(ids);
@@ -7110,6 +7205,24 @@
     for (const file of files) {
       if (S.token !== owner) return;
       await upload(file, false, cid);
+    }
+  });
+  var creatingGroups = /* @__PURE__ */ new Set();
+  document.addEventListener("click", async (event) => {
+    const b = event.target.closest("[data-create-group-user]");
+    if (!b || !S.user) return;
+    const id = b.dataset.createGroupUser;
+    if (id === S.user.id || creatingGroups.has(id)) return;
+    creatingGroups.add(id);
+    try {
+      const c = await action("/api/conversations", { kind: "group", members: [id] });
+      closeModal();
+      await refresh();
+      await selectConversation(c.id);
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      creatingGroups.delete(id);
     }
   });
 })();

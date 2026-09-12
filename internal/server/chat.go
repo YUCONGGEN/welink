@@ -71,7 +71,7 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 	for _, id := range p.Members {
 		set[id] = true
 	}
-	if len(set) < 2 || len(set) > 200 || (p.Kind == "direct" && len(set) != 2) || (p.Kind == "group" && (strings.TrimSpace(p.Name) == "" || !validText(p.Name, 60))) {
+	if len(set) < 2 || len(set) > 200 || (p.Kind == "direct" && len(set) != 2) || (p.Kind == "group" && (!validText(p.Name, 60))) {
 		fail(w, 400, "请选择成员并填写有效的群名称")
 		return
 	}
@@ -90,6 +90,30 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	if p.Kind == "group" && strings.TrimSpace(p.Name) == "" {
+		first, second := "", ""
+		if e = tx.QueryRow("SELECT name FROM users WHERE id=?", uid(r)).Scan(&first); e != nil {
+			s.dbError(w, e)
+			return
+		}
+		for _, target := range p.Members {
+			if target != uid(r) {
+				if e = tx.QueryRow("SELECT name FROM users WHERE id=?", target).Scan(&second); e != nil {
+					s.dbError(w, e)
+					return
+				}
+				break
+			}
+		}
+		a, b := []rune(first), []rune(second)
+		if len(a) > 29 {
+			a = a[:29]
+		}
+		if len(b) > 29 {
+			b = b[:29]
+		}
+		p.Name = string(a) + "、" + string(b)
 	}
 	sort.Strings(ids)
 	var direct any
@@ -121,7 +145,7 @@ func (s *Server) createConversation(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if p.Kind == "group" {
-		if _, e = tx.Exec("INSERT INTO group_profiles(conversation_id) VALUES(?)", id); e != nil {
+		if _, e = tx.Exec("INSERT INTO group_profiles(conversation_id,join_mode) VALUES(?,'open')", id); e != nil {
 			s.dbError(w, e)
 			return
 		}
@@ -234,9 +258,6 @@ func (s *Server) addMembers(w http.ResponseWriter, r *http.Request) {
 		if !g.manager() && !g.MembersInvite {
 			return nil, nil, groupFail(403, "群主已关闭成员邀请")
 		}
-		if !g.manager() && g.JoinMode == "closed" {
-			return nil, nil, groupFail(403, "该群暂不接受成员邀请")
-		}
 		added, pending := 0, 0
 		for _, target := range ids {
 			var n int
@@ -246,20 +267,10 @@ func (s *Server) addMembers(w http.ResponseWriter, r *http.Request) {
 			if forwardMember(tx, cid, target) {
 				continue
 			}
-			if g.manager() || g.JoinMode == "open" {
-				if e = addGroupMember(tx, cid, target); e != nil {
-					return nil, nil, e
-				}
-				added++
-			} else {
-				if g.Count >= 200 {
-					return nil, nil, groupFail(409, "群成员已满（200 人）")
-				}
-				if _, e = tx.Exec("INSERT OR IGNORE INTO group_requests(id,conversation_id,user_id,inviter,message,created) VALUES(?,?,?,?,?,?)", newID(), cid, target, user, "好友邀请入群", now()); e != nil {
-					return nil, nil, e
-				}
-				pending++
+			if e = addGroupMember(tx, cid, target); e != nil {
+				return nil, nil, e
 			}
+			added++
 		}
 		audience, e := groupAudience(tx, cid)
 		return map[string]any{"ok": true, "added": added, "pending": pending}, append(audience, ids...), e

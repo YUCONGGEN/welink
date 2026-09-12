@@ -23,6 +23,20 @@ func (s *Server) hideConversationID(w http.ResponseWriter, r *http.Request, id s
 func (s *Server) hideConversation(w http.ResponseWriter, r *http.Request) {
 	s.hideConversationID(w, r, r.PathValue("id"))
 }
+
+// Reopening a hidden listing never changes membership or message visibility.
+func (s *Server) openConversation(w http.ResponseWriter, r *http.Request) {
+	s.groupChange(w, r, func(tx *sql.Tx) (any, []string, error) {
+		id, user := r.PathValue("id"), uid(r)
+		if !forwardMember(tx, id, user) {
+			return nil, nil, groupFail(404, "会话不存在或你已退出")
+		}
+		if _, err := tx.Exec("DELETE FROM hidden_conversations WHERE user_id=? AND conversation_id=?", user, id); err != nil {
+			return nil, nil, err
+		}
+		return map[string]string{"id": id}, []string{user}, nil
+	})
+}
 func (s *Server) hidePeerConversation(w http.ResponseWriter, r *http.Request) {
 	tx, err := s.db.Begin()
 	if err != nil {

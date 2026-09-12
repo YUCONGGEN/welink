@@ -31,3 +31,5 @@
 .profile-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 20px;text-align:left;max-width:380px;margin:24px auto;font-size:14px}.profile-details dt{color:var(--muted)}.profile-details dd{margin:0;overflow-wrap:anywhere}.self-contact{border-bottom:1px solid var(--line)}.message .avatar,.detail-member .avatar{cursor:pointer}
 
 @media(max-width:700px){.chat-actions button[data-action=search-history],.chat-actions button[data-action=remote]{display:inline-flex}.chat-head .chat-actions{flex-shrink:0}.chat-head .chat-actions>.icon-btn{width:36px;height:44px}.chat-head h2{flex:1}}
+
+.directory-status{padding:14px 20px;color:var(--muted);font-size:12px}.directory-group{width:100%;text-align:left}.directory-group:disabled{opacity:.55}.directory-results .row-preview{white-space:normal;line-height:1.5}

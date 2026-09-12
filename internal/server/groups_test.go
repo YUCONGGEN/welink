@@ -147,12 +147,14 @@ func TestGroupInvitationApprovalCapacityAndAtomicUpdates(t *testing.T) {
 	f.befriend(a, c)
 	f.befriend(a, d)
 	f.request("POST", "/api/conversations/"+cid+"/members", b.Token, map[string]any{"members": []string{c.User.ID}}, 200, nil)
-	if f.s.member(cid, c.User.ID) {
-		t.Fatal("invite bypassed approval")
+	if !f.s.member(cid, c.User.ID) {
+		t.Fatal("member invitation must add directly")
 	}
 	var requests []struct{ ID string }
 	f.request("GET", "/api/group-requests", a.Token, nil, 200, &requests)
-	f.request("POST", "/api/group-requests/"+requests[0].ID, a.Token, map[string]bool{"accept": true}, 200, nil)
+	if len(requests) != 0 {
+		t.Fatal("direct invitation created an application")
+	}
 	f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]bool{"membersInvite": false}, 200, nil)
 	f.request("POST", "/api/conversations/"+cid+"/members", b.Token, map[string]any{"members": []string{c.User.ID}}, 403, nil)
 	f.request("PATCH", "/api/conversations/"+cid, a.Token, map[string]string{"name": "不应保存", "announcement": strings.Repeat("字", 2001)}, 400, nil)

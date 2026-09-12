@@ -158,7 +158,8 @@ func addGroupMember(tx *sql.Tx, cid, user string) error {
 
 func (s *Server) searchGroups(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
+	mine := r.URL.Query().Get("mine") == "1"
+	if q == "" && !mine {
 		ok(w, []any{})
 		return
 	}
@@ -166,7 +167,11 @@ func (s *Server) searchGroups(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "搜索内容最多 60 字")
 		return
 	}
-	rows, e := s.db.Query(`SELECT c.id,c.name,g.number,g.description,g.join_mode,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?),COALESCE((SELECT 'image:'||id FROM avatar_images WHERE scope='group:'||c.id),'group') FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id WHERE g.dissolved=0 AND (g.discoverable=1 OR EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?)) AND (CAST(g.number AS TEXT)=? OR c.name LIKE ? ESCAPE '\') ORDER BY CAST(g.number AS TEXT)=? DESC,g.number LIMIT 30`, uid(r), uid(r), q, "%"+escapeLike(q)+"%", q)
+	limit := 30
+	if mine {
+		limit = -1
+	}
+	rows, e := s.db.Query(`SELECT c.id,c.name,g.number,g.description,g.join_mode,(SELECT COUNT(*) FROM members WHERE conversation_id=c.id),EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?),COALESCE((SELECT 'image:'||id FROM avatar_images WHERE scope='group:'||c.id),'group') FROM group_profiles g JOIN conversations c ON c.id=g.conversation_id WHERE g.dissolved=0 AND (g.discoverable=1 OR EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?)) AND (?=0 OR EXISTS(SELECT 1 FROM members WHERE conversation_id=c.id AND user_id=?)) AND (CAST(g.number AS TEXT)=? OR c.name LIKE ? ESCAPE '\') ORDER BY CAST(g.number AS TEXT)=? DESC,g.number LIMIT ?`, uid(r), uid(r), mine, uid(r), q, "%"+escapeLike(q)+"%", q, limit)
 	if e != nil {
 		s.dbError(w, e)
 		return
@@ -209,7 +214,8 @@ func (s *Server) joinGroup(w http.ResponseWriter, r *http.Request) {
 			return nil, nil, groupFail(404, "未找到该群")
 		}
 		if g.Role != "" {
-			return map[string]string{"status": "joined"}, nil, nil
+			_, e = tx.Exec("DELETE FROM hidden_conversations WHERE user_id=? AND conversation_id=?", user, cid)
+			return map[string]string{"status": "joined"}, []string{user}, e
 		}
 		if g.JoinMode == "closed" {
 			return nil, nil, groupFail(403, "该群暂不接受加群申请")

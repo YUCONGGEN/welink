@@ -56,8 +56,14 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 	if alias == "" {
 		alias = "wl_" + newID()[:20]
 	}
-	if name == "" || !validText(name, 32) || !accountPattern.MatchString(alias) || numericAccount.MatchString(alias) || len(password) < 8 || len(password) > 72 {
-		return User{}, errors.New("昵称 1–32 字，登录别名 5–24 位字母数字下划线，密码 8–72 字节")
+	if !validText(name, 32) {
+		return User{}, errors.New("名字最多 32 字，请勿包含控制字符")
+	}
+	if !accountPattern.MatchString(alias) || numericAccount.MatchString(alias) {
+		return User{}, errors.New("内部账号标识无效")
+	}
+	if len(password) < 8 || len(password) > 72 {
+		return User{}, errors.New("密码需要 8–72 字节；也可以留空自动生成")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
@@ -88,6 +94,12 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 	var number string
 	if err = tx.QueryRow("SELECT number FROM user_numbers WHERE user_id=?", id).Scan(&number); err != nil {
 		return User{}, err
+	}
+	if name == "" {
+		name = number
+		if _, err = tx.Exec("UPDATE users SET name=? WHERE id=?", name, id); err != nil {
+			return User{}, err
+		}
 	}
 	user := User{ID: id, Account: number, Name: name, Avatar: avatar, Number: number}
 	if beforeCommit != nil {
