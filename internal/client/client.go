@@ -50,6 +50,8 @@ type Client struct {
 	Remote         *remote.Engine
 	window         func(string)
 	assets         fs.FS
+	upstream       *httputil.ReverseProxy
+	transport      *http.Transport
 }
 
 func New(o Options) (*Client, error) {
@@ -120,6 +122,11 @@ func (c *Client) Close() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_ = c.srv.Shutdown(ctx)
+	c.mu.Lock()
+	if c.transport != nil {
+		c.transport.CloseIdleConnections()
+	}
+	c.mu.Unlock()
 }
 func (c *Client) Config() Config { c.mu.Lock(); defer c.mu.Unlock(); return c.config }
 func validateConfig(cfg Config) (*url.URL, error) {
@@ -204,11 +211,21 @@ func (c *Client) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (c *Client) proxy(w http.ResponseWriter, r *http.Request) {
-	cfg := c.Config()
+	c.mu.Lock()
+	if c.upstream == nil {
+		c.upstream, c.transport = newUpstream(c.config)
+	}
+	p := c.upstream
+	c.mu.Unlock()
+	p.ServeHTTP(w, r)
+}
+
+// Keep connections across requests; the transport contains no cookies or user
+// credentials. Changing the server or certificate pin replaces the entire pool.
+func newUpstream(cfg Config) (*httputil.ReverseProxy, *http.Transport) {
 	u, _ := validateConfig(cfg)
 	p := httputil.NewSingleHostReverseProxy(u)
-	transport := &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint), Proxy: nil, ResponseHeaderTimeout: 45 * time.Second, DialContext: (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext}
-	defer transport.CloseIdleConnections()
+	transport := &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint), Proxy: nil, MaxIdleConns: 32, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 45 * time.Second, DialContext: (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext}
 	p.Transport = transport
 	original := p.Director
 	p.Director = func(req *http.Request) {
@@ -242,7 +259,7 @@ func (c *Client) proxy(w http.ResponseWriter, r *http.Request) {
 	p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		localError(w, 502, "无法连接服务器，请检查网络和连接设置")
 	}
-	p.ServeHTTP(w, r)
+	return p, transport
 }
 func localJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -309,6 +326,10 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 		}
 		c.Remote.Stop()
 		c.mu.Lock()
+		if c.transport != nil {
+			c.transport.CloseIdleConnections()
+		}
+		c.upstream, c.transport = nil, nil
 		c.config = cfg
 		c.mu.Unlock()
 		localJSON(w, cfg)

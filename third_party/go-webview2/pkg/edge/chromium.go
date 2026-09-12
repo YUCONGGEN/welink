@@ -103,11 +103,15 @@ func (e *Chromium) Embed(hwnd uintptr) bool {
 			0,
 			0,
 		)
-		if r == 0 {
+		if int32(r) <= 0 {
 			break
 		}
 		_, _, _ = w32.User32TranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		_, _, _ = w32.User32DispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
+	}
+	if atomic.LoadUintptr(&e.inited) != 1 || e.webview == nil || e.controller == nil {
+		log.Print("WebView2 initialization failed or was interrupted")
+		return false
 	}
 	e.Init("window.external={invoke:s=>window.chrome.webview.postMessage(s)}")
 	return true
@@ -169,23 +173,31 @@ func (e *Chromium) Release() uintptr {
 }
 
 func (e *Chromium) EnvironmentCompleted(res uintptr, env *ICoreWebView2Environment) uintptr {
-	if int64(res) < 0 {
-		log.Fatalf("Creating environment failed with %08x", res)
+	if int32(res) < 0 || env == nil {
+		log.Printf("Creating environment failed with %08x", uint32(res))
+		atomic.StoreUintptr(&e.inited, 2)
+		return 0
 	}
 	_, _, _ = env.vtbl.AddRef.Call(uintptr(unsafe.Pointer(env)))
 	e.environment = env
 
-	_, _, _ = env.vtbl.CreateCoreWebView2Controller.Call(
+	result, _, _ := env.vtbl.CreateCoreWebView2Controller.Call(
 		uintptr(unsafe.Pointer(env)),
 		e.hwnd,
 		uintptr(unsafe.Pointer(e.controllerCompleted)),
 	)
+	if int32(result) < 0 {
+		log.Printf("Creating controller failed with %08x", uint32(result))
+		atomic.StoreUintptr(&e.inited, 2)
+	}
 	return 0
 }
 
 func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller *ICoreWebView2Controller) uintptr {
-	if int64(res) < 0 {
-		log.Fatalf("Creating controller failed with %08x", res)
+	if int32(res) < 0 || controller == nil {
+		log.Printf("Creating controller failed with %08x", uint32(res))
+		atomic.StoreUintptr(&e.inited, 2)
+		return 0
 	}
 	_, _, _ = controller.vtbl.AddRef.Call(uintptr(unsafe.Pointer(controller)))
 	e.controller = controller
@@ -195,6 +207,11 @@ func (e *Chromium) CreateCoreWebView2ControllerCompleted(res uintptr, controller
 		uintptr(unsafe.Pointer(controller)),
 		uintptr(unsafe.Pointer(&e.webview)),
 	)
+	if e.webview == nil {
+		log.Print("WebView2 controller returned no browser")
+		atomic.StoreUintptr(&e.inited, 2)
+		return 0
+	}
 	_, _, _ = e.webview.vtbl.AddRef.Call(
 		uintptr(unsafe.Pointer(e.webview)),
 	)

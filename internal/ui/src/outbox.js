@@ -50,7 +50,7 @@ export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentio
    const seen=new Set(),candidate=pending.find(r=>{if(seen.has(r.cid))return false;seen.add(r.cid);return r.state!=='failed'&&r.next<=Date.now()});
    if(!candidate)return;const row=candidate;await update(row.id,{state:'sending',attempts:row.attempts+1});await refreshRows(g,key);
    try{
-    if(row.attempts){const receipt=await request('/api/outbox/'+row.id,{},g,key);if(receipt.delivered){if(receipt.conversationId!==row.cid)throw Object.assign(Error('消息标识与会话不一致'),{status:409});await remove(row.id);if(alive(g,key)){if(S.active===row.cid&&!S.historyMode){const messages=await request('/api/conversations/'+row.cid+'/messages',{},g,key);if(alive(g,key)&&S.active===row.cid&&!S.historyMode)S.messages=messages}queueRefresh()}return}}
+    if(row.attempts){const receipt=await request('/api/outbox/'+row.id,{},g,key);if(receipt.delivered){if(receipt.conversationId!==row.cid)throw Object.assign(Error('消息标识与会话不一致'),{status:409});await remove(row.id);if(alive(g,key)){if(S.active===row.cid&&!S.historyMode){const messages=await request('/api/conversations/'+row.cid+'/messages',{},g,key);if(alive(g,key)&&S.active===row.cid&&!S.historyMode)S.messages=messages}queueRefresh(true)}return}}
     let body={...row.body};
     if(row.file&&!row.attachment){const file=await localGet('blobs',row.id);if(!file)throw Object.assign(Error('本机附件已丢失，请重新选择文件'),{status:400});const form=new FormData();form.append('conversationId',row.cid);form.append('clientId',row.id);form.append('file',file,row.file.name);if(body.kind==='voice'||body.kind==='video')form.append('mediaKind',body.kind);for(const [k,v]of Object.entries(row.metadata))form.append(k,String(v));
      row.attachment=await request('/api/files',{method:'POST',body:form},g,key);if(!alive(g,key))return;await update(row.id,{attachment:row.attachment});
@@ -58,7 +58,7 @@ export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentio
     if(row.attachment){body.attachmentId=row.attachment.id;if(body.kind==='auto')body.kind=/^image\/(png|jpeg|gif|webp)$/.test(row.attachment.mime)?'image':'file'}
     if(!(await localGet('queue',row.id)))return;
     const message=await request('/api/conversations/'+row.cid+'/messages',{method:'POST',body},g,key);if(!alive(g,key))return;
-    await remove(row.id);if(S.active===row.cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id)){S.messages.push(message);S.messages.sort((a,b)=>a.seq-b.seq)}queueRefresh();
+    await remove(row.id);if(S.active===row.cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id)){S.messages.push(message);S.messages.sort((a,b)=>a.seq-b.seq)}queueRefresh(true);
    }catch(error){if(!alive(g,key))return;const permanent=error.status>=400&&error.status<500&&error.status!==408&&error.status!==429;await update(row.id,{state:permanent?'failed':'waiting',error:permanent?error.message:'网络异常，等待重试',next:Date.now()+(error.status===429?60000:Math.min(30000,2000*2**Math.min(row.attempts,4)))});}
   }finally{if(alive(g,key)){working=false;await refreshRows(g,key);timer=setTimeout(()=>work().catch(storageError),1000)}}
  }

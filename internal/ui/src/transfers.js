@@ -14,7 +14,7 @@ export function createTransfers({S,api,esc,av,bytes,randomID,renderMessages,queu
  async function chat(cid,body,file,metadata={}) {
   const owner=S.token,g=generation,id=randomID(),entry={id,cid,name:file.name,size:file.size,progress:0};entries.push(entry);renderMessages(true);
   try{const attachment=await upload('/api/files',file,{conversationId:cid,clientId:id,...(['voice','video'].includes(body.kind)?{mediaKind:body.kind}:{}),...metadata},percent=>{entry.progress=percent;renderMessages(true)});if(!active(owner,g))return;
-   const payload={...body,clientId:id,attachmentId:attachment.id};if(payload.kind==='auto')payload.kind=/^image\/(png|jpeg|gif|webp)$/.test(attachment.mime)?'image':'file';const message=await api('/api/conversations/'+cid+'/messages',{method:'POST',body:payload});if(!active(owner,g))return;if(S.active===cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id))S.messages.push(message);queueRefresh();
+   const payload={...body,clientId:id,attachmentId:attachment.id};if(payload.kind==='auto')payload.kind=/^image\/(png|jpeg|gif|webp)$/.test(attachment.mime)?'image':'file';const message=await api('/api/conversations/'+cid+'/messages',{method:'POST',body:payload});if(!active(owner,g))return;if(S.active===cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id))S.messages.push(message);queueRefresh(true);
   }catch(error){if(active(owner,g)&&error.name!=='AbortError'){entry.error=error.message;toast(error.message);throw error}}
   finally{if(active(owner,g)){if(!entry.error)entries=entries.filter(x=>x!==entry);renderMessages(true)}}
  }

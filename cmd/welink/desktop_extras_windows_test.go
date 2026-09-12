@@ -214,6 +214,27 @@ func TestNativeScreenshotSelectionAndHotkey(t *testing.T) {
 		t.Fatal(h.desktop.hotkeys.errors)
 	}
 	result := make(chan error, 1)
+	checkPixels := func(s *screenshotSelection, dimmed bool) error {
+		user32.NewProc("UpdateWindow").Call(s.window)
+		screenshotGDI.NewProc("GdiFlush").Call()
+		dc, _, _ := user32.NewProc("GetDC").Call(s.window)
+		defer user32.NewProc("ReleaseDC").Call(s.window, dc)
+		for y := 90; y < 170; y += 7 {
+			for x := 120; x < 210; x += 7 {
+				pixel, _, _ := screenshotGDI.NewProc("GetPixel").Call(dc, uintptr(x), uintptr(y))
+				for channel, want := range []int{180, y, x} {
+					if dimmed {
+						want = want * 120 / 255
+					}
+					got := int(pixel >> uint(channel*8) & 255)
+					if got < want-2 || got > want+2 {
+						return fmt.Errorf("selection pixel %d,%d channel %d: got %d want %d (dimmed=%v)", x, y, channel, got, want, dimmed)
+					}
+				}
+			}
+		}
+		return nil
+	}
 	go func() {
 		run := func(work func() error) error {
 			done := make(chan error, 1)
@@ -254,6 +275,9 @@ func TestNativeScreenshotSelectionAndHotkey(t *testing.T) {
 				if s == nil {
 					return errors.New("selection window missing")
 				}
+				if err := checkPixels(s, true); err != nil {
+					return err
+				}
 				point := func(x, y int) uintptr { return uintptr(uint32(uint16(x)) | uint32(uint16(y))<<16) }
 				user32.NewProc("SendMessageW").Call(s.window, 0x201, 1, point(50, 60))
 				user32.NewProc("SendMessageW").Call(s.window, 0x200, 1, point(220, 180))
@@ -261,15 +285,22 @@ func TestNativeScreenshotSelectionAndHotkey(t *testing.T) {
 				if s.selected != image.Rect(50, 60, 220, 180) {
 					return fmt.Errorf("selection coordinates: %v", s.selected)
 				}
+				if err := checkPixels(s, false); err != nil {
+					return err
+				}
 				user32.NewProc("UpdateWindow").Call(s.window)
 				user32.NewProc("SendMessageW").Call(s.window, 0x100, 27, 0)
-				if h.desktop.capture != nil || h.desktop.capturePending || s.blackDC != 0 || s.blackBitmap != 0 || s.font != 0 {
+				if h.desktop.capture != nil || h.desktop.capturePending || s.blackDC != 0 || s.blackBitmap != 0 || s.font != 0 || s.frameDC != 0 || s.paintDC != 0 || s.frameBitmap != 0 || s.paintBitmap != 0 {
 					return errors.New("cancel did not release selection resources")
 				}
 				if h.desktop.hidden {
 					return errors.New("cancel did not restore visible caller")
 				}
-				h.closeWindow()
+				// Exercise an actually hidden caller independently of whether Explorer
+				// currently accepts the test window's notification-area icon.
+				h.view.SetVisible(false)
+				user32.NewProc("ShowWindow").Call(h.hwnd, 0)
+				h.visibility(true)
 				h.desktop.capturePending = true
 				if err := h.openScreenshotSelection(testScreenshotFrame(800, 450), true); err != nil {
 					return err

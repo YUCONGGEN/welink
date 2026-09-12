@@ -15,6 +15,8 @@ type screenshotSelection struct {
 	host                                          *windowsHost
 	frame                                         *screenshotFrame
 	window, font, blackDC, blackBitmap, oldBitmap uintptr
+	frameDC, frameBitmap, frameOld                uintptr
+	paintDC, paintBitmap, paintOld                uintptr
 	anchor                                        image.Point
 	selected                                      image.Rectangle
 	dragging, done, wasHidden                     bool
@@ -129,6 +131,31 @@ func (h *windowsHost) openScreenshotSelection(frame *screenshotFrame, wasHidden 
 		return fmt.Errorf("无法打开截图选区：%w", err)
 	}
 	s.window = window
+	// Upload the frozen frame once. Compose every selection update off-screen
+	// before presenting it, avoiding partial DIB uploads and repaint stripes.
+	makeCanvas := func() (dc, bitmap, old uintptr, bits unsafe.Pointer) {
+		dc, _, _ = screenshotGDI.NewProc("CreateCompatibleDC").Call(0)
+		header := screenshotHeader{Size: 40, Width: int32(frame.bounds.Dx()), Height: -int32(frame.bounds.Dy()), Planes: 1, BitCount: 32}
+		bitmap, _, _ = screenshotGDI.NewProc("CreateDIBSection").Call(dc, uintptr(unsafe.Pointer(&header)), 0, uintptr(unsafe.Pointer(&bits)), 0, 0)
+		if dc != 0 && bitmap != 0 {
+			old, _, _ = screenshotGDI.NewProc("SelectObject").Call(dc, bitmap)
+		}
+		return
+	}
+	var bits unsafe.Pointer
+	s.frameDC, s.frameBitmap, s.frameOld, bits = makeCanvas()
+	if bits == nil || s.frameOld == 0 || s.frameOld == ^uintptr(0) {
+		s.release()
+		user32.NewProc("DestroyWindow").Call(window)
+		return errors.New("无法创建截图画面")
+	}
+	copy(unsafe.Slice((*byte)(bits), len(frame.pixels)), frame.pixels)
+	s.paintDC, s.paintBitmap, s.paintOld, bits = makeCanvas()
+	if bits == nil || s.paintOld == 0 || s.paintOld == ^uintptr(0) {
+		s.release()
+		user32.NewProc("DestroyWindow").Call(window)
+		return errors.New("无法创建截图预览")
+	}
 	s.blackDC, _, _ = screenshotGDI.NewProc("CreateCompatibleDC").Call(0)
 	s.blackBitmap, _, _ = screenshotGDI.NewProc("CreateBitmap").Call(1, 1, 1, 32, 0)
 	if s.blackDC == 0 || s.blackBitmap == 0 {
@@ -174,14 +201,18 @@ func (s *screenshotSelection) paint() {
 		Restore, IncUpdate int32
 		Reserved           [32]byte
 	}
-	dc, _, _ := user32.NewProc("BeginPaint").Call(s.window, uintptr(unsafe.Pointer(&ps)))
-	if dc == 0 {
+	windowDC, _, _ := user32.NewProc("BeginPaint").Call(s.window, uintptr(unsafe.Pointer(&ps)))
+	if windowDC == 0 {
 		return
 	}
 	defer user32.NewProc("EndPaint").Call(s.window, uintptr(unsafe.Pointer(&ps)))
 	w, h := s.frame.bounds.Dx(), s.frame.bounds.Dy()
-	header := screenshotHeader{Size: 40, Width: int32(w), Height: -int32(h), Planes: 1, BitCount: 32}
-	screenshotGDI.NewProc("SetDIBitsToDevice").Call(dc, 0, 0, uintptr(w), uintptr(h), 0, 0, 0, uintptr(h), uintptr(unsafe.Pointer(&s.frame.pixels[0])), uintptr(unsafe.Pointer(&header)), 0)
+	dc := s.paintDC
+	screenshotGDI.NewProc("BitBlt").Call(dc, 0, 0, uintptr(w), uintptr(h), s.frameDC, 0, 0, 0x00cc0020)
+	defer func() {
+		screenshotGDI.NewProc("BitBlt").Call(windowDC, 0, 0, uintptr(w), uintptr(h), dc, 0, 0, 0x00cc0020)
+		screenshotGDI.NewProc("GdiFlush").Call()
+	}()
 	dim := func(rect image.Rectangle) {
 		if !rect.Empty() {
 			syscall.NewLazyDLL("msimg32.dll").NewProc("AlphaBlend").Call(dc, uintptr(rect.Min.X), uintptr(rect.Min.Y), uintptr(rect.Dx()), uintptr(rect.Dy()), s.blackDC, 0, 0, 1, 1, 135<<16)
@@ -239,6 +270,18 @@ func (s *screenshotSelection) paint() {
 }
 
 func (s *screenshotSelection) release() {
+	for _, canvas := range [][3]*uintptr{{&s.frameDC, &s.frameBitmap, &s.frameOld}, {&s.paintDC, &s.paintBitmap, &s.paintOld}} {
+		if *canvas[0] != 0 {
+			if *canvas[2] != 0 && *canvas[2] != ^uintptr(0) {
+				screenshotGDI.NewProc("SelectObject").Call(*canvas[0], *canvas[2])
+			}
+			screenshotGDI.NewProc("DeleteDC").Call(*canvas[0])
+		}
+		if *canvas[1] != 0 {
+			screenshotGDI.NewProc("DeleteObject").Call(*canvas[1])
+		}
+		*canvas[0], *canvas[1], *canvas[2] = 0, 0, 0
+	}
 	if s.blackDC != 0 {
 		if s.oldBitmap != 0 {
 			screenshotGDI.NewProc("SelectObject").Call(s.blackDC, s.oldBitmap)

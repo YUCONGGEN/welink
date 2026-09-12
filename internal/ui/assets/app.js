@@ -939,7 +939,7 @@
         const message = await api2("/api/conversations/" + cid + "/messages", { method: "POST", body: payload });
         if (!active(owner2, g)) return;
         if (S2.active === cid && !S2.historyMode && !S2.messages.some((m) => m.id === message.id)) S2.messages.push(message);
-        queueRefresh2();
+        queueRefresh2(true);
       } catch (error) {
         if (active(owner2, g) && error.name !== "AbortError") {
           entry.error = error.message;
@@ -2286,7 +2286,7 @@
                   const messages = await request("/api/conversations/" + row.cid + "/messages", {}, g, key);
                   if (alive(g, key) && S2.active === row.cid && !S2.historyMode) S2.messages = messages;
                 }
-                queueRefresh2();
+                queueRefresh2(true);
               }
               return;
             }
@@ -2317,7 +2317,7 @@
             S2.messages.push(message);
             S2.messages.sort((a, b) => a.seq - b.seq);
           }
-          queueRefresh2();
+          queueRefresh2(true);
         } catch (error) {
           if (!alive(g, key)) return;
           const permanent = error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
@@ -5815,7 +5815,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.11-preview · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.12-preview · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -6137,20 +6137,22 @@
   function bytes(n) {
     return n >= 1099511627776 ? (n / 1099511627776).toFixed(1) + " TB" : n >= 1073741824 ? (n / 1073741824).toFixed(1) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.ceil(n / 1024) + " KB" : n + " B";
   }
-  async function refresh() {
+  async function refresh(conversationsOnly = false) {
     var _a, _b;
     if (!S.user) return;
     const userId = S.user.id;
-    const [conversations, friends, requests, groupRequests, contactGroups, myGroups] = await Promise.all([api("/api/conversations"), api("/api/friends"), api("/api/requests"), api("/api/group-requests"), api("/api/contact-groups"), api("/api/groups?mine=1").catch(() => null)]);
+    const [conversations, friends, requests, groupRequests, contactGroups, myGroups] = await Promise.all([api("/api/conversations"), conversationsOnly ? S.friends : api("/api/friends"), conversationsOnly ? S.requests : api("/api/requests"), conversationsOnly ? S.groupRequests : api("/api/group-requests"), conversationsOnly ? S.contactGroups : api("/api/contact-groups"), conversationsOnly ? S.myGroups : api("/api/groups?mine=1").catch(() => null)]);
     if (((_a = S.user) == null ? void 0 : _a.id) !== userId) return;
     S.conversations = conversations;
-    S.friends = friends;
-    S.requests = requests;
-    S.groupRequests = groupRequests;
-    S.contactGroups = contactGroups;
-    S.myGroups = myGroups || conversations.filter((c2) => c2.kind === "group").map((c2) => __spreadProps(__spreadValues({ id: c2.id, name: c2.name }, c2.group), { joined: true }));
-    Directory.changed();
-    if (S.profile) {
+    if (!conversationsOnly) {
+      S.friends = friends;
+      S.requests = requests;
+      S.groupRequests = groupRequests;
+      S.contactGroups = contactGroups;
+      S.myGroups = myGroups || conversations.filter((c2) => c2.kind === "group").map((c2) => __spreadProps(__spreadValues({ id: c2.id, name: c2.name }, c2.group), { joined: true }));
+      Directory.changed();
+    }
+    if (!conversationsOnly && S.profile) {
       const updated = friends.find((u) => u.id === S.profile.id);
       S.profile = updated ? __spreadValues(__spreadValues({}, S.profile), updated) : null;
       if (S.tab === "contacts") renderMain();
@@ -6171,20 +6173,29 @@
     Groups.syncComposer();
     Contacts.syncComposer();
   }
-  function queueRefresh() {
+  var refreshDirectory = false;
+  function queueRefresh(conversationsOnly = false) {
+    refreshDirectory = refreshDirectory || !conversationsOnly;
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => refresh().catch((e) => toast(e.message)), 200);
+    refreshTimer = setTimeout(() => {
+      const only = !refreshDirectory;
+      refreshDirectory = false;
+      refresh(only).catch((e) => {
+        if (S.user) toast(e.message);
+      });
+    }, 200);
   }
   async function enter() {
     if (!S.cacheView) await Received.identified(S.user);
-    S.policy = await api("/api/config");
-    await refresh();
+    await Promise.all([api("/api/config").then((policy) => {
+      S.policy = policy;
+    }), refresh()]);
     await Outbox.start();
     renderShell();
-    connectEvents();
+    connectEvents(true);
     Calls.start();
   }
-  function connectEvents() {
+  function connectEvents(initial = false) {
     var _a;
     if (!S.user) return;
     (_a = S.ws) == null ? void 0 : _a.close();
@@ -6192,13 +6203,14 @@
     S.ws = ws;
     ws.onopen = async () => {
       if (S.ws !== ws || !S.user) return;
+      const directoryFresh = initial && !S.cacheView && !S.offline;
       S.cacheView = false;
       S.cacheSyncing = true;
       connectionState();
       try {
         await Received.reconcile(api);
         if (S.ws !== ws || !S.user) return;
-        await refresh();
+        await refresh(directoryFresh);
         if (S.active && !S.historyMode) {
           const cid = S.active, ms = await api("/api/conversations/" + cid + "/messages");
           if (S.ws !== ws || !S.user) return;
@@ -6253,7 +6265,9 @@
           if (!Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg", silent: true });
           document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
         }
-        queueRefresh();
+        queueRefresh(true);
+      } else if (event.type === "read") {
+        queueRefresh(true);
       } else if (event.type === "profile") {
         Avatars.changed(d);
         queueRefresh();
@@ -6479,7 +6493,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.11 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.12 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -7238,10 +7252,23 @@
   var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, renderMessages, queueRefresh, fullTime });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
+  async function loadRegistration() {
+    try {
+      const value = await api("/api/public-config");
+      S.registrationEnabled = !!value.registrationEnabled;
+      const links = document.querySelector("#auth-form .auth-links");
+      if (links && !S.user) {
+        const button = links.querySelector("[data-action=register]");
+        if (S.registrationEnabled && !button && !links.querySelector("[data-action=login]")) links.insertAdjacentHTML("afterbegin", '<button type="button" data-action="register">注册账号</button>');
+        if (!S.registrationEnabled) button == null ? void 0 : button.remove();
+      }
+    } catch (e) {
+    }
+  }
   async function bootstrap() {
     try {
       S.config = await api("/local/config");
-      S.registrationEnabled = (await api("/api/public-config")).registrationEnabled;
+      loadRegistration();
       if (S.token) {
         try {
           S.user = await api("/api/me");

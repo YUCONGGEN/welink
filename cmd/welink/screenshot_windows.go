@@ -100,6 +100,11 @@ var captureScreenshotFrame = func() (*screenshotFrame, error) {
 	if ok == 0 {
 		return nil, errors.New("读取桌面画面失败")
 	}
+	// CreateDIBSection requires GDI completion before accessing its backing memory.
+	// BitBlt may be batched, especially with accelerated multi-monitor desktops.
+	if flushed, _, _ := screenshotGDI.NewProc("GdiFlush").Call(); flushed == 0 {
+		return nil, errors.New("桌面画面尚未就绪，请重新截图")
+	}
 	pixels := append([]byte(nil), unsafe.Slice((*byte)(address), width*height*4)...)
 	for at := 3; at < len(pixels); at += 4 {
 		pixels[at] = 255
