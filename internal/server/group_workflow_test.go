@@ -2,7 +2,7 @@ package server
 
 import "testing"
 
-func TestAdminCreatesAccountWithoutDisplayName(t *testing.T) {
+func TestAdminCreatesAccountWithRequiredDisplayName(t *testing.T) {
 	f := setupCommunity(t)
 	a := f.register("optional_name_admin")
 	f.s.settings.Admin.Users = []string{a.User.ID}
@@ -11,19 +11,17 @@ func TestAdminCreatesAccountWithoutDisplayName(t *testing.T) {
 		User            User
 		InitialPassword string
 	}
-	f.request("POST", "/api/admin/users", a.Token, map[string]string{}, 200, &made)
-	if made.User.Name != made.User.Number || len(made.User.Number) != 6 || made.InitialPassword == "" {
+	f.request("POST", "/api/admin/users", a.Token, map[string]string{}, 400, nil)
+	f.request("POST", "/api/admin/users", a.Token, map[string]string{"name": "注册人员"}, 200, &made)
+	if made.User.Name != "注册人员" || len(made.User.Number) != 6 || made.InitialPassword == "" {
 		t.Fatal("missing usable generated credentials")
 	}
 	var session account
 	f.request("POST", "/api/auth/login", "", map[string]string{"account": made.User.Number, "password": made.InitialPassword}, 200, &session)
 	f.request("POST", "/api/admin/users", session.Token, map[string]string{}, 403, nil)
 	f.request("POST", "/api/auth/register", "", map[string]string{}, 403, nil)
-	f.request("POST", "/api/admin/users", a.Token, map[string]string{"password": "short"}, 400, nil)
-	f.request("POST", "/api/admin/users", a.Token, map[string]string{"name": " ", "password": "explicit-password-123!"}, 200, &made)
-	if made.User.Name != made.User.Number {
-		t.Fatal("blank name was not replaced")
-	}
+	f.request("POST", "/api/admin/users", a.Token, map[string]string{"name": "姓名", "password": "short"}, 400, nil)
+	f.request("POST", "/api/admin/users", a.Token, map[string]string{"name": " ", "password": "explicit-password-123!"}, 400, nil)
 }
 
 func TestHiddenGroupCanBeFoundAndReopenedWithoutApplying(t *testing.T) {

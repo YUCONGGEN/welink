@@ -19,6 +19,109 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/meeting-window.js
+  var owner = null;
+  function meetingWindow({ active, changed, toast: toast2, nativeFullscreen }) {
+    let nativeFull = false, busy = false, entry = null, leaving = null, native;
+    const controller = { exit }, full = () => owner === controller && (nativeFull || !!document.fullscreenElement);
+    async function exit() {
+      if (leaving) return leaving;
+      leaving = (async () => {
+        if (entry) try {
+          await entry;
+        } catch (e) {
+        }
+        if (owner !== controller) return;
+        if (nativeFull) {
+          await native(false);
+          nativeFull = false;
+        }
+        if (document.fullscreenElement) await document.exitFullscreen();
+        if (owner === controller) owner = null;
+        changed(false);
+      })();
+      try {
+        await leaving;
+      } finally {
+        leaving = null;
+      }
+    }
+    async function toggle() {
+      if (busy || !active()) return;
+      busy = true;
+      try {
+        if (full()) {
+          await exit();
+          return;
+        }
+        if (owner && owner !== controller) await owner.exit();
+        if (!active()) return;
+        owner = controller;
+        native = nativeFullscreen || window.welinkMeetingFullscreen;
+        entry = (async () => {
+          if (native) {
+            await native(true);
+            nativeFull = true;
+          } else await document.documentElement.requestFullscreen();
+        })();
+        try {
+          await entry;
+        } finally {
+          entry = null;
+        }
+        changed(full());
+        if (!active()) await exit();
+      } catch (e) {
+        if (owner === controller && !nativeFull && !document.fullscreenElement) owner = null;
+        changed(full());
+        toast2("无法切换全屏，请重试");
+      } finally {
+        busy = false;
+      }
+    }
+    document.addEventListener("fullscreenchange", () => {
+      if (owner !== controller) return;
+      if (!nativeFull && !entry && !document.fullscreenElement) owner = null;
+      changed(full());
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && full() && active()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        exit().catch(() => toast2("退出全屏失败，请重试"));
+      }
+    }, true);
+    return { toggle, exit, full };
+  }
+
+  // internal/ui/src/remote-window.js
+  function createRemoteWindow({ active, action: action2, toast: toast2 }) {
+    var _a;
+    const display = meetingWindow({ active, toast: toast2, nativeFullscreen: ((_a = window.WeLinkAndroid) == null ? void 0 : _a.setRemoteFullscreen) ? (enabled) => window.WeLinkAndroid.setRemoteFullscreen(enabled) : void 0, changed: (full) => {
+      var _a2;
+      const b = document.querySelector("[data-action=remote-fullscreen]");
+      if (b) {
+        b.textContent = full ? "退出全屏" : "全屏";
+        b.setAttribute("aria-pressed", String(full));
+        b.title = full ? "退出全屏（Esc）" : "全屏";
+      }
+      (_a2 = document.querySelector(".remote-screen")) == null ? void 0 : _a2.classList.toggle("remote-fullscreen", full);
+      action2("/local/remote/release").catch(() => {
+      });
+    } });
+    window.WeLinkRemoteFullscreenExited = () => display.exit().catch(() => {
+    });
+    return __spreadProps(__spreadValues({}, display), { async minimize() {
+      await display.exit();
+      if (active()) await action2("/local/window/min");
+    }, back() {
+      if (!display.full()) return false;
+      display.exit().catch(() => {
+      });
+      return true;
+    } });
+  }
+
   // internal/ui/src/long-press.js
   function bindLongPress(selector, onHold, { delay = 500, distance = 10 } = {}) {
     let timer, start, held = false, ghostUntil = 0, target = null, started = 0;
@@ -647,7 +750,7 @@
   // internal/ui/src/admin.js
   function createAdmin({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, refresh: refresh2 }) {
     const $2 = (s) => document.querySelector(s);
-    let generation = 0;
+    let generation = 0, currentQuery = "";
     const request = api2;
     api2 = async (...args) => {
       const token = S2.token, result = await request(...args);
@@ -669,42 +772,82 @@
         }
       };
     }
-    async function render(query = "") {
+    async function render(query = currentQuery) {
       const token = S2.token, g = ++generation, users = await api2("/api/admin/users?q=" + encodeURIComponent(query));
       if (S2.token !== token || S2.tab !== "admin" || g !== generation) return;
-      $2("#main-content").innerHTML = '<section class="cloud-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索昵称或 6 位账号" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file"><div class="cloud-file-name"><b>'.concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 账号 ").concat(esc2(u.number), '</small></div><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
+      currentQuery = query;
+      $2("#main-content").innerHTML = '<section class="cloud-page admin-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、修改资料、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索姓名（昵称）或 6 位账号" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file" data-admin-user="'.concat(u.id, '"><div class="cloud-file-name"><b>').concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 账号 ").concat(esc2(u.number), '</small></div><div class="admin-user-actions"><button class="secondary" data-admin-edit="').concat(u.id, '">编辑资料</button><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</div></article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
       $2("#admin-search").onkeydown = (e) => {
         if (e.key === "Enter") render(e.target.value).catch((error) => toast2(error.message));
       };
       bind("admin-create", create);
     }
-    function create() {
-      modal2("注册用户账号", '<form id="admin-register-form"><label for="admin-name">名字（选填）</label><input id="admin-name" maxlength="32" autocomplete="name" placeholder="留空使用新分配的六位账号"><label for="admin-password">初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="留空生成随机密码"><p class="hint">系统自动分配六位账号。名字以后可修改，登录使用账号。</p></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user" type="submit" form="admin-register-form">注册账号</button>');
-      const form = $2("#admin-register-form"), button = $2("#admin-save-user");
+    const nameField = (value = "") => '<label for="admin-name">姓名（昵称）</label><input id="admin-name" maxlength="32" autocomplete="name" required placeholder="请输入姓名或昵称" value="' + esc2(value) + '">';
+    function submit(formID, buttonID, save) {
+      const form = $2("#" + formID), button = $2("#" + buttonID);
       form.onsubmit = async (event) => {
         event.preventDefault();
         if (button.disabled) return;
+        const name = $2("#admin-name").value.trim();
+        if (!name) {
+          $2("#modal-error").textContent = "请填写姓名（昵称）";
+          $2("#admin-name").focus();
+          return;
+        }
         button.disabled = true;
         $2("#modal-error").textContent = "";
         try {
-          const result = await api2("/api/admin/users", { method: "POST", body: { name: $2("#admin-name").value.trim(), password: $2("#admin-password").value } });
-          if (!form.isConnected) return;
-          closeModal2();
-          modal2("账号已注册", "<p>名字：" + esc2(result.user.name) + '</p><p>登录账号：<b id="admin-created-number">' + esc2(result.user.number) + "</b></p>" + (result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input id="admin-created-password" readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
-          await refresh2();
-          await render();
+          await save(name, form);
         } catch (e) {
           if (form.isConnected) {
             $2("#modal-error").textContent = e.message;
             button.disabled = false;
-          } else toast2(e.message);
+          } else if (e.name !== "AbortError") toast2(e.message);
         }
       };
     }
+    function create() {
+      modal2("注册用户账号", '<form id="admin-register-form">' + nameField() + '<label for="admin-password">初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="留空生成随机密码"><p class="hint">请填写姓名（昵称），系统自动分配六位登录账号。之后可在账号管理中修改资料。</p></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user" type="submit" form="admin-register-form">注册账号</button>');
+      submit("admin-register-form", "admin-save-user", async (name, form) => {
+        const result = await api2("/api/admin/users", { method: "POST", body: { name, password: $2("#admin-password").value } });
+        if (!form.isConnected) return;
+        closeModal2();
+        modal2("账号已注册", "<p>姓名（昵称）：" + esc2(result.user.name) + '</p><p>登录账号：<b id="admin-created-number">' + esc2(result.user.number) + "</b></p>" + (result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input id="admin-created-password" readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
+        await refresh2();
+        await render();
+      });
+    }
+    async function edit(id) {
+      modal2("编辑用户资料", '<p id="admin-profile-loading" class="hint">正在读取资料…</p>');
+      const loading = $2("#admin-profile-loading");
+      try {
+        const u = await api2("/api/admin/users/" + id);
+        if (!loading.isConnected) return;
+        modal2("编辑用户资料", '<form id="admin-profile-form"><p class="hint">WeLink 账号：' + esc2(u.number) + "</p>" + nameField(u.name) + '<label for="admin-phone">手机号</label><input id="admin-phone" type="tel" autocomplete="tel" maxlength="32" value="' + esc2(u.phone || "") + '" placeholder="未设置"><label for="admin-gender">性别</label><select id="admin-gender"><option value="">未设置</option>' + [["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="' + v + '" ' + (u.gender === v ? "selected" : "") + ">" + t + "</option>").join("") + '</select><label for="admin-job">职位</label><input id="admin-job" maxlength="64" value="' + esc2(u.jobTitle || "") + '" placeholder="未设置"><label for="admin-bio">个性签名</label><input id="admin-bio" maxlength="150" value="' + esc2(u.bio || "") + '" placeholder="未设置"></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-profile" type="submit" form="admin-profile-form">保存</button>');
+        submit("admin-profile-form", "admin-save-profile", async (name, form) => {
+          var _a;
+          const body = { name, phone: $2("#admin-phone").value, gender: $2("#admin-gender").value, jobTitle: $2("#admin-job").value, bio: $2("#admin-bio").value };
+          const updated = await api2("/api/admin/users/" + id, { method: "PATCH", body });
+          if (updated.id === ((_a = S2.user) == null ? void 0 : _a.id)) S2.user = __spreadValues(__spreadValues({}, S2.user), updated);
+          if (form.isConnected) closeModal2();
+          await refresh2();
+          await render();
+          toast2("资料已保存");
+        });
+      } catch (e) {
+        if (loading.isConnected) $2("#modal-error").textContent = e.message;
+      }
+    }
     document.addEventListener("click", (event) => {
-      var _a, _b;
+      var _a;
+      if (!((_a = S2.policy) == null ? void 0 : _a.admin)) return;
+      const editButton = event.target.closest("[data-admin-edit]");
+      if (editButton) {
+        edit(editButton.dataset.adminEdit);
+        return;
+      }
       const reset = event.target.closest("[data-admin-password]");
-      if (reset && ((_a = S2.policy) == null ? void 0 : _a.admin)) {
+      if (reset) {
         modal2("重置用户密码", "<p>为 " + esc2(reset.dataset.name) + "（" + esc2(reset.dataset.number) + '）设置新密码</p><label>新密码</label><input id="admin-new-password" type="password" autocomplete="new-password" maxlength="72"><p class="hint">不需要原密码。该用户的其他登录设备将退出。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-reset-password">重置密码</button>');
         bind("admin-reset-password", async () => {
           await api2("/api/admin/users/" + reset.dataset.adminPassword + "/password", { method: "POST", body: { password: $2("#admin-new-password").value } });
@@ -714,7 +857,7 @@
         return;
       }
       const b = event.target.closest("[data-admin-delete]");
-      if (!b || !((_b = S2.policy) == null ? void 0 : _b.admin)) return;
+      if (!b) return;
       const id = b.dataset.adminDelete, number = b.dataset.number;
       modal2("删除用户账号", "<p>确认删除 <b>".concat(esc2(b.dataset.name), "</b>（").concat(esc2(number), '）？</p><p class="hint">账号将无法登录，个人网盘、空间及分享会被清除。其他用户的已有聊天记录保留，发送人显示为已注销用户。</p><label>输入该用户的 WeLink 号码确认</label><input id="admin-confirm-number" autocomplete="off" inputmode="numeric">'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="admin-confirm-delete">删除账号</button>');
       bind("admin-confirm-delete", async () => {
@@ -727,6 +870,7 @@
     });
     return { render, reset() {
       generation++;
+      currentQuery = "";
     }, settingsRow: () => {
       var _a;
       return ((_a = S2.policy) == null ? void 0 : _a.admin) ? '<button class="utility-row" data-nav="admin"><div class="body">管理员 · 账号管理</div>' + icon2("chevron") + "</button>" : "";
@@ -737,7 +881,7 @@
   function createTransfers({ S: S2, api: api2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, toast: toast2 }) {
     let generation = 0, entries = [];
     const requests = /* @__PURE__ */ new Set();
-    const active = (owner, g) => S2.user && S2.token === owner && generation === g && !S2.signingOut;
+    const active = (owner2, g) => S2.user && S2.token === owner2 && generation === g && !S2.signingOut;
     function stop() {
       generation++;
       for (const xhr of requests) xhr.abort();
@@ -746,7 +890,7 @@
     }
     function upload2(path, file, fields = {}, onProgress = () => {
     }) {
-      const owner = S2.token, g = generation;
+      const owner2 = S2.token, g = generation;
       if (!S2.user) return Promise.reject(Error("请先登录"));
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest(), form = new FormData();
@@ -756,13 +900,13 @@
         const finish = (error, result) => {
           requests.delete(xhr);
           if (error) reject(error);
-          else if (!active(owner, g)) reject(Object.assign(Error("账号已切换"), { name: "AbortError" }));
+          else if (!active(owner2, g)) reject(Object.assign(Error("账号已切换"), { name: "AbortError" }));
           else resolve(result);
         };
         xhr.open("POST", path);
-        xhr.setRequestHeader("Authorization", "Bearer " + owner);
+        xhr.setRequestHeader("Authorization", "Bearer " + owner2);
         xhr.upload.onprogress = (e) => {
-          if (active(owner, g)) onProgress(e.lengthComputable ? Math.min(99, Math.floor(e.loaded / e.total * 100)) : null);
+          if (active(owner2, g)) onProgress(e.lengthComputable ? Math.min(99, Math.floor(e.loaded / e.total * 100)) : null);
         };
         xhr.onload = () => {
           let result;
@@ -781,7 +925,7 @@
       });
     }
     async function chat(cid, body, file, metadata2 = {}) {
-      const owner = S2.token, g = generation, id = randomID2(), entry = { id, cid, name: file.name, size: file.size, progress: 0 };
+      const owner2 = S2.token, g = generation, id = randomID2(), entry = { id, cid, name: file.name, size: file.size, progress: 0 };
       entries.push(entry);
       renderMessages2(true);
       try {
@@ -789,21 +933,21 @@
           entry.progress = percent;
           renderMessages2(true);
         });
-        if (!active(owner, g)) return;
+        if (!active(owner2, g)) return;
         const payload = __spreadProps(__spreadValues({}, body), { clientId: id, attachmentId: attachment.id });
         if (payload.kind === "auto") payload.kind = /^image\/(png|jpeg|gif|webp)$/.test(attachment.mime) ? "image" : "file";
         const message = await api2("/api/conversations/" + cid + "/messages", { method: "POST", body: payload });
-        if (!active(owner, g)) return;
+        if (!active(owner2, g)) return;
         if (S2.active === cid && !S2.historyMode && !S2.messages.some((m) => m.id === message.id)) S2.messages.push(message);
         queueRefresh2();
       } catch (error) {
-        if (active(owner, g) && error.name !== "AbortError") {
+        if (active(owner2, g) && error.name !== "AbortError") {
           entry.error = error.message;
           toast2(error.message);
           throw error;
         }
       } finally {
-        if (active(owner, g)) {
+        if (active(owner2, g)) {
           if (!entry.error) entries = entries.filter((x) => x !== entry);
           renderMessages2(true);
         }
@@ -3009,12 +3153,12 @@
         switch (b.dataset.contact) {
           case "attention": {
             b.disabled = true;
-            const owner = S2.user.id;
+            const owner2 = S2.user.id;
             try {
               const detail = await api2("/api/contacts/" + b.dataset.user);
-              if (((_a = S2.user) == null ? void 0 : _a.id) !== owner) break;
+              if (((_a = S2.user) == null ? void 0 : _a.id) !== owner2) break;
               await api2("/api/contacts/" + b.dataset.user, { method: "PATCH", body: { specialCare: !detail.user.specialCare } });
-              if (((_b = S2.user) == null ? void 0 : _b.id) !== owner) break;
+              if (((_b = S2.user) == null ? void 0 : _b.id) !== owner2) break;
               await refresh2();
               toast2(detail.user.specialCare ? "已取消特别关心" : "已设为特别关心");
             } finally {
@@ -3598,8 +3742,8 @@
       return JSON.stringify([S2.config.server, S2.config.fingerprint, (_a = S2.user) == null ? void 0 : _a.id, S2.token]);
     };
     async function sendMedia(file, kind, metadata2 = {}, cid = S2.active) {
-      const owner = accountScope(), retry = () => {
-        if (accountScope() !== owner) throw Error("登录账号已变化");
+      const owner2 = accountScope(), retry = () => {
+        if (accountScope() !== owner2) throw Error("登录账号已变化");
         return enqueue(cid, { kind, text: "" }, file, metadata2);
       };
       try {
@@ -3661,18 +3805,18 @@
     }
     async function sendVideo(file) {
       var _a;
-      const cid = S2.active, owner = accountScope();
+      const cid = S2.active, owner2 = accountScope();
       if (!cid) return;
       if (((_a = S2.policy) == null ? void 0 : _a.chatMaxAttachmentBytes) > 0 && file.size > S2.policy.chatMaxAttachmentBytes) {
         toast2("文件超过服务器配置的大小限制");
         return;
       }
       const fallback = (error) => {
-        if (accountScope() !== owner) return;
+        if (accountScope() !== owner2) return;
         modal2("无法直接发送视频", '<p class="hint">'.concat(esc2(error.message), "，可以作为普通文件发送给对方。</p>"), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');
         $2("#video-send-file").onclick = () => {
           closeModal2();
-          if (S2.active === cid && accountScope() === owner) upload2(file, true);
+          if (S2.active === cid && accountScope() === owner2) upload2(file, true);
           else toast2("聊天已切换，请重新选择文件");
         };
       };
@@ -3683,7 +3827,7 @@
         fallback(error);
         return;
       }
-      if (accountScope() !== owner) return;
+      if (accountScope() !== owner2) return;
       try {
         await sendMedia(file, "video", metadata2, cid);
       } catch (error) {
@@ -4315,7 +4459,7 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.10-preview</small></main>');
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.11-preview</small></main>');
       el("qr-refresh").onclick = open;
       try {
         const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
@@ -4418,50 +4562,6 @@
       clearTimeout(active == null ? void 0 : active.timer);
     });
     return { open, stop, scanned };
-  }
-
-  // internal/ui/src/meeting-window.js
-  function meetingWindow({ active, changed, toast: toast2 }) {
-    let nativeFull = false, busy = false;
-    const full = () => nativeFull || !!document.fullscreenElement;
-    async function exit() {
-      if (nativeFull) {
-        await window.welinkMeetingFullscreen(false);
-        nativeFull = false;
-      }
-      if (document.fullscreenElement) await document.exitFullscreen();
-      changed(full());
-    }
-    async function toggle() {
-      if (busy || !active()) return;
-      busy = true;
-      try {
-        if (full()) await exit();
-        else if (window.welinkMeetingFullscreen) {
-          await window.welinkMeetingFullscreen(true);
-          nativeFull = true;
-          changed(true);
-        } else {
-          await document.documentElement.requestFullscreen();
-          changed(true);
-        }
-        if (!active()) await exit();
-      } catch (e) {
-        toast2("无法进入全屏，请重试");
-      } finally {
-        busy = false;
-      }
-    }
-    document.addEventListener("fullscreenchange", () => changed(full()));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && full() && active()) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        exit().catch(() => {
-        });
-      }
-    }, true);
-    return { toggle, exit, full };
   }
 
   // internal/ui/src/rtc-path.js
@@ -4795,8 +4895,8 @@
         closeModal2();
         return;
       }
-      const owner = S2.token, stream = await initialMedia(mic, cam);
-      if (owner !== S2.token || !S2.user || call && !callCurrent(call.id)) {
+      const owner2 = S2.token, stream = await initialMedia(mic, cam);
+      if (owner2 !== S2.token || !S2.user || call && !callCurrent(call.id)) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
@@ -5380,12 +5480,12 @@
     async function invited(m) {
       var _a;
       if (!S2.user || !/^[1-9]\d{8}$/.test(m.code) || pending.has(m.code)) return;
-      const owner = S2.token;
+      const owner2 = S2.token;
       pending.set(m.code, m);
       if (window.welinkMeetingNotify) {
         try {
           const handled = await window.welinkMeetingNotify(m.code, m.title, m.expires || Date.now() + 72e5);
-          if (owner !== S2.token) {
+          if (owner2 !== S2.token) {
             (_a = window.welinkMeetingClear) == null ? void 0 : _a.call(window);
             return;
           }
@@ -5486,8 +5586,6 @@
       root().innerHTML = "";
       root().classList.remove("meeting-minimized", "call-mode", "call-audio");
       if (active.call) onCallClosed(active.call.id);
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {
-      });
     }
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-action]"), a = b == null ? void 0 : b.dataset.action;
@@ -5699,7 +5797,7 @@
   }, beforeOpen: () => {
     var _a;
     return (_a = window.WeLinkMediaBeforeModal) == null ? void 0 : _a.call(window);
-  }, esc, icon, onPageBack: pageBack, beforeBack: () => {
+  }, esc, icon, onPageBack: () => RemoteDisplay.back() || pageBack(), beforeBack: () => {
     var _a, _b;
     if (((_a = S.remote) == null ? void 0 : _a.state) !== "pending" || !$(".remote-invite")) return false;
     (S.remote.requester === ((_b = S.user) == null ? void 0 : _b.id) ? stopRemote() : acceptRemote(false)).catch(modalError);
@@ -5717,7 +5815,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.10-preview · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="nickname" placeholder="昵称" aria-label="昵称" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div><p class="auth-consent">使用 6 位数字账号登录 · 昵称不能登录<br>登录后即可使用消息、文件与远程协助</p></form><small class="auth-footer">WeLink 0.1.11-preview · 让沟通更近一步</small></main>');
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -5993,11 +6091,11 @@
     var _a;
     const input = $("#composer");
     if (!(input == null ? void 0 : input.value.trim()) || input.disabled) return;
-    const text = input.value, cid = S.active, owner = Outbox.scope();
+    const text = input.value, cid = S.active, owner2 = Outbox.scope();
     input.disabled = true;
     try {
       await Outbox.enqueue(cid, { kind: "text", text, mentions: Mentions.payload(), replyId: ((_a = S.reply) == null ? void 0 : _a.id) || "" }, null, {}, true);
-      if (Outbox.scope() !== owner) return;
+      if (Outbox.scope() !== owner2) return;
       if (S.active === cid && input === $("#composer")) {
         input.value = "";
         $("#send-message").disabled = true;
@@ -6381,7 +6479,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.10 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.11 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -6524,6 +6622,7 @@
   async function screenshot() {
     return Screenshots.start();
   }
+  var RemoteDisplay = createRemoteWindow({ active: () => !!$(".remote-screen"), action, toast });
   function remoteChoices() {
     const c = activeConversation();
     if ((c == null ? void 0 : c.kind) !== "direct") {
@@ -6668,7 +6767,7 @@
     if ($(".remote-screen")) return;
     const node = document.createElement("section");
     node.className = "remote-screen";
-    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), '<b>远程协助</b><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen">全屏</button><button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading">正在等待对方画面…</p><img id="remote-image" tabindex="0" alt="远程设备屏幕"></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
+    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), '<b>远程协助</b><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>').concat(S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : "", '<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading">正在等待对方画面…</p><img id="remote-image" tabindex="0" alt="远程设备屏幕"></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
     document.body.append(node);
     const img = $("#remote-image");
     let held = false;
@@ -6735,6 +6834,8 @@
     clearInterval(S.remoteTimer);
     clearTimeout(toastTimer);
     S.remoteTimer = null;
+    await RemoteDisplay.exit().catch(() => {
+    });
     (_a = $(".remote-screen")) == null ? void 0 : _a.remove();
     frameVersion = 0;
     URL.revokeObjectURL(frameURL);
@@ -7051,8 +7152,10 @@
           await stopRemote();
           break;
         case "remote-fullscreen":
-          if (!document.fullscreenElement) await $(".remote-screen").requestFullscreen();
-          else await document.exitFullscreen();
+          await RemoteDisplay.toggle();
+          break;
+        case "remote-minimize":
+          await RemoteDisplay.minimize();
           break;
         case "remote-text":
           modal("输入文字", '<textarea id="remote-text" placeholder="输入要发送到远程设备的文字"></textarea>', '<button class="primary" data-action="modal-submit">发送</button>');
@@ -7192,7 +7295,7 @@
     e.preventDefault();
     fileDragDepth = 0;
     (_a = document.querySelector(".shell")) == null ? void 0 : _a.classList.remove("file-drop-active");
-    const files = Array.from(e.dataTransfer.files || []), cid = S.active, owner = S.token;
+    const files = Array.from(e.dataTransfer.files || []), cid = S.active, owner2 = S.token;
     if (!S.user) return;
     if (S.tab === "drive") {
       await Cloud.sendFiles(files);
@@ -7203,7 +7306,7 @@
       return;
     }
     for (const file of files) {
-      if (S.token !== owner) return;
+      if (S.token !== owner2) return;
       await upload(file, false, cid);
     }
   });

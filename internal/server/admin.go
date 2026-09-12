@@ -56,8 +56,8 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 	if alias == "" {
 		alias = "wl_" + newID()[:20]
 	}
-	if !validText(name, 32) {
-		return User{}, errors.New("名字最多 32 字，请勿包含控制字符")
+	if name == "" || !validText(name, 32) {
+		return User{}, errors.New("请填写姓名（昵称），1–32 字，请勿包含控制字符")
 	}
 	if !accountPattern.MatchString(alias) || numericAccount.MatchString(alias) {
 		return User{}, errors.New("内部账号标识无效")
@@ -94,12 +94,6 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 	var number string
 	if err = tx.QueryRow("SELECT number FROM user_numbers WHERE user_id=?", id).Scan(&number); err != nil {
 		return User{}, err
-	}
-	if name == "" {
-		name = number
-		if _, err = tx.Exec("UPDATE users SET name=? WHERE id=?", name, id); err != nil {
-			return User{}, err
-		}
 	}
 	user := User{ID: id, Account: number, Name: name, Avatar: avatar, Number: number}
 	if beforeCommit != nil {

@@ -124,7 +124,7 @@ func install(directory string) error {
 	if err = os.WriteFile(uninstallPath, []byte("\xef\xbb\xbf"+uninstallScript), 0600); err != nil {
 		return err
 	}
-	for k, v := range map[string]string{"DisplayName": "WeLink", "DisplayVersion": "0.1.10", "Publisher": "WeLink", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
+	for k, v := range map[string]string{"DisplayName": "WeLink", "DisplayVersion": "0.1.11", "Publisher": "WeLink", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
 		if err = key.SetStringValue(k, v); err != nil {
 			return err
 		}

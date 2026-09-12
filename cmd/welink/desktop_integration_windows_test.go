@@ -129,6 +129,7 @@ func TestNativeDesktopChatAndDuplicateProcess(t *testing.T) {
 			return map[string]any{"ok": true}, nil
 		case "state":
 			visible, _, _ := user32.NewProc("IsWindowVisible").Call(h.hwnd)
+			minimized, _, _ := user32.NewProc("IsIconic").Call(h.hwnd)
 			raw, e := os.ReadFile(filepath.Join(directory, "desktop.json"))
 			if e != nil {
 				return nil, e
@@ -137,7 +138,7 @@ func TestNativeDesktopChatAndDuplicateProcess(t *testing.T) {
 			if e = json.Unmarshal(raw, &prefs); e != nil {
 				return nil, e
 			}
-			return map[string]any{"visible": visible != 0, "unread": h.desktop.unread, "tray": h.desktop.trayAvailable, "preferences": prefs}, nil
+			return map[string]any{"visible": visible != 0, "minimized": minimized != 0, "unread": h.desktop.unread, "tray": h.desktop.trayAvailable, "preferences": prefs}, nil
 		}
 		return nil, fmt.Errorf("unknown test control")
 	})
@@ -216,6 +217,7 @@ func TestNativeOutboxReopenHelper(t *testing.T) {
 }
 
 const nativeChatScript = `(async()=>{if(window.nativeChatStarted)return;window.nativeChatStarted=true;
+ const RealSocket=window.WebSocket;window.WebSocket=class extends RealSocket{constructor(...args){super(...args);if(String(args[0]).endsWith('/api/ws'))window.nativeRemoteSocket=this}};
  const cfg=__CONFIG__,sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const wait=async(fn,label)=>{for(let i=0;i<100;i++){if(await fn())return;await sleep(50)}throw Error('timeout: '+label)};
  const click=s=>{const node=document.querySelector(s);if(!node)throw Error('missing '+s);node.click()};
@@ -231,6 +233,13 @@ const nativeChatScript = `(async()=>{if(window.nativeChatStarted)return;window.n
  click('#meeting-fullscreen');await wait(()=>document.querySelector('#meeting-fullscreen span')?.textContent==='退出全屏','native fullscreen bridge');click('#meeting-invite');await wait(()=>document.querySelector('#meeting-send-invites'),'native invitation dialog');
  const inviteButton=document.querySelector('#meeting-send-invites'),rect=inviteButton.getBoundingClientRect();check(inviteButton.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2)),'fullscreen invitation hittable');click('.modal-footer [data-action=close-modal]');
  click('#meeting-minimize');await wait(()=>document.querySelector('.meeting-minimized'),'minimize exits fullscreen');click('#meeting-restore');click('#meeting-end');click('#meeting-confirm-leave');await wait(()=>!document.querySelector('.meeting-room'),'native meeting ends');click('[data-nav=messages]');click('[data-conversation="'+cfg.conversation+'"]');await wait(()=>document.querySelector('#composer'),'return from meeting to chat');
+ // Synthetic local engine and signaling event exercise the real remote UI/native HWND without capturing a user's screen.
+ const remoteFetch=window.fetch,me=await api('/api/me'),remoteConversation=await api('/api/conversations/'+cfg.conversation),peer=remoteConversation.members.find(u=>u.id!==me.id);
+ const simulatedRemote={id:'native-remote-layout',state:'pending',mode:'control',requester:me.id,recipient:peer.id,host:peer.id,conversationId:cfg.conversation};
+ window.fetch=(url,options={})=>{const path=new URL(String(url),location.href).pathname;if(path.startsWith('/local/remote/'))return Promise.resolve(new Response(JSON.stringify(path.endsWith('/state')?{status:'connected',role:'viewer',frame:0,width:1280,height:720,path:'p2p',rtt:1}:{ok:true}),{headers:{'Content-Type':'application/json'}}));if(path==='/api/remotes')return Promise.resolve(new Response(JSON.stringify(simulatedRemote)));if(path.includes('/api/remotes/native-remote-layout/'))return Promise.resolve(new Response('{}'));return remoteFetch(url,options)};
+ click('[data-action=remote]');click('[data-invite-remote=control][data-direction=request]');await wait(()=>document.querySelector('.remote-invite'),'remote invitation');nativeRemoteSocket.dispatchEvent(new MessageEvent('message',{data:JSON.stringify({type:'remote',data:{...simulatedRemote,state:'accepted'}})}));await wait(()=>document.querySelector('.remote-screen'),'remote screen');
+ click('[data-action=remote-fullscreen]');await wait(()=>document.querySelector('[data-action=remote-fullscreen]')?.textContent==='退出全屏','native remote fullscreen');const remoteEnd=document.querySelector('[data-action=stop-remote]'),remoteRect=remoteEnd.getBoundingClientRect();check(remoteEnd.contains(document.elementFromPoint(remoteRect.x+remoteRect.width/2,remoteRect.y+remoteRect.height/2)),'remote fullscreen controls hittable');
+ click('[data-action=remote-minimize]');await wait(async()=>(await nativeTestControl('state')).minimized,'remote minimizes HWND');await nativeTestControl('duplicate');await wait(async()=>!(await nativeTestControl('state')).minimized,'remote restores HWND');check(document.querySelector('.remote-screen')&&!document.querySelector('.remote-fullscreen'),'remote restored without fullscreen');click('[data-action=remote-fullscreen]');await wait(()=>document.querySelector('.remote-fullscreen'),'remote fullscreen again');click('[data-action=stop-remote]');await wait(()=>!document.querySelector('.remote-screen'),'remote ends and restores window');window.fetch=remoteFetch;
  let state=await nativeTestControl('state');check(state.tray&&state.preferences.closeToTray&&!state.preferences.messageAlerts,'native settings persistence');
  click('[data-action=window-close]');await wait(()=>window.welinkNativeHidden===true,'native hidden event');state=await nativeTestControl('state');check(!state.visible&&state.tray,'real HWND hidden with tray');
  await nativeTestControl('peer-message');await wait(async()=>((await api('/api/conversations')).find(c=>c.id===cfg.conversation)?.unread)===1,'server unread');await wait(async()=>(await nativeTestControl('state')).unread===1,'native unread count');
