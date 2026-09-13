@@ -25,7 +25,7 @@
     "received_cache_conversations": 100
   },
   "drive": {
-    "quota_gb": 100,
+    "quota_gb": 5,
     "max_files": 10000,
     "max_folders": 2000,
     "max_folder_depth": 32

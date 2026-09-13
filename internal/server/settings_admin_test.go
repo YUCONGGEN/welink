@@ -23,7 +23,7 @@ func TestSettingsDefaultsOverlayAndValidation(t *testing.T) {
 		}
 	}
 	defaults := DefaultSettings()
-	if defaults.Registration.Enabled || defaults.driveQuota() != 100<<30 || defaults.Chat.MaxAttachmentBytes != 0 {
+	if defaults.Registration.Enabled || defaults.driveQuota() != 5<<30 || defaults.Chat.MaxAttachmentBytes != 0 {
 		t.Fatal("incorrect product defaults")
 	}
 }

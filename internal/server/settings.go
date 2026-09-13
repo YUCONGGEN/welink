@@ -90,7 +90,7 @@ func DefaultSettings() Settings {
 	s.Chat.ReceivedCacheBytes = 20 << 20
 	s.Chat.ReceivedCacheDays = 30
 	s.Chat.ReceivedCacheConversations = 100
-	s.Drive.QuotaGB = 100
+	s.Drive.QuotaGB = 5
 	s.Drive.MaxFiles = 10000
 	s.Drive.MaxFolders = 2000
 	s.Drive.MaxFolderDepth = 32
