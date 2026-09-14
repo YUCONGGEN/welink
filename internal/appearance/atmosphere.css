@@ -1,0 +1,12 @@
+/* Adapted from the user-provided sub2api authentication design. */
+.snowfall{display:none;position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0;user-select:none}
+.public-site .snowfall,body:not(.dark) .auth-shell .snowfall{display:block}
+.snowfall span{position:absolute;top:-100vh;left:-40px;right:-40px;height:200vh;opacity:.62;background-image:radial-gradient(circle,#fff 0 1.1px,transparent 1.4px),radial-gradient(circle,#ffffffd9 0 1.6px,transparent 1.9px),radial-gradient(circle,#fff 0 .7px,transparent 1px);background-position:12px 18px,43px 71px,79px 31px;background-size:89px 97px,137px 149px,63px 71px;animation:welink-snow 18s linear infinite}
+.snowfall span:nth-child(2){opacity:.42;background-size:151px 163px,211px 227px,109px 127px;animation-name:welink-snow-left;animation-duration:27s;animation-delay:-11s}
+.snowfall span:nth-child(3){opacity:.28;background-size:221px 239px,307px 331px,173px 191px;animation-name:welink-snow-soft;animation-duration:38s;animation-delay:-23s}
+@keyframes welink-snow{from{transform:translate3d(-12px,0,0)}to{transform:translate3d(34px,100vh,0)}}
+@keyframes welink-snow-left{from{transform:translate3d(24px,0,0)}to{transform:translate3d(-18px,100vh,0)}}
+@keyframes welink-snow-soft{from{transform:translate3d(0,0,0)}to{transform:translate3d(14px,100vh,0)}}
+.snow-paused .snowfall span{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){.snowfall span{animation:none;top:0;height:100vh}}
+@media(max-width:700px){.snowfall span:nth-child(3){display:none}}

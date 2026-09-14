@@ -3,13 +3,12 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"welink/internal/publicweb"
 )
 
 const spaceSchema = `
@@ -323,7 +322,7 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	var name string
 	_ = s.db.QueryRow("SELECT name FROM users WHERE id=?", owner).Scan(&name)
-	var content strings.Builder
+	page := publicweb.Page{Kind: "space", Title: "WeLink 空间", Name: name + " 的 WeLink 空间", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}
 	id := r.URL.Query().Get("doc")
 	if id != "" {
 		var title, blob string
@@ -346,7 +345,9 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 			fail(w, 503, "文档读取失败")
 			return
 		}
-		fmt.Fprintf(&content, "<h1>%s</h1><pre>%s</pre>", template.HTMLEscapeString(title), template.HTMLEscapeString(string(raw)))
+		page.Name = title + " · " + name + " 的 WeLink 空间"
+		page.Content = string(raw)
+		page.DocumentOpen = true
 	} else {
 		rows, e := s.db.Query("SELECT id,title FROM space_documents WHERE owner=? ORDER BY updated DESC,id", owner)
 		if e != nil {
@@ -356,12 +357,12 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var doc, title string
 			if rows.Scan(&doc, &title) == nil {
-				fmt.Fprintf(&content, "<a href=\"?doc=%s\">%s</a>", doc, template.HTMLEscapeString(title))
+				page.Documents = append(page.Documents, publicweb.Document{ID: doc, Title: title})
 			}
 		}
 		rows.Close()
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
-	fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeLink 空间</title><style>body{background:#f3f7fc;color:#304259;font:16px system-ui;margin:0}main{max-width:860px;margin:40px auto;background:white;border-radius:16px;padding:30px}h1{font-size:24px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.9 ui-monospace,monospace}a{display:block;padding:18px;border-bottom:1px solid #edf2f7;color:#008cde;text-decoration:none}b{color:#0099ff}</style><main><b>%s 的 WeLink 空间</b>%s</main></html>`, template.HTMLEscapeString(name), content.String())
+	if err := publicweb.Render(w, page); err != nil {
+		s.logger.Printf("render public space: %v", err)
+	}
 }

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"mime"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"welink/internal/publicweb"
 )
 
 const driveSchema = `
@@ -351,11 +351,11 @@ func (s *Server) publicDriveShare(w http.ResponseWriter, r *http.Request) {
 		s.serveDriveFile(w, r, id, owner, name)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 	validity := "永久有效"
 	if expires != 0 {
 		validity = "有效至 " + time.UnixMilli(expires).Format("2006-01-02")
 	}
-	fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeLink 网盘分享</title><style>body{margin:0;background:#f1f7ff;color:#31435a;font:16px system-ui;display:grid;min-height:100vh;place-items:center}main{box-sizing:border-box;background:white;border-radius:20px;padding:36px;width:min(92vw,520px)}h1{font-size:22px;overflow-wrap:anywhere}p{color:#8191a5}a{display:block;padding:14px;text-align:center;background:#0099ff;color:white;text-decoration:none;border-radius:8px}</style><main><b>WeLink 网盘</b><h1>%s</h1><p>%.2f MB · 链接%s</p><a href="?download=1">下载文件</a></main></html>`, template.HTMLEscapeString(name), float64(size)/(1<<20), validity)
+	if err := publicweb.Render(w, publicweb.Page{Kind: "share", Title: "WeLink 网盘分享", Name: name, Size: fmt.Sprintf("%.2f MB", float64(size)/(1<<20)), Validity: validity, DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}); err != nil {
+		s.logger.Printf("render file share: %v", err)
+	}
 }

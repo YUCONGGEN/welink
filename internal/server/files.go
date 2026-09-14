@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"welink/internal/publicweb"
 )
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +256,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WeLink · 让沟通更近一步</title><style>*{box-sizing:border-box}body{margin:0;color:#182b46;background:linear-gradient(140deg,#fff5f7,#eaf4ff 45%,#e9fbfb);font:16px system-ui;min-height:100vh;display:grid;place-items:center}.wrap{max-width:820px;padding:72px 28px}b{color:#0099ff}h1{font-size:68px;margin:20px 0}p{line-height:1.9;color:#63748a}.links{display:flex;gap:16px;flex-wrap:wrap;margin-top:40px}a{background:#0099ff;color:white;padding:16px 26px;border-radius:12px;text-decoration:none}small{display:block;margin-top:48px;color:#7c8c9f}</style><main class="wrap"><b>WeLink</b><h1>每一句，都有回应。</h1><p>熟悉的聊天方式，连接身边的人。<br>专属数字号码，消息、群聊、文件、会议与远程协助，在一个窗口里。</p><div class="links"><a href="/downloads/WeLink-Setup.exe">下载 Windows 版</a><a href="/downloads/WeLink-Android.apk">下载 Android 版</a></div><small>WeLink 0.1.0 预览版 · Windows 10/11、Android 8 及以上</small></main></html>`)
+	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "WeLink · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB}); err != nil {
+		s.logger.Printf("render download page: %v", err)
+	}
 }

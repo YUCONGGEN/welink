@@ -19,6 +19,25 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/appearance/atmosphere.js
+  (() => {
+    const root = document.documentElement;
+    const pause = () => root.classList.add("snow-paused");
+    const sync = () => root.classList.toggle("snow-paused", document.hidden || !document.hasFocus());
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("blur", pause);
+    window.addEventListener("focus", sync);
+    window.addEventListener("pagehide", pause);
+    window.addEventListener("pageshow", sync);
+    sync();
+  })();
+
+  // internal/ui/src/branding.js
+  var CLIENT_VERSION = "0.1.14-preview";
+  function authShowcase() {
+    return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> WELINK · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
+  }
+
   // internal/ui/src/meeting-window.js
   var owner = null;
   function meetingWindow({ active, changed, toast: toast2, nativeFullscreen }) {
@@ -243,7 +262,7 @@
   function applyTheme(dark) {
     var _a, _b, _c, _d;
     document.body.classList.toggle("dark", dark);
-    document.documentElement.style.backgroundColor = dark ? "#22252b" : "#f5f6f7";
+    document.documentElement.style.backgroundColor = dark ? "#22252b" : "#f5f4f9";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
     (_a = document.querySelector("meta[name=theme-color]")) == null ? void 0 : _a.setAttribute("content", dark ? "#22252b" : "#0099ff");
     (_c = (_b = window.WeLinkAndroid) == null ? void 0 : _b.setDarkTheme) == null ? void 0 : _c.call(_b, dark);
@@ -4459,7 +4478,7 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink 0.1.11-preview</small></main>');
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2()).concat(authShowcase(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink ').concat(CLIENT_VERSION, "</small></main>");
       el("qr-refresh").onclick = open;
       try {
         const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
@@ -5815,7 +5834,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">WeLink 0.1.13-preview · 让沟通更近一步</small></main>');
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows()).concat(authShowcase(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">WeLink ').concat(CLIENT_VERSION, " · 让沟通更近一步</small></main>");
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -6493,7 +6512,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>0.1.13 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>').concat(CLIENT_VERSION.replace("-preview", ""), ' 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));

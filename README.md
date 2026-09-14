@@ -2,7 +2,7 @@
 
 面向企业员工的即时通讯应用，支持 Windows 和 Android。使用 Go 构建服务端与共享客户端内核，提供单聊、群聊、文件传输、音视频通话、多人会议、远程协助和个人网盘。可自行部署，管理员可创建账号和维护员工资料，自助注册通过配置文件开启或关闭。
 
-Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用独立品牌和账号系统。目前为 **0.1.13-preview** 预览版本，完整实现范围和待完善项目见 [功能对照](docs/FEATURE_PARITY.md)。
+Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用独立品牌和账号系统。目前为 **0.1.14-preview** 预览版本，完整实现范围和待完善项目见 [功能对照](docs/FEATURE_PARITY.md)。
 
 ## 下载
 
@@ -11,7 +11,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 | Windows | [安装版](http://www.yucg.cn:8251/downloads/WeLink-Setup.exe) · [便携版](http://www.yucg.cn:8251/downloads/WeLink-Windows.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
 | Android | [APK](http://www.yucg.cn:8251/downloads/WeLink-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
 
-[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/REGISTRATION_RELEASE_20260913.md)
+[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LIGHT_THEME_20260914.md)
 
 ## 主要功能
 
@@ -42,9 +42,13 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 
 <img src="docs/screenshots/readme-android-chat.png" alt="移动端即时聊天" width="320">
 
+**下载页面：蓝紫渐变与飘雪**
+
+![WeLink 下载页面](docs/screenshots/readme-download.png)
+
 ## 使用
 
-最新客户端：[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。此前更新：[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
+最新客户端：[0.1.14 · 浅色界面与服务器飘雪页面](docs/LIGHT_THEME_20260914.md)。此前更新：[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
 
 双端客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
 
@@ -173,3 +177,5 @@ Windows 用户数据默认在 `%APPDATA%/WeLink`；安装路径默认 `%LOCALAPP
 ## 来源
 
 YuDesk 参考仓库 `E:/yudesk`，核验提交 `8fb981decf57e4a5d26fc2dc13d96d476d9bfd6f`；会议文件还包含该工作区的最新修改。移植目录为 `internal/yudesk`，安卓会议类和会议信令 / UI 按 WeLink 身份系统适配。第三方许可保存在 `third_party/`。WeLink 使用独立品牌和账号，不接入 QQ 账号或消息系统。
+
+浅色主题和公共网页参考部署于 `www.yucg.cn:8240` 的 [sub2api](https://github.com/YUCONGGEN/sub2api_python) 登录页面及服务器 `~/bin/sub2api/frontend/src/styles.css`，使用蓝紫渐变、半透明卡片和飘雪效果，保留 WeLink 品牌。深色主题保持原样。
