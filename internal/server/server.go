@@ -152,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func (s *Server) routes() {
+	s.mux.HandleFunc("POST /api/integrations/yudesk/support", s.yudeskSupport)
 	s.mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, r *http.Request) {
 		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled})
 	})
