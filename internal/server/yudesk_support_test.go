@@ -71,3 +71,31 @@ func TestYuDeskSupportBridge(t *testing.T) {
 		t.Fatal(fmt.Sprint(count, err))
 	}
 }
+
+func TestYuDeskEmailIdentityDoesNotAdoptPhone(t *testing.T) {
+	key := strings.Repeat("e", 40)
+	t.Setenv("WELINK_YUDESK_SECRET", key)
+	f := setup(t)
+	staff := f.register("email_support")
+	path := "/api/integrations/yudesk/support"
+	var phone, email struct {
+		UserID string `json:"userId"`
+	}
+	f.request("POST", path, key, map[string]any{"action": "bootstrap", "phone": "13800000001", "staff": []string{staff.User.Number}}, 200, &phone)
+	body := map[string]any{"action": "bootstrap", "email": "PERSON@example.com", "staff": []string{staff.User.Number}}
+	f.request("POST", path, key, body, 200, &email)
+	id := email.UserID
+	if id == "" || id == phone.UserID {
+		t.Fatal("email identity collides with phone")
+	}
+	body["email"] = "person@EXAMPLE.com"
+	f.request("POST", path, key, body, 200, &email)
+	if email.UserID != id {
+		t.Fatal("email identity is not stable")
+	}
+	body["phone"] = "13800000001"
+	f.request("POST", path, key, body, 400, nil)
+	delete(body, "phone")
+	body["email"] = "Name <person@example.com>"
+	f.request("POST", path, key, body, 400, nil)
+}

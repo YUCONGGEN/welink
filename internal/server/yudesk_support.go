@@ -1,7 +1,7 @@
 package server
 
 // YuDesk has no WeLink password or general-purpose session. Only the trusted
-// YuDesk server can act on a verified phone, and only with configured staff.
+// YuDesk server can act on a verified phone, and only with configured staff. Email identities use a separate namespace.
 import (
 	"bytes"
 	"context"
@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/mail"
 	"os"
 	"regexp"
 	"sort"
@@ -25,6 +26,7 @@ var yudeskNumber = regexp.MustCompile(`^[1-9][0-9]{5}$`)
 
 type yudeskSupportRequest struct {
 	Phone    string   `json:"phone"`
+	Email    string   `json:"email"`
 	Staff    []string `json:"staff"`
 	Action   string   `json:"action"`
 	Peer     string   `json:"peer"`
@@ -44,7 +46,22 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &p) {
 		return
 	}
-	if (p.Action != "validate" && !yudeskPhone.MatchString(p.Phone)) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send") {
+	validIdentity := yudeskPhone.MatchString(p.Phone)
+	if p.Email != "" {
+		email := strings.ToLower(strings.TrimSpace(p.Email))
+		address, err := mail.ParseAddress(email)
+		ascii := true
+		for _, ch := range email {
+			if ch < 33 || ch > 126 {
+				ascii = false
+			}
+		}
+		validIdentity = p.Phone == "" && ascii && len(email) <= 254 && err == nil && address.Name == "" && address.Address == email
+		if validIdentity {
+			p.Phone = "email:" + email
+		}
+	}
+	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send") {
 		fail(w, 400, "客服请求无效")
 		return
 	}
@@ -159,7 +176,13 @@ func (s *Server) yudeskIdentity(phone string, staff []User) (string, error) {
 		id = newID()
 		// An unrelated editable WeLink profile with the same phone is never claimed.
 		// Invalid bcrypt bytes intentionally disable password login for bridge users.
-		_, err = tx.Exec("INSERT INTO users(id,account,name,password,avatar,bio,created) VALUES(?,?,?,?,?,?,?)", id, "yd_"+id[:20], phone[:3]+"****"+phone[7:]+" · 来自YuDesk", []byte("external:yudesk"), defaultCartoonAvatar(id), "来自 YuDesk", now())
+		label, profilePhone := phone[:3]+"****"+phone[7:], phone
+		if strings.HasPrefix(phone, "email:") {
+			email := strings.TrimPrefix(phone, "email:")
+			parts := strings.SplitN(email, "@", 2)
+			label, profilePhone = parts[0][:1]+"***@"+parts[1], ""
+		}
+		_, err = tx.Exec("INSERT INTO users(id,account,name,password,avatar,bio,created) VALUES(?,?,?,?,?,?,?)", id, "yd_"+id[:20], label+" · 来自YuDesk", []byte("external:yudesk"), defaultCartoonAvatar(id), "来自 YuDesk", now())
 		if err != nil {
 			return "", err
 		}
@@ -169,7 +192,7 @@ func (s *Server) yudeskIdentity(phone string, staff []User) (string, error) {
 		if _, err = tx.Exec("INSERT INTO yudesk_identities VALUES(?,?)", phone, id); err != nil {
 			return "", err
 		}
-		if _, err = tx.Exec("INSERT INTO user_profile_details(user_id,phone) VALUES(?,?)", id, phone); err != nil {
+		if _, err = tx.Exec("INSERT INTO user_profile_details(user_id,phone) VALUES(?,?)", id, profilePhone); err != nil {
 			return "", err
 		}
 	} else if err != nil {
