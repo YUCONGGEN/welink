@@ -19,6 +19,403 @@
   };
   var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
 
+  // internal/ui/src/me-ai.js
+  function createMe({ S: S2, api: api2, action: action2, esc: esc2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2 }) {
+    const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform);
+    let config = null, local = { workspace: "", available: false }, generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
+    const active = () => S2.conversations.find((c) => c.id === S2.active), live = (g) => g === generation && S2.user && !S2.signingOut;
+    async function start() {
+      stop();
+      const g = generation;
+      try {
+        const value = await api2("/api/ai/config");
+        if (!live(g)) return;
+        config = value;
+        if (!value.enabled) return;
+        if (localDesktop()) {
+          try {
+            const prefs = await api2("/local/ai/config");
+            if (live(g)) local = prefs;
+          } catch (e) {
+          }
+        }
+        if (live(g)) {
+          renderSidebar2();
+          poll();
+        }
+      } catch (e) {
+      }
+    }
+    function stop() {
+      var _a;
+      generation++;
+      clearTimeout(timer);
+      task = null;
+      config = null;
+      local = { workspace: "", available: false };
+      seen.clear();
+      starting = false;
+      (_a = $2("#me-panel")) == null ? void 0 : _a.remove();
+    }
+    function sidebar() {
+      return (config == null ? void 0 : config.enabled) && !S2.conversations.some((c) => {
+        var _a;
+        return ((_a = c.peer) == null ? void 0 : _a.id) === config.user.id;
+      }) ? '<button class="conversation-row me-entry" data-me-open><span class="me-avatar">M</span><div class="row-text"><b>Me <em class="ai-label">AI</em></b><div class="row-preview">你的 AI 助手</div></div></button>' : "";
+    }
+    function render() {
+      var _a, _b;
+      const panel = $2("#me-panel");
+      if (!panel || !((_b = (_a = active()) == null ? void 0 : _a.peer) == null ? void 0 : _b.ai)) return;
+      panel.classList.remove("hidden");
+      if (!panel.querySelector(".me-config")) panel.innerHTML = '<div class="me-config"><span class="ai-label">AI</span><span data-me-workspace></span><button class="text-btn" data-me-workspace-button>工作目录</button></div><div class="me-progress" role="status"><span data-me-status></span><button class="text-btn hidden" data-me-cancel>停止</button></div><div class="me-approvals"></div>';
+      panel.querySelector("[data-me-workspace]").textContent = localDesktop() ? local.workspace ? "本机：" + local.workspace : "对话模式 · 选择目录后可处理本机任务" : "记住本会话上下文 · 本机任务请在桌面端执行";
+      panel.querySelector("[data-me-workspace-button]").classList.toggle("hidden", !localDesktop());
+      const current = (task == null ? void 0 : task.conversationId) === S2.active ? task : null, busy = starting || (current == null ? void 0 : current.state) === "running";
+      panel.querySelector("[data-me-status]").textContent = starting ? "正在交给 Me…" : (current == null ? void 0 : current.error) || ((current == null ? void 0 : current.state) === "running" ? "Me 正在处理…" : (current == null ? void 0 : current.state) === "completed" ? "已完成" : (current == null ? void 0 : current.state) === "cancelled" ? "已停止" : "");
+      panel.querySelector("[data-me-cancel]").classList.toggle("hidden", !current || !busy);
+      const area = $2("#messages"), near = area && area.scrollHeight - area.clientHeight - area.scrollTop < 100;
+      let stream = $2("#me-stream");
+      if ((current == null ? void 0 : current.state) === "running" && current.text && area) {
+        if (!stream) {
+          stream = document.createElement("article");
+          stream.id = "me-stream";
+          stream.className = "message me-stream";
+          stream.innerHTML = '<span class="avatar me-avatar">M</span><div class="message-body"><span class="message-name">Me · AI</span><div class="bubble"></div></div>';
+          area.append(stream);
+        }
+        stream.querySelector(".bubble").textContent = current.text;
+        if (near) area.scrollTop = area.scrollHeight;
+      } else stream == null ? void 0 : stream.remove();
+      const approvals = panel.querySelector(".me-approvals"), pending = ((current == null ? void 0 : current.events) || []).filter((e) => e.type === "approval");
+      for (const node of approvals.children) if (!pending.some((e) => e.id === node.dataset.approvalId)) node.remove();
+      for (const e of pending) {
+        if ([...approvals.children].some((n) => n.dataset.approvalId === e.id)) continue;
+        const d = e.details || {}, node = document.createElement("section");
+        node.className = "me-approval";
+        node.dataset.approvalId = e.id;
+        const question = e.method === "item/tool/requestUserInput";
+        node.innerHTML = "<b>" + esc2(question ? "Me 需要补充信息" : "Me 请求执行操作") + "</b><p>" + esc2(d.reason || "请查看以下内容后决定") + "</p>" + (question ? (d.questions || []).map((q) => "<label>" + esc2(q.question || q.header) + '<textarea data-me-answer="' + esc2(q.id) + '" maxlength="4000" placeholder="' + esc2((q.options || []).map((o) => o.label).join(" / ")) + '"></textarea></label>').join("") : "<pre>" + esc2(d.command || JSON.stringify(d.item || d.permissions || d, null, 2)).slice(0, 8e3) + "</pre>") + '<div><button class="primary" data-me-approve>' + (question ? "提交回答" : "允许这一次") + '</button><button class="secondary" data-me-deny>拒绝</button></div>';
+        approvals.append(node);
+      }
+    }
+    async function poll() {
+      const g = generation;
+      if (!(config == null ? void 0 : config.enabled) || !live(g)) return;
+      try {
+        if ((task == null ? void 0 : task.mode) === "chat") {
+          const result = await api2("/api/ai/runs/" + task.id);
+          if (live(g)) {
+            const text = task.text, version = task.version;
+            Object.assign(task, result);
+            if (version > (result.version || 0) && task.state === "running") {
+              task.text = text;
+              task.version = version;
+            }
+          }
+        } else if (localDesktop()) {
+          const result = await api2("/local/ai/status");
+          if (live(g) && result.id) task = __spreadProps(__spreadValues({}, result), { mode: "local" });
+        }
+        if (live(g)) render();
+      } catch (e) {
+      } finally {
+        if (live(g)) timer = setTimeout(poll, (task == null ? void 0 : task.state) === "running" ? 700 : 3e3);
+      }
+    }
+    async function onSent(message) {
+      var _a, _b;
+      if (!(config == null ? void 0 : config.enabled) || message.sender !== ((_a = S2.user) == null ? void 0 : _a.id) || seen.has(message.id)) return;
+      const c = S2.conversations.find((c2) => c2.id === message.conversationId);
+      if (!((_b = c == null ? void 0 : c.peer) == null ? void 0 : _b.ai)) return;
+      seen.add(message.id);
+      if (seen.size > 200) seen.delete(seen.values().next().value);
+      const g = generation;
+      starting = true;
+      render();
+      try {
+        let result;
+        if (localDesktop() && local.workspace) {
+          if (!local.available) throw Error("本机未检测到 Codex CLI，请先安装 Codex CLI；普通对话仍可使用。");
+          result = await action2("/local/ai/start", { messageId: message.id });
+          if (live(g)) task = __spreadProps(__spreadValues({}, result), { state: "running", mode: "local" });
+        } else {
+          result = await action2("/api/ai/runs", { messageId: message.id, mode: "chat" });
+          if (live(g)) task = __spreadProps(__spreadValues({}, (task == null ? void 0 : task.id) === result.id ? task : {}), { id: result.id, conversationId: result.conversationId, state: "running", mode: "chat" });
+        }
+      } catch (error) {
+        if (live(g)) {
+          task = { conversationId: message.conversationId, state: "failed", error: error.message };
+          toast2(error.message);
+        }
+      } finally {
+        if (live(g)) {
+          starting = false;
+          render();
+          clearTimeout(timer);
+          poll();
+        }
+      }
+    }
+    async function workspace() {
+      if (!local.available) {
+        toast2("本机未检测到 Codex CLI，请先安装 Codex CLI；普通对话仍可使用。");
+        return;
+      }
+      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc2(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
+      $2("#me-save-workspace").onclick = async () => {
+        try {
+          const value = await action2("/local/ai/config", { workspace: $2("#me-workspace").value.trim() });
+          local.workspace = value.workspace;
+          closeModal2();
+          render();
+        } catch (error) {
+          toast2(error.message);
+        }
+      };
+    }
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-me-open],[data-me-workspace-button],[data-me-cancel],[data-me-approve],[data-me-deny]");
+      if (!b) return;
+      try {
+        if (b.hasAttribute("data-me-open")) {
+          if (!(config == null ? void 0 : config.user)) return;
+          const c = await action2("/api/conversations", { kind: "direct", members: [config.user.id] });
+          await refresh2();
+          await selectConversation2(c.id);
+        } else if (b.hasAttribute("data-me-workspace-button")) await workspace();
+        else if (b.hasAttribute("data-me-cancel") && task) {
+          await action2(task.mode === "local" ? "/local/ai/cancel" : "/api/ai/runs/" + task.id + "/cancel");
+          task.state = "cancelled";
+          render();
+        } else {
+          const node = b.closest(".me-approval");
+          if (!node || !task) return;
+          const answers = {};
+          for (const input of node.querySelectorAll("[data-me-answer]")) answers[input.dataset.meAnswer] = { answers: [input.value] };
+          b.disabled = true;
+          await action2("/local/ai/approve", { taskId: task.id, id: node.dataset.approvalId, accept: b.hasAttribute("data-me-approve"), answers });
+          node.remove();
+        }
+      } catch (error) {
+        toast2(error.message);
+        b.disabled = false;
+      }
+    });
+    function changed(type, d) {
+      if (!(config == null ? void 0 : config.enabled) || !S2.conversations.some((c) => {
+        var _a;
+        return c.id === d.conversationId && ((_a = c.peer) == null ? void 0 : _a.ai);
+      })) return;
+      if ((task == null ? void 0 : task.id) !== d.id) task = { id: d.id, conversationId: d.conversationId, state: "running", mode: "chat", text: "", version: 0 };
+      if (type === "ai-delta") {
+        if (d.version <= (task.version || 0)) return;
+        task.text = (task.text || "") + d.delta;
+        task.version = d.version;
+      } else {
+        task.state = d.state;
+        task.error = d.error;
+      }
+      render();
+    }
+    return { changed, start, stop, sidebar, mount: render, onSent, busy: () => {
+      var _a, _b;
+      return ((_b = (_a = active()) == null ? void 0 : _a.peer) == null ? void 0 : _b.ai) && (starting || (task == null ? void 0 : task.state) === "running" && (task == null ? void 0 : task.conversationId) === S2.active);
+    } };
+  }
+
+  // internal/ui/src/remote-input.js
+  function createRemoteInput(send, release, failed = () => {
+  }) {
+    let queue = [], busy = false, buttons = 0, generation = 0, stopped = false, resetting = null;
+    async function drain() {
+      if (busy || stopped || !queue.length) return;
+      busy = true;
+      const version = generation, batch = queue.splice(0, 64).map((item) => item.event);
+      try {
+        await send(batch);
+      } catch (error) {
+        queue = [];
+        buttons = 0;
+        generation++;
+        await release().catch(() => {
+        });
+        failed(error);
+      } finally {
+        busy = false;
+        if (version === generation) drain();
+      }
+    }
+    function push(events) {
+      if (stopped || resetting) return;
+      for (const event of events) {
+        const hover = event.type === "move" && buttons === 0, last = queue[queue.length - 1];
+        if (hover && (last == null ? void 0 : last.hover)) queue[queue.length - 1] = { event, hover };
+        else queue.push({ event, hover });
+        if (event.type === "down") buttons |= 1 << event.button;
+        if (event.type === "up") buttons &= ~(1 << event.button);
+      }
+      if (queue.length > 256) {
+        reset();
+        failed(Error("输入暂时拥堵，已释放按键，请重试"));
+        return;
+      }
+      drain();
+    }
+    function reset() {
+      if (resetting) return resetting;
+      queue = [];
+      buttons = 0;
+      generation++;
+      resetting = (async () => {
+        while (busy) await new Promise((resolve) => setTimeout(resolve, 5));
+        await release().catch(() => {
+        });
+      })();
+      return resetting.finally(() => {
+        resetting = null;
+      });
+    }
+    return { push, release: reset, async close() {
+      stopped = true;
+      await reset();
+    } };
+  }
+  function remotePoint(event, image) {
+    const box = image.getBoundingClientRect(), width = Number(image.dataset.width), height = Number(image.dataset.height);
+    if (!width || !height || !box.width || !box.height) return { type: "move", x: 0, y: 0 };
+    const scale = Math.min(box.width / width, box.height / height), left = box.left + (box.width - width * scale) / 2, top = box.top + (box.height - height * scale) / 2;
+    return { type: "move", x: Math.max(0, Math.min(width - 1, Math.round((event.clientX - left) / scale))), y: Math.max(0, Math.min(height - 1, Math.round((event.clientY - top) / scale))) };
+  }
+
+  // internal/ui/src/branding.js
+  var CLIENT_VERSION = "0.1.15-preview";
+  function authShowcase() {
+    return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> LINKME · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
+  }
+
+  // internal/ui/src/cartoon-catalog.js
+  var cartoonAvatars = [{ "id": "cartoon:001", "name": "元气小猫", "animal": "小猫", "style": "元气" }, { "id": "cartoon:002", "name": "元气小狗", "animal": "小狗", "style": "元气" }, { "id": "cartoon:003", "name": "元气小熊", "animal": "小熊", "style": "元气" }, { "id": "cartoon:004", "name": "元气兔兔", "animal": "兔兔", "style": "元气" }, { "id": "cartoon:005", "name": "元气狐狸", "animal": "狐狸", "style": "元气" }, { "id": "cartoon:006", "name": "元气熊猫", "animal": "熊猫", "style": "元气" }, { "id": "cartoon:007", "name": "元气考拉", "animal": "考拉", "style": "元气" }, { "id": "cartoon:008", "name": "元气老虎", "animal": "老虎", "style": "元气" }, { "id": "cartoon:009", "name": "元气狮子", "animal": "狮子", "style": "元气" }, { "id": "cartoon:010", "name": "元气小猴", "animal": "小猴", "style": "元气" }, { "id": "cartoon:011", "name": "元气小猪", "animal": "小猪", "style": "元气" }, { "id": "cartoon:012", "name": "元气绵羊", "animal": "绵羊", "style": "元气" }, { "id": "cartoon:013", "name": "元气奶牛", "animal": "奶牛", "style": "元气" }, { "id": "cartoon:014", "name": "元气企鹅", "animal": "企鹅", "style": "元气" }, { "id": "cartoon:015", "name": "元气猫头鹰", "animal": "猫头鹰", "style": "元气" }, { "id": "cartoon:016", "name": "元气青蛙", "animal": "青蛙", "style": "元气" }, { "id": "cartoon:017", "name": "元气小鸡", "animal": "小鸡", "style": "元气" }, { "id": "cartoon:018", "name": "元气浣熊", "animal": "浣熊", "style": "元气" }, { "id": "cartoon:019", "name": "元气海豹", "animal": "海豹", "style": "元气" }, { "id": "cartoon:020", "name": "元气仓鼠", "animal": "仓鼠", "style": "元气" }, { "id": "cartoon:021", "name": "甜梦小猫", "animal": "小猫", "style": "甜梦" }, { "id": "cartoon:022", "name": "甜梦小狗", "animal": "小狗", "style": "甜梦" }, { "id": "cartoon:023", "name": "甜梦小熊", "animal": "小熊", "style": "甜梦" }, { "id": "cartoon:024", "name": "甜梦兔兔", "animal": "兔兔", "style": "甜梦" }, { "id": "cartoon:025", "name": "甜梦狐狸", "animal": "狐狸", "style": "甜梦" }, { "id": "cartoon:026", "name": "甜梦熊猫", "animal": "熊猫", "style": "甜梦" }, { "id": "cartoon:027", "name": "甜梦考拉", "animal": "考拉", "style": "甜梦" }, { "id": "cartoon:028", "name": "甜梦老虎", "animal": "老虎", "style": "甜梦" }, { "id": "cartoon:029", "name": "甜梦狮子", "animal": "狮子", "style": "甜梦" }, { "id": "cartoon:030", "name": "甜梦小猴", "animal": "小猴", "style": "甜梦" }, { "id": "cartoon:031", "name": "甜梦小猪", "animal": "小猪", "style": "甜梦" }, { "id": "cartoon:032", "name": "甜梦绵羊", "animal": "绵羊", "style": "甜梦" }, { "id": "cartoon:033", "name": "甜梦奶牛", "animal": "奶牛", "style": "甜梦" }, { "id": "cartoon:034", "name": "甜梦企鹅", "animal": "企鹅", "style": "甜梦" }, { "id": "cartoon:035", "name": "甜梦猫头鹰", "animal": "猫头鹰", "style": "甜梦" }, { "id": "cartoon:036", "name": "甜梦青蛙", "animal": "青蛙", "style": "甜梦" }, { "id": "cartoon:037", "name": "甜梦小鸡", "animal": "小鸡", "style": "甜梦" }, { "id": "cartoon:038", "name": "甜梦浣熊", "animal": "浣熊", "style": "甜梦" }, { "id": "cartoon:039", "name": "甜梦海豹", "animal": "海豹", "style": "甜梦" }, { "id": "cartoon:040", "name": "甜梦仓鼠", "animal": "仓鼠", "style": "甜梦" }, { "id": "cartoon:041", "name": "花园小猫", "animal": "小猫", "style": "花园" }, { "id": "cartoon:042", "name": "花园小狗", "animal": "小狗", "style": "花园" }, { "id": "cartoon:043", "name": "花园小熊", "animal": "小熊", "style": "花园" }, { "id": "cartoon:044", "name": "花园兔兔", "animal": "兔兔", "style": "花园" }, { "id": "cartoon:045", "name": "花园狐狸", "animal": "狐狸", "style": "花园" }, { "id": "cartoon:046", "name": "花园熊猫", "animal": "熊猫", "style": "花园" }, { "id": "cartoon:047", "name": "花园考拉", "animal": "考拉", "style": "花园" }, { "id": "cartoon:048", "name": "花园老虎", "animal": "老虎", "style": "花园" }, { "id": "cartoon:049", "name": "花园狮子", "animal": "狮子", "style": "花园" }, { "id": "cartoon:050", "name": "花园小猴", "animal": "小猴", "style": "花园" }, { "id": "cartoon:051", "name": "花园小猪", "animal": "小猪", "style": "花园" }, { "id": "cartoon:052", "name": "花园绵羊", "animal": "绵羊", "style": "花园" }, { "id": "cartoon:053", "name": "花园奶牛", "animal": "奶牛", "style": "花园" }, { "id": "cartoon:054", "name": "花园企鹅", "animal": "企鹅", "style": "花园" }, { "id": "cartoon:055", "name": "花园猫头鹰", "animal": "猫头鹰", "style": "花园" }, { "id": "cartoon:056", "name": "花园青蛙", "animal": "青蛙", "style": "花园" }, { "id": "cartoon:057", "name": "花园小鸡", "animal": "小鸡", "style": "花园" }, { "id": "cartoon:058", "name": "花园浣熊", "animal": "浣熊", "style": "花园" }, { "id": "cartoon:059", "name": "花园海豹", "animal": "海豹", "style": "花园" }, { "id": "cartoon:060", "name": "花园仓鼠", "animal": "仓鼠", "style": "花园" }, { "id": "cartoon:061", "name": "眼镜小猫", "animal": "小猫", "style": "眼镜" }, { "id": "cartoon:062", "name": "眼镜小狗", "animal": "小狗", "style": "眼镜" }, { "id": "cartoon:063", "name": "眼镜小熊", "animal": "小熊", "style": "眼镜" }, { "id": "cartoon:064", "name": "眼镜兔兔", "animal": "兔兔", "style": "眼镜" }, { "id": "cartoon:065", "name": "眼镜狐狸", "animal": "狐狸", "style": "眼镜" }, { "id": "cartoon:066", "name": "眼镜熊猫", "animal": "熊猫", "style": "眼镜" }, { "id": "cartoon:067", "name": "眼镜考拉", "animal": "考拉", "style": "眼镜" }, { "id": "cartoon:068", "name": "眼镜老虎", "animal": "老虎", "style": "眼镜" }, { "id": "cartoon:069", "name": "眼镜狮子", "animal": "狮子", "style": "眼镜" }, { "id": "cartoon:070", "name": "眼镜小猴", "animal": "小猴", "style": "眼镜" }, { "id": "cartoon:071", "name": "眼镜小猪", "animal": "小猪", "style": "眼镜" }, { "id": "cartoon:072", "name": "眼镜绵羊", "animal": "绵羊", "style": "眼镜" }, { "id": "cartoon:073", "name": "眼镜奶牛", "animal": "奶牛", "style": "眼镜" }, { "id": "cartoon:074", "name": "眼镜企鹅", "animal": "企鹅", "style": "眼镜" }, { "id": "cartoon:075", "name": "眼镜猫头鹰", "animal": "猫头鹰", "style": "眼镜" }, { "id": "cartoon:076", "name": "眼镜青蛙", "animal": "青蛙", "style": "眼镜" }, { "id": "cartoon:077", "name": "眼镜小鸡", "animal": "小鸡", "style": "眼镜" }, { "id": "cartoon:078", "name": "眼镜浣熊", "animal": "浣熊", "style": "眼镜" }, { "id": "cartoon:079", "name": "眼镜海豹", "animal": "海豹", "style": "眼镜" }, { "id": "cartoon:080", "name": "眼镜仓鼠", "animal": "仓鼠", "style": "眼镜" }, { "id": "cartoon:081", "name": "星光小猫", "animal": "小猫", "style": "星光" }, { "id": "cartoon:082", "name": "星光小狗", "animal": "小狗", "style": "星光" }, { "id": "cartoon:083", "name": "星光小熊", "animal": "小熊", "style": "星光" }, { "id": "cartoon:084", "name": "星光兔兔", "animal": "兔兔", "style": "星光" }, { "id": "cartoon:085", "name": "星光狐狸", "animal": "狐狸", "style": "星光" }, { "id": "cartoon:086", "name": "星光熊猫", "animal": "熊猫", "style": "星光" }, { "id": "cartoon:087", "name": "星光考拉", "animal": "考拉", "style": "星光" }, { "id": "cartoon:088", "name": "星光老虎", "animal": "老虎", "style": "星光" }, { "id": "cartoon:089", "name": "星光狮子", "animal": "狮子", "style": "星光" }, { "id": "cartoon:090", "name": "星光小猴", "animal": "小猴", "style": "星光" }, { "id": "cartoon:091", "name": "星光小猪", "animal": "小猪", "style": "星光" }, { "id": "cartoon:092", "name": "星光绵羊", "animal": "绵羊", "style": "星光" }, { "id": "cartoon:093", "name": "星光奶牛", "animal": "奶牛", "style": "星光" }, { "id": "cartoon:094", "name": "星光企鹅", "animal": "企鹅", "style": "星光" }, { "id": "cartoon:095", "name": "星光猫头鹰", "animal": "猫头鹰", "style": "星光" }, { "id": "cartoon:096", "name": "星光青蛙", "animal": "青蛙", "style": "星光" }, { "id": "cartoon:097", "name": "星光小鸡", "animal": "小鸡", "style": "星光" }, { "id": "cartoon:098", "name": "星光浣熊", "animal": "浣熊", "style": "星光" }, { "id": "cartoon:099", "name": "星光海豹", "animal": "海豹", "style": "星光" }, { "id": "cartoon:100", "name": "星光仓鼠", "animal": "仓鼠", "style": "星光" }];
+  var cartoonURL = (value) => /^cartoon:(00[1-9]|0[1-9][0-9]|100)$/.test(value || "") ? "/assets/avatars/" + value.slice(8) + ".svg" : "";
+  function cartoonChoices(count = 8, exclude = []) {
+    const pool = cartoonAvatars.filter((a) => !exclude.includes(a.id)), random = new Uint32Array(pool.length);
+    crypto.getRandomValues(random);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = random[i] % (i + 1);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+  function cartoonOptions(items, selected) {
+    return items.map((a) => '<button type="button" class="cartoon-option ' + (a.id === selected ? "selected" : "") + '" data-cartoon="' + a.id + '" role="radio" aria-checked="' + (a.id === selected) + '" aria-label="' + a.name + '" title="' + a.name + '"><img loading="lazy" src="' + cartoonURL(a.id) + '" alt=""><span>' + a.name + "</span></button>").join("");
+  }
+
+  // internal/ui/src/email-auth.js
+  function createEmailAuth({ S: S2, action: action2, enter: enter2, QR: QR2, Desktop: Desktop2, windows: windows2, logo: logo2 }) {
+    let timer;
+    function render(mode = "login", emailValue = "") {
+      clearInterval(timer);
+      QR2.stop();
+      S2.user = null;
+      Desktop2.unread();
+      const register = mode === "register", reset = mode === "reset", verify = register || reset;
+      if (register && !S2.registrationEnabled) return render();
+      const choices = register ? cartoonChoices(4) : [];
+      document.querySelector("#app").innerHTML = '<main class="auth-shell email-auth '.concat(register ? "registering" : "", '">').concat(windows2()).concat(authShowcase(), '<form class="auth-card" id="auth-form">').concat(logo2(), "<h2>").concat(register ? "创建 LinkMe 账号" : reset ? "找回密码" : "欢迎回来", '</h2><p class="subtitle">').concat(reset ? "验证邮箱，设置新密码" : register ? "用邮箱，开启新的连接" : "邮箱登录，与团队保持连接", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="'.concat(choices[0].id, '"><div class="cartoon-grid compact" id="register-avatar-options">').concat(cartoonOptions(choices, choices[0].id), "</div></div>") : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "", '<input name="email" type="email" autocomplete="username" inputmode="email" placeholder="邮箱地址" aria-label="邮箱" maxlength="254" required>').concat(verify ? '<div class="email-code-row"><input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" aria-label="验证码" pattern="[0-9]{6}" maxlength="6" required><button type="button" class="secondary" id="send-email-code">获取验证码</button></div>' : "", '<input name="password" type="password" autocomplete="').concat(verify ? "new-password" : "current-password", '" placeholder="').concat(verify ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required>').concat(reset ? '<input name="repeatPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-label="确认密码" minlength="8" maxlength="72" required>' : "", '</div><div class="auth-error" id="auth-error" role="status" aria-live="polite"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : reset ? "重设密码" : "登录", "</button>").concat(!verify && S2.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(verify ? '<button type="button" data-email-mode="login">返回登录</button>' : "".concat(S2.registrationEnabled ? '<button type="button" data-email-mode="register">注册账号</button>' : "", '<button type="button" data-email-mode="reset">忘记密码</button>'), '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ').concat(CLIENT_VERSION, " · 让沟通更近一步</small></main>");
+      const form = document.querySelector("#auth-form"), email = form.elements.email, error = form.querySelector("#auth-error");
+      email.value = emailValue;
+      let challenge = "", challengeEmail = "";
+      form.querySelectorAll("[data-email-mode]").forEach((b) => b.onclick = () => render(b.dataset.emailMode, email.value));
+      if (register) {
+        form.querySelector("#register-avatar-shuffle").onclick = () => {
+          const next = cartoonChoices(4);
+          form.elements.avatar.value = next[0].id;
+          form.querySelector("#register-avatar-options").innerHTML = cartoonOptions(next, next[0].id);
+        };
+        form.querySelector("#register-avatar-options").onclick = (e) => {
+          const b = e.target.closest("[data-cartoon]");
+          if (!b) return;
+          form.elements.avatar.value = b.dataset.cartoon;
+          form.querySelectorAll("[data-cartoon]").forEach((n) => {
+            n.classList.toggle("selected", n === b);
+            n.setAttribute("aria-checked", String(n === b));
+          });
+        };
+      }
+      if (verify) form.querySelector("#send-email-code").onclick = async () => {
+        if (!email.reportValidity()) return;
+        const button = form.querySelector("#send-email-code");
+        button.disabled = true;
+        error.textContent = "";
+        const address = email.value.trim().toLowerCase();
+        try {
+          const result = await action2("/api/auth/email/code", { email: address, purpose: mode });
+          if (!form.isConnected) return;
+          challenge = result.challengeId;
+          challengeEmail = address;
+          error.textContent = reset ? "如果该邮箱已注册，验证码将发送到邮箱，请查收。" : "验证码已发送，请查收邮箱（含垃圾邮件）。";
+          const until = Date.now() + result.retryAfter * 1e3;
+          const tick = () => {
+            if (!form.isConnected) {
+              clearInterval(timer);
+              return;
+            }
+            const left = Math.max(0, Math.ceil((until - Date.now()) / 1e3));
+            button.textContent = left ? "".concat(left, " 秒后重发") : "重新发送";
+            button.disabled = left > 0;
+            if (!left) clearInterval(timer);
+          };
+          tick();
+          timer = setInterval(tick, 500);
+        } catch (e) {
+          if (form.isConnected) {
+            error.textContent = e.message;
+            button.disabled = false;
+          }
+        }
+      };
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const button = form.querySelector("[type=submit]");
+        if (button.disabled) return;
+        const p = [...new FormData(form)].reduce((value, [key, item]) => (value[key] = item, value), {});
+        p.email = p.email.trim().toLowerCase();
+        if (verify && (!challenge || p.email !== challengeEmail)) {
+          error.textContent = "请先为当前邮箱获取验证码";
+          return;
+        }
+        if (reset && p.password !== p.repeatPassword) {
+          error.textContent = "两次输入的密码不一致";
+          return;
+        }
+        delete p.repeatPassword;
+        if (verify) p.challengeId = challenge;
+        button.disabled = true;
+        error.textContent = "";
+        try {
+          const result = await action2(reset ? "/api/auth/email/reset" : "/api/auth/" + mode, p);
+          if (!form.isConnected) return;
+          if (reset) {
+            render("login", p.email);
+            document.querySelector("#auth-error").textContent = "密码已重设，请使用新密码登录";
+            return;
+          }
+          S2.token = result.token;
+          localStorage.setItem("welink_token", S2.token);
+          S2.user = result.user;
+          clearInterval(timer);
+          await enter2();
+        } catch (e2) {
+          if (form.isConnected) {
+            error.textContent = e2.message;
+            button.disabled = false;
+          }
+        }
+      };
+    }
+    return { render };
+  }
+
   // internal/appearance/atmosphere.js
   (() => {
     const root = document.documentElement;
@@ -32,10 +429,47 @@
     sync();
   })();
 
-  // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.14-preview";
-  function authShowcase() {
-    return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> WELINK · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
+  // internal/ui/src/native-notifications.js
+  function createNativeNotifications({ S: S2, action: action2, selectConversation: selectConversation2, refresh: refresh2, toast: toast2 }) {
+    var _a;
+    const supported = typeof window.welinkMessageNotifications === "function" || !!((_a = window.WeLinkAndroid) == null ? void 0 : _a.messageNotifications);
+    let active = false;
+    async function open() {
+      var _a2, _b;
+      if (!S2.user) return;
+      let raw = "";
+      try {
+        raw = ((_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.takeMessageNotification) ? window.WeLinkAndroid.takeMessageNotification() : await ((_b = window.welinkTakeMessageNotification) == null ? void 0 : _b.call(window));
+        const n = raw ? JSON.parse(raw) : null;
+        if (!n || n.userId !== S2.user.id || !/^[a-f0-9]{32}$/.test(n.conversationId)) return;
+        await refresh2();
+        await selectConversation2(n.conversationId);
+      } catch (e) {
+        toast2("该聊天暂时无法打开，请在消息列表中查看");
+      }
+    }
+    async function start() {
+      var _a2;
+      if (!supported) return;
+      (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.messageNotifications(true);
+      await action2("/local/notifications", { token: S2.token });
+      active = true;
+      await open();
+    }
+    async function stop() {
+      var _a2;
+      if (!supported) return;
+      active = false;
+      (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.messageNotifications(false);
+      await action2("/local/notifications", { token: "" });
+    }
+    window.addEventListener("welink-open-message", open);
+    window.addEventListener("focus", () => {
+      if (active) open();
+      else if (S2.user) start().catch(() => {
+      });
+    });
+    return { start, stop, active: () => active };
   }
 
   // internal/ui/src/meeting-window.js
@@ -272,9 +706,13 @@
 
   // internal/ui/src/message-sounds.js
   function createMessageSounds({ toast: toast2, native, hidden }) {
+    var _a;
     const key = "welink_message_sound";
     let enabled = localStorage.getItem(key) !== "false", context = null, last = 0;
-    const ready = native ? window.welinkDesktopSettings().then((p) => {
+    const ready = ((_a = window.WeLinkAndroid) == null ? void 0 : _a.getMessageSound) ? Promise.resolve().then(() => {
+      enabled = window.WeLinkAndroid.getMessageSound();
+      localStorage.setItem(key, String(enabled));
+    }) : native ? window.welinkDesktopSettings().then((p) => {
       enabled = p.messageSound !== false;
       localStorage.setItem(key, String(enabled));
     }).catch(() => {
@@ -292,6 +730,8 @@
       }
     }
     async function set(value) {
+      var _a2, _b;
+      (_b = (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.setMessageSound) == null ? void 0 : _b.call(_a2, value);
       if (native) {
         const p = await window.welinkDesktopSettings();
         await window.welinkDesktopSave(__spreadProps(__spreadValues({}, p), { messageSound: value }));
@@ -795,7 +1235,7 @@
       const token = S2.token, g = ++generation, users = await api2("/api/admin/users?q=" + encodeURIComponent(query));
       if (S2.token !== token || S2.tab !== "admin" || g !== generation) return;
       currentQuery = query;
-      $2("#main-content").innerHTML = '<section class="cloud-page admin-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、修改资料、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索姓名或 6 位账号" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file" data-admin-user="'.concat(u.id, '"><div class="cloud-file-name"><b>').concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>WeLink 账号 ").concat(esc2(u.number), '</small></div><div class="admin-user-actions"><button class="secondary" data-admin-edit="').concat(u.id, '">编辑资料</button><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</div></article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
+      $2("#main-content").innerHTML = '<section class="cloud-page admin-page"><header class="cloud-heading"><div><h2>账号管理</h2><p>注册账号、修改资料、重置密码与删除账号</p></div><button class="primary" id="admin-create">'.concat(icon2("plus"), '注册账号</button></header><label class="cloud-search">').concat(icon2("search"), '<input id="admin-search" placeholder="搜索姓名或 6 位账号" value="').concat(esc2(query), '"></label><div>').concat(users.map((u) => '<article class="cloud-file" data-admin-user="'.concat(u.id, '"><div class="cloud-file-name"><b>').concat(esc2(u.name), " ").concat(u.admin ? '<small class="admin-label">管理员</small>' : "", "</b><small>LinkMe 账号 ").concat(esc2(u.number), '</small></div><div class="admin-user-actions"><button class="secondary" data-admin-edit="').concat(u.id, '">编辑资料</button><button class="secondary" data-admin-password="').concat(u.id, '" data-name="').concat(esc2(u.name), '" data-number="').concat(esc2(u.number), '">重置密码</button>').concat(u.admin ? "" : '<button class="secondary admin-delete" data-admin-delete="' + u.id + '" data-number="' + esc2(u.number) + '" data-name="' + esc2(u.name) + '">删除账号</button>', "</div></article>")).join("") || '<p class="empty-list">没有找到账号</p>', "</div></section>");
       $2("#admin-search").onkeydown = (e) => {
         if (e.key === "Enter") render(e.target.value).catch((error) => toast2(error.message));
       };
@@ -826,12 +1266,53 @@
       };
     }
     function create() {
-      modal2("注册用户账号", '<form id="admin-register-form">' + nameField() + '<label for="admin-password">初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="留空生成随机密码"><p class="hint">请填写姓名，系统自动分配六位登录账号。之后可在账号管理中修改资料。</p></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user" type="submit" form="admin-register-form">注册账号</button>');
+      modal2("注册用户账号", '<form id="admin-register-form">' + nameField() + (S2.emailAuthEnabled ? '<label for="admin-email">邮箱</label><input id="admin-email" type="email" required maxlength="254" autocomplete="off" placeholder="员工邮箱"><div class="email-code-row"><input id="admin-email-code" aria-label="验证码" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="邮箱验证码"><button type="button" id="admin-send-code" class="secondary">获取验证码</button></div>' : "") + '<label for="admin-password">初始密码（选填）</label><input id="admin-password" type="password" autocomplete="new-password" minlength="8" maxlength="72" placeholder="留空生成随机密码"><p class="hint">请填写姓名。邮箱为登录账号，六位 LinkMe 号用于搜索联系人。</p></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-user" type="submit" form="admin-register-form">注册账号</button>');
+      let challengeId = "", verifiedEmail = "";
+      const send = $2("#admin-send-code");
+      if (send) send.onclick = async () => {
+        const input = $2("#admin-email");
+        if (!input.reportValidity()) return;
+        send.disabled = true;
+        const email = input.value.trim().toLowerCase();
+        try {
+          const r = await api2("/api/admin/users/email-code", { method: "POST", body: { email, purpose: "admin-register" } });
+          if (!send.isConnected) return;
+          challengeId = r.challengeId;
+          verifiedEmail = email;
+          $2("#modal-error").textContent = "验证码已发送至员工邮箱";
+          let left = r.retryAfter;
+          send.textContent = left + " 秒后重发";
+          const timer = setInterval(() => {
+            if (!send.isConnected) {
+              clearInterval(timer);
+              return;
+            }
+            left--;
+            send.textContent = left > 0 ? left + " 秒后重发" : "重新发送";
+            if (left <= 0) {
+              clearInterval(timer);
+              send.disabled = false;
+            }
+          }, 1e3);
+        } catch (e) {
+          if (send.isConnected) {
+            $2("#modal-error").textContent = e.message;
+            send.disabled = false;
+          }
+        }
+      };
       submit("admin-register-form", "admin-save-user", async (name, form) => {
-        const result = await api2("/api/admin/users", { method: "POST", body: { name, password: $2("#admin-password").value } });
+        const body = { name, password: $2("#admin-password").value };
+        if (S2.emailAuthEnabled) {
+          body.email = $2("#admin-email").value.trim().toLowerCase();
+          if (!challengeId || body.email !== verifiedEmail) throw Error("请先为当前邮箱获取验证码");
+          body.challengeId = challengeId;
+          body.code = $2("#admin-email-code").value;
+        }
+        const result = await api2("/api/admin/users", { method: "POST", body });
         if (!form.isConnected) return;
         closeModal2();
-        modal2("账号已注册", "<p>姓名：" + esc2(result.user.name) + '</p><p>登录账号：<b id="admin-created-number">' + esc2(result.user.number) + "</b></p>" + (result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input id="admin-created-password" readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
+        modal2("账号已注册", "<p>姓名：" + esc2(result.user.name) + '</p><p>登录账号：<b id="admin-created-number">' + esc2(result.user.email || result.user.number) + "</b></p>" + (result.initialPassword ? '<label>随机初始密码（仅显示本次）</label><input id="admin-created-password" readonly value="' + esc2(result.initialPassword) + '">' : '<p class="hint">初始密码为刚才填写的密码。</p>'), '<button class="primary" data-action="close-modal">完成</button>');
         await refresh2();
         await render();
       });
@@ -842,7 +1323,7 @@
       try {
         const u = await api2("/api/admin/users/" + id);
         if (!loading.isConnected) return;
-        modal2("编辑用户资料", '<form id="admin-profile-form"><p class="hint">WeLink 账号：' + esc2(u.number) + "</p>" + nameField(u.name) + '<label for="admin-phone">手机号</label><input id="admin-phone" type="tel" autocomplete="tel" maxlength="32" value="' + esc2(u.phone || "") + '" placeholder="未设置"><label for="admin-gender">性别</label><select id="admin-gender"><option value="">未设置</option>' + [["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="' + v + '" ' + (u.gender === v ? "selected" : "") + ">" + t + "</option>").join("") + '</select><label for="admin-job">职位</label><input id="admin-job" maxlength="64" value="' + esc2(u.jobTitle || "") + '" placeholder="未设置"><label for="admin-bio">个性签名</label><input id="admin-bio" maxlength="150" value="' + esc2(u.bio || "") + '" placeholder="未设置"></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-profile" type="submit" form="admin-profile-form">保存</button>');
+        modal2("编辑用户资料", '<form id="admin-profile-form"><p class="hint">LinkMe 账号：' + esc2(u.number) + "</p>" + nameField(u.name) + '<label for="admin-phone">手机号</label><input id="admin-phone" type="tel" autocomplete="tel" maxlength="32" value="' + esc2(u.phone || "") + '" placeholder="未设置"><label for="admin-gender">性别</label><select id="admin-gender"><option value="">未设置</option>' + [["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="' + v + '" ' + (u.gender === v ? "selected" : "") + ">" + t + "</option>").join("") + '</select><label for="admin-job">职位</label><input id="admin-job" maxlength="64" value="' + esc2(u.jobTitle || "") + '" placeholder="未设置"><label for="admin-bio">个性签名</label><input id="admin-bio" maxlength="150" value="' + esc2(u.bio || "") + '" placeholder="未设置"></form>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="admin-save-profile" type="submit" form="admin-profile-form">保存</button>');
         submit("admin-profile-form", "admin-save-profile", async (name, form) => {
           var _a;
           const body = { name, phone: $2("#admin-phone").value, gender: $2("#admin-gender").value, jobTitle: $2("#admin-job").value, bio: $2("#admin-bio").value };
@@ -878,7 +1359,7 @@
       const b = event.target.closest("[data-admin-delete]");
       if (!b) return;
       const id = b.dataset.adminDelete, number = b.dataset.number;
-      modal2("删除用户账号", "<p>确认删除 <b>".concat(esc2(b.dataset.name), "</b>（").concat(esc2(number), '）？</p><p class="hint">账号将无法登录，个人网盘、空间及分享会被清除。其他用户的已有聊天记录保留，发送人显示为已注销用户。</p><label>输入该用户的 WeLink 号码确认</label><input id="admin-confirm-number" autocomplete="off" inputmode="numeric">'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="admin-confirm-delete">删除账号</button>');
+      modal2("删除用户账号", "<p>确认删除 <b>".concat(esc2(b.dataset.name), "</b>（").concat(esc2(number), '）？</p><p class="hint">账号将无法登录，个人网盘、空间及分享会被清除。其他用户的已有聊天记录保留，发送人显示为已注销用户。</p><label>输入该用户的 LinkMe 号码确认</label><input id="admin-confirm-number" autocomplete="off" inputmode="numeric">'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="admin-confirm-delete">删除账号</button>');
       bind("admin-confirm-delete", async () => {
         await api2("/api/admin/users/" + id, { method: "DELETE", body: { confirmNumber: $2("#admin-confirm-number").value } });
         closeModal2();
@@ -976,22 +1457,6 @@
       return entries.filter((e) => e.cid === cid).map((e) => '<article class="message mine pending-message">'.concat(av2(S2.user), '<div class="message-body"><div class="bubble"><b>').concat(esc2(e.name), "</b><small>").concat(bytes2(e.size), '</small></div><div class="outbox-status">').concat(e.error ? esc2(e.error) : e.progress === 100 ? "正在生成消息…" : "正在上传 " + (e.progress === null ? "" : e.progress + "%"), "</div><small>大文件直接上传，请保持客户端运行</small></div></article>")).join("");
     }
     return { upload: upload2, chat, html, stop };
-  }
-
-  // internal/ui/src/cartoon-catalog.js
-  var cartoonAvatars = [{ "id": "cartoon:001", "name": "元气小猫", "animal": "小猫", "style": "元气" }, { "id": "cartoon:002", "name": "元气小狗", "animal": "小狗", "style": "元气" }, { "id": "cartoon:003", "name": "元气小熊", "animal": "小熊", "style": "元气" }, { "id": "cartoon:004", "name": "元气兔兔", "animal": "兔兔", "style": "元气" }, { "id": "cartoon:005", "name": "元气狐狸", "animal": "狐狸", "style": "元气" }, { "id": "cartoon:006", "name": "元气熊猫", "animal": "熊猫", "style": "元气" }, { "id": "cartoon:007", "name": "元气考拉", "animal": "考拉", "style": "元气" }, { "id": "cartoon:008", "name": "元气老虎", "animal": "老虎", "style": "元气" }, { "id": "cartoon:009", "name": "元气狮子", "animal": "狮子", "style": "元气" }, { "id": "cartoon:010", "name": "元气小猴", "animal": "小猴", "style": "元气" }, { "id": "cartoon:011", "name": "元气小猪", "animal": "小猪", "style": "元气" }, { "id": "cartoon:012", "name": "元气绵羊", "animal": "绵羊", "style": "元气" }, { "id": "cartoon:013", "name": "元气奶牛", "animal": "奶牛", "style": "元气" }, { "id": "cartoon:014", "name": "元气企鹅", "animal": "企鹅", "style": "元气" }, { "id": "cartoon:015", "name": "元气猫头鹰", "animal": "猫头鹰", "style": "元气" }, { "id": "cartoon:016", "name": "元气青蛙", "animal": "青蛙", "style": "元气" }, { "id": "cartoon:017", "name": "元气小鸡", "animal": "小鸡", "style": "元气" }, { "id": "cartoon:018", "name": "元气浣熊", "animal": "浣熊", "style": "元气" }, { "id": "cartoon:019", "name": "元气海豹", "animal": "海豹", "style": "元气" }, { "id": "cartoon:020", "name": "元气仓鼠", "animal": "仓鼠", "style": "元气" }, { "id": "cartoon:021", "name": "甜梦小猫", "animal": "小猫", "style": "甜梦" }, { "id": "cartoon:022", "name": "甜梦小狗", "animal": "小狗", "style": "甜梦" }, { "id": "cartoon:023", "name": "甜梦小熊", "animal": "小熊", "style": "甜梦" }, { "id": "cartoon:024", "name": "甜梦兔兔", "animal": "兔兔", "style": "甜梦" }, { "id": "cartoon:025", "name": "甜梦狐狸", "animal": "狐狸", "style": "甜梦" }, { "id": "cartoon:026", "name": "甜梦熊猫", "animal": "熊猫", "style": "甜梦" }, { "id": "cartoon:027", "name": "甜梦考拉", "animal": "考拉", "style": "甜梦" }, { "id": "cartoon:028", "name": "甜梦老虎", "animal": "老虎", "style": "甜梦" }, { "id": "cartoon:029", "name": "甜梦狮子", "animal": "狮子", "style": "甜梦" }, { "id": "cartoon:030", "name": "甜梦小猴", "animal": "小猴", "style": "甜梦" }, { "id": "cartoon:031", "name": "甜梦小猪", "animal": "小猪", "style": "甜梦" }, { "id": "cartoon:032", "name": "甜梦绵羊", "animal": "绵羊", "style": "甜梦" }, { "id": "cartoon:033", "name": "甜梦奶牛", "animal": "奶牛", "style": "甜梦" }, { "id": "cartoon:034", "name": "甜梦企鹅", "animal": "企鹅", "style": "甜梦" }, { "id": "cartoon:035", "name": "甜梦猫头鹰", "animal": "猫头鹰", "style": "甜梦" }, { "id": "cartoon:036", "name": "甜梦青蛙", "animal": "青蛙", "style": "甜梦" }, { "id": "cartoon:037", "name": "甜梦小鸡", "animal": "小鸡", "style": "甜梦" }, { "id": "cartoon:038", "name": "甜梦浣熊", "animal": "浣熊", "style": "甜梦" }, { "id": "cartoon:039", "name": "甜梦海豹", "animal": "海豹", "style": "甜梦" }, { "id": "cartoon:040", "name": "甜梦仓鼠", "animal": "仓鼠", "style": "甜梦" }, { "id": "cartoon:041", "name": "花园小猫", "animal": "小猫", "style": "花园" }, { "id": "cartoon:042", "name": "花园小狗", "animal": "小狗", "style": "花园" }, { "id": "cartoon:043", "name": "花园小熊", "animal": "小熊", "style": "花园" }, { "id": "cartoon:044", "name": "花园兔兔", "animal": "兔兔", "style": "花园" }, { "id": "cartoon:045", "name": "花园狐狸", "animal": "狐狸", "style": "花园" }, { "id": "cartoon:046", "name": "花园熊猫", "animal": "熊猫", "style": "花园" }, { "id": "cartoon:047", "name": "花园考拉", "animal": "考拉", "style": "花园" }, { "id": "cartoon:048", "name": "花园老虎", "animal": "老虎", "style": "花园" }, { "id": "cartoon:049", "name": "花园狮子", "animal": "狮子", "style": "花园" }, { "id": "cartoon:050", "name": "花园小猴", "animal": "小猴", "style": "花园" }, { "id": "cartoon:051", "name": "花园小猪", "animal": "小猪", "style": "花园" }, { "id": "cartoon:052", "name": "花园绵羊", "animal": "绵羊", "style": "花园" }, { "id": "cartoon:053", "name": "花园奶牛", "animal": "奶牛", "style": "花园" }, { "id": "cartoon:054", "name": "花园企鹅", "animal": "企鹅", "style": "花园" }, { "id": "cartoon:055", "name": "花园猫头鹰", "animal": "猫头鹰", "style": "花园" }, { "id": "cartoon:056", "name": "花园青蛙", "animal": "青蛙", "style": "花园" }, { "id": "cartoon:057", "name": "花园小鸡", "animal": "小鸡", "style": "花园" }, { "id": "cartoon:058", "name": "花园浣熊", "animal": "浣熊", "style": "花园" }, { "id": "cartoon:059", "name": "花园海豹", "animal": "海豹", "style": "花园" }, { "id": "cartoon:060", "name": "花园仓鼠", "animal": "仓鼠", "style": "花园" }, { "id": "cartoon:061", "name": "眼镜小猫", "animal": "小猫", "style": "眼镜" }, { "id": "cartoon:062", "name": "眼镜小狗", "animal": "小狗", "style": "眼镜" }, { "id": "cartoon:063", "name": "眼镜小熊", "animal": "小熊", "style": "眼镜" }, { "id": "cartoon:064", "name": "眼镜兔兔", "animal": "兔兔", "style": "眼镜" }, { "id": "cartoon:065", "name": "眼镜狐狸", "animal": "狐狸", "style": "眼镜" }, { "id": "cartoon:066", "name": "眼镜熊猫", "animal": "熊猫", "style": "眼镜" }, { "id": "cartoon:067", "name": "眼镜考拉", "animal": "考拉", "style": "眼镜" }, { "id": "cartoon:068", "name": "眼镜老虎", "animal": "老虎", "style": "眼镜" }, { "id": "cartoon:069", "name": "眼镜狮子", "animal": "狮子", "style": "眼镜" }, { "id": "cartoon:070", "name": "眼镜小猴", "animal": "小猴", "style": "眼镜" }, { "id": "cartoon:071", "name": "眼镜小猪", "animal": "小猪", "style": "眼镜" }, { "id": "cartoon:072", "name": "眼镜绵羊", "animal": "绵羊", "style": "眼镜" }, { "id": "cartoon:073", "name": "眼镜奶牛", "animal": "奶牛", "style": "眼镜" }, { "id": "cartoon:074", "name": "眼镜企鹅", "animal": "企鹅", "style": "眼镜" }, { "id": "cartoon:075", "name": "眼镜猫头鹰", "animal": "猫头鹰", "style": "眼镜" }, { "id": "cartoon:076", "name": "眼镜青蛙", "animal": "青蛙", "style": "眼镜" }, { "id": "cartoon:077", "name": "眼镜小鸡", "animal": "小鸡", "style": "眼镜" }, { "id": "cartoon:078", "name": "眼镜浣熊", "animal": "浣熊", "style": "眼镜" }, { "id": "cartoon:079", "name": "眼镜海豹", "animal": "海豹", "style": "眼镜" }, { "id": "cartoon:080", "name": "眼镜仓鼠", "animal": "仓鼠", "style": "眼镜" }, { "id": "cartoon:081", "name": "星光小猫", "animal": "小猫", "style": "星光" }, { "id": "cartoon:082", "name": "星光小狗", "animal": "小狗", "style": "星光" }, { "id": "cartoon:083", "name": "星光小熊", "animal": "小熊", "style": "星光" }, { "id": "cartoon:084", "name": "星光兔兔", "animal": "兔兔", "style": "星光" }, { "id": "cartoon:085", "name": "星光狐狸", "animal": "狐狸", "style": "星光" }, { "id": "cartoon:086", "name": "星光熊猫", "animal": "熊猫", "style": "星光" }, { "id": "cartoon:087", "name": "星光考拉", "animal": "考拉", "style": "星光" }, { "id": "cartoon:088", "name": "星光老虎", "animal": "老虎", "style": "星光" }, { "id": "cartoon:089", "name": "星光狮子", "animal": "狮子", "style": "星光" }, { "id": "cartoon:090", "name": "星光小猴", "animal": "小猴", "style": "星光" }, { "id": "cartoon:091", "name": "星光小猪", "animal": "小猪", "style": "星光" }, { "id": "cartoon:092", "name": "星光绵羊", "animal": "绵羊", "style": "星光" }, { "id": "cartoon:093", "name": "星光奶牛", "animal": "奶牛", "style": "星光" }, { "id": "cartoon:094", "name": "星光企鹅", "animal": "企鹅", "style": "星光" }, { "id": "cartoon:095", "name": "星光猫头鹰", "animal": "猫头鹰", "style": "星光" }, { "id": "cartoon:096", "name": "星光青蛙", "animal": "青蛙", "style": "星光" }, { "id": "cartoon:097", "name": "星光小鸡", "animal": "小鸡", "style": "星光" }, { "id": "cartoon:098", "name": "星光浣熊", "animal": "浣熊", "style": "星光" }, { "id": "cartoon:099", "name": "星光海豹", "animal": "海豹", "style": "星光" }, { "id": "cartoon:100", "name": "星光仓鼠", "animal": "仓鼠", "style": "星光" }];
-  var cartoonURL = (value) => /^cartoon:(00[1-9]|0[1-9][0-9]|100)$/.test(value || "") ? "/assets/avatars/" + value.slice(8) + ".svg" : "";
-  function cartoonChoices(count = 8, exclude = []) {
-    const pool = cartoonAvatars.filter((a) => !exclude.includes(a.id)), random = new Uint32Array(pool.length);
-    crypto.getRandomValues(random);
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = random[i] % (i + 1);
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, count);
-  }
-  function cartoonOptions(items, selected) {
-    return items.map((a) => '<button type="button" class="cartoon-option ' + (a.id === selected ? "selected" : "") + '" data-cartoon="' + a.id + '" role="radio" aria-checked="' + (a.id === selected) + '" aria-label="' + a.name + '" title="' + a.name + '"><img loading="lazy" src="' + cartoonURL(a.id) + '" alt=""><span>' + a.name + "</span></button>").join("");
   }
 
   // internal/ui/src/calls.js
@@ -1094,7 +1559,7 @@
         return;
       }
       const c = active, incoming = c.canRespond, other = !incoming && !c.canEnd;
-      layer().innerHTML = '<section class="call-dialog" role="dialog" aria-label="'.concat(incoming ? "来电" : "通话", '"><header><b>WeLink · ').concat(c.mode === "video" ? "视频" : "语音", '通话</b><button data-call-minimize title="收起">').concat(icon2("minus"), '</button></header><div class="call-person">').concat(av2(c.peer, "large"), "<h2>").concat(esc2(c.peer.name), '</h2><p class="call-status" role="status">').concat(other ? "已在其他设备接听" : esc2(description(c)), '</p></div><div class="call-buttons">').concat(incoming ? '<button class="call-decline" data-call-reject>'.concat(icon2("phone"), "<span>拒绝</span></button>").concat(c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : "", '<button class="call-answer" data-call-answer="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>接听</span></button>") : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : "").concat(c.canEnd ? '<button class="call-decline" data-call-end>' + icon2("phone") + "<span>" + (c.state === "ringing" ? "取消" : "挂断") + "</span></button>" : "").concat(other ? '<button class="secondary" data-call-dismiss>知道了</button>' : "", '</div></section><button class="call-mini" data-call-expand>').concat(icon2("phone"), "<span>").concat(esc2(c.peer.name), " · ").concat(esc2(description(c)), "</span></button>");
+      layer().innerHTML = '<section class="call-dialog" role="dialog" aria-label="'.concat(incoming ? "来电" : "通话", '"><header><b>LinkMe · ').concat(c.mode === "video" ? "视频" : "语音", '通话</b><button data-call-minimize title="收起">').concat(icon2("minus"), '</button></header><div class="call-person">').concat(av2(c.peer, "large"), "<h2>").concat(esc2(c.peer.name), '</h2><p class="call-status" role="status">').concat(other ? "已在其他设备接听" : esc2(description(c)), '</p></div><div class="call-buttons">').concat(incoming ? '<button class="call-decline" data-call-reject>'.concat(icon2("phone"), "<span>拒绝</span></button>").concat(c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : "", '<button class="call-answer" data-call-answer="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>接听</span></button>") : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : "").concat(c.canEnd ? '<button class="call-decline" data-call-end>' + icon2("phone") + "<span>" + (c.state === "ringing" ? "取消" : "挂断") + "</span></button>" : "").concat(other ? '<button class="secondary" data-call-dismiss>知道了</button>' : "", '</div></section><button class="call-mini" data-call-expand>').concat(icon2("phone"), "<span>").concat(esc2(c.peer.name), " · ").concat(esc2(description(c)), "</span></button>");
     }
     async function refreshConversation(c, g) {
       if (S2.active !== c.conversationId || S2.historyMode) return;
@@ -1369,11 +1834,10 @@
   function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2, esc: esc2 }) {
     const native = typeof window.welinkDesktopSettings === "function";
     let lastCount = -1, nativeHidden = !!window.welinkNativeHidden;
-    const hidden = () => document.hidden || native && nativeHidden;
+    const hidden = () => document.hidden || nativeHidden || !document.hasFocus();
     function unread() {
       if (!native) return;
       const count = S2.user ? S2.conversations.reduce((n, c) => n + Number((c.muted ? c.mentionCount : c.unread) || 0), 0) : 0;
-      if (count === lastCount) return;
       lastCount = count;
       window.welinkDesktopUnread(count).catch(() => {
         lastCount = -1;
@@ -1385,7 +1849,7 @@
         const p = await window.welinkDesktopSettings();
         const toggle = (id, label, checked) => '<label class="prefs-row" for="'.concat(id, '"><span>').concat(label, '</span><input id="').concat(id, '" type="checkbox" ').concat(checked ? "checked" : "", "></label>");
         const shortcut = (id, label, value, error) => '<label class="prefs-row desktop-shortcut" for="'.concat(id, '"><span>').concat(label, '</span><span class="shortcut-control"><input id="').concat(id, '" class="shortcut-input" readonly value="').concat(esc2(value || ""), '" placeholder="点击后按下快捷键" aria-label="').concat(label, '快捷键"><button class="secondary" type="button" data-clear-shortcut="').concat(id, '">清除</button></span></label>').concat(error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc2(error) + "</p>" : "");
-        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 WeLink", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", (_a = p.startMinimized) != null ? _a : true) + '<p class="hint">仅对当前 Windows 用户生效，默认关闭。'.concat(p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : "", "</p>") + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p>' + toggle("desktop-message-alerts", "后台新消息提醒", p.messageAlerts) + '<p class="hint">提醒只显示未读数量，遵守会话免打扰和 Windows 通知设置。群 @提醒仍会提示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", (_b = p.hotkeysEnabled) != null ? _b : true) + shortcut("desktop-show-hotkey", "显示主界面", (_c = p.showHotkey) != null ? _c : "Ctrl+Alt+W", (_d = p.hotkeyErrors) == null ? void 0 : _d.show) + shortcut("desktop-capture-hotkey", "截图", (_e = p.captureHotkey) != null ? _e : "Ctrl+Alt+A", (_f = p.hotkeyErrors) == null ? void 0 : _f.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 WeLink”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
+        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 LinkMe", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", (_a = p.startMinimized) != null ? _a : true) + '<p class="hint">仅对当前 Windows 用户生效，默认关闭。'.concat(p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : "", "</p>") + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p>' + toggle("desktop-message-alerts", "右下角新消息提醒", p.messageAlerts) + '<p class="hint">提醒显示姓名和消息内容，点击即可进入聊天；遵守会话免打扰，群 @提醒仍会提示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", (_b = p.hotkeysEnabled) != null ? _b : true) + shortcut("desktop-show-hotkey", "显示主界面", (_c = p.showHotkey) != null ? _c : "Ctrl+Alt+W", (_d = p.hotkeyErrors) == null ? void 0 : _d.show) + shortcut("desktop-capture-hotkey", "截图", (_e = p.captureHotkey) != null ? _e : "Ctrl+Alt+A", (_f = p.hotkeyErrors) == null ? void 0 : _f.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 LinkMe”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
         document.querySelector(".modal").classList.add("desktop-settings");
         const $2 = (id) => document.getElementById(id), availability = () => {
           $2("desktop-start-minimized").disabled = !$2("desktop-auto-start").checked;
@@ -1440,14 +1904,14 @@
       }
     }
     function quit() {
-      modal2("退出 WeLink", "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
+      modal2("退出 LinkMe", "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
       document.querySelector("#desktop-exit").onclick = () => window.welinkDesktopExit();
     }
     window.addEventListener("welink-native-visibility", (event) => {
       var _a;
       nativeHidden = !!((_a = event.detail) == null ? void 0 : _a.hidden);
       if (!hidden() && S2.user) {
-        document.title = "WeLink";
+        document.title = "LinkMe";
         markRead2().catch(() => {
         });
       }
@@ -1459,7 +1923,7 @@
       if (action2 === "settings") settings2();
       if (action2 === "quit") quit();
     });
-    return { native, hidden, unread, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 WeLink</button>' : "" };
+    return { native, hidden, unread, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 LinkMe</button>' : "" };
   }
 
   // internal/ui/src/screenshots.js
@@ -1694,7 +2158,7 @@
       perform("screenshot-save", async () => {
         const data = await blob(state), href = URL.createObjectURL(data), link = document.createElement("a");
         link.href = href;
-        link.download = "WeLink-截图-" + Date.now() + ".png";
+        link.download = "LinkMe-截图-" + Date.now() + ".png";
         link.click();
         setTimeout(() => URL.revokeObjectURL(href), 6e4);
       });
@@ -2049,7 +2513,7 @@
         resolve(request.result);
       };
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(Error("请关闭其他 WeLink 窗口后重试"));
+      request.onblocked = () => reject(Error("请关闭其他 LinkMe 窗口后重试"));
     }).catch((error) => {
       database = null;
       throw error;
@@ -2090,7 +2554,8 @@
   var localPut = (name, value) => transaction([name], "readwrite", (stores) => stores[name].put(value));
 
   // internal/ui/src/outbox.js
-  function createOutbox({ sendLarge, S: S2, api: api2, toast: toast2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
+  function createOutbox({ onSent = () => {
+  }, sendLarge, S: S2, api: api2, toast: toast2, esc: esc2, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
     const $2 = (selector) => document.querySelector(selector);
     let scope = "", generation = 0, rows = [], drafts = /* @__PURE__ */ new Map(), timer, working = false, controller, saveChain = Promise.resolve(), storageWarning = false;
     const scopeFor = () => {
@@ -2253,6 +2718,8 @@
       const row = await localGet("queue", message.clientId);
       if ((row == null ? void 0 : row.scope) !== key || row.cid !== message.conversationId) return;
       await remove(row.id);
+      if (alive(g, key)) Promise.resolve(onSent(message)).catch(() => {
+      });
       await refreshRows(g, key);
     }
     function kick() {
@@ -2332,6 +2799,8 @@
           const message = await request("/api/conversations/" + row.cid + "/messages", { method: "POST", body }, g, key);
           if (!alive(g, key)) return;
           await remove(row.id);
+          Promise.resolve(onSent(message)).catch(() => {
+          });
           if (S2.active === row.cid && !S2.historyMode && !S2.messages.some((m) => m.id === message.id)) {
             S2.messages.push(message);
             S2.messages.sort((a, b) => a.seq - b.seq);
@@ -3072,12 +3541,12 @@
       return self + '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!q && !peopleSource.length && !care.length ? '<div class="empty-list">还没有最近联系人<br>搜索用户，直接开始聊天</div>' : q && !found && !self ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u))).concat(badge(u), "</h2>").concat(u.remark ? '<span class="profile-line">昵称：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">WeLink 账号：').concat(esc2(u.number || u.account), '</span><dl class="profile-details"><dt>手机号</dt><dd>').concat(esc2(u.phone || "未设置"), "</dd><dt>性别</dt><dd>").concat(esc2({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置"), "</dd><dt>职位</dt><dd>").concat(esc2(u.jobTitle || "未设置"), '</dd></dl><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions">').concat(u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : '<button class="primary" data-start-chat="'.concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="').concat(u.id, '">').concat(u.specialCare ? "取消特别关心" : "设为特别关心", '</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button>'), "</div>");
+      return "".concat(av2(u, "large", true), "<h2>").concat(esc2(title(u))).concat(badge(u), "</h2>").concat(u.remark ? '<span class="profile-line">姓名：' + esc2(u.name) + "</span>" : "", '<span class="profile-line">LinkMe 账号：').concat(esc2(u.number || u.account), '</span><dl class="profile-details"><dt>手机号</dt><dd>').concat(esc2(u.phone || "未设置"), "</dd><dt>性别</dt><dd>").concat(esc2({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置"), "</dd><dt>职位</dt><dd>").concat(esc2(u.jobTitle || "未设置"), '</dd></dl><p class="profile-bio">').concat(esc2(u.bio || "这个人很酷，还没有写签名。"), "</p>").concat(u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : "", '<div class="contact-profile-actions">').concat(u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : '<button class="primary" data-start-chat="'.concat(u.id, '">发消息</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="').concat(u.id, '" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="').concat(u.id, '">').concat(u.specialCare ? "取消特别关心" : "设为特别关心", '</button><button class="secondary" data-contact="messages" data-user="').concat(u.id, '">').concat(u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息", '</button><button class="secondary" data-contact="edit" data-user="').concat(u.id, '">联系人设置</button>'), "</div>");
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
       if (!detail.friend) {
-        modal2("联系人资料", '<div class="contact-person">'.concat(av2(u, "large"), "<h3>").concat(esc2(u.name), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div><p class="hint">').concat(detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。", "</p>"), detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
+        modal2("联系人资料", '<div class="contact-person">'.concat(av2(u, "large"), "<h3>").concat(esc2(u.name), "</h3><p>LinkMe 号 ").concat(esc2(u.number), '</p></div><p class="hint">').concat(detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。", "</p>"), detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
         bind("contact-unblock", async () => {
           await api2("/api/contact-blocks/" + id, { method: "DELETE" });
           await refresh2();
@@ -3086,7 +3555,7 @@
         bind("contact-add", () => requestFriend2(id, u.name));
         return;
       }
-      modal2("联系人设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ').concat(u.specialCare ? "checked" : "", '></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ').concat(detail.messageBlocked ? "checked" : "", '></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      modal2("联系人设置", '<div class="contact-person compact">'.concat(av2(u), "<div><h3>").concat(esc2(title(u)), "</h3><p>LinkMe 号 ").concat(esc2(u.number), '</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="').concat(esc2(u.remark || ""), '" placeholder="').concat(esc2(u.name), '"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>').concat(S2.contactGroups.map((g) => '<option value="'.concat(g.id, '" ').concat(g.id === u.contactGroupId ? "selected" : "", ">").concat(esc2(g.name), "</option>")).join(""), '</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">').concat(esc2(u.note || ""), '</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ').concat(u.specialCare ? "checked" : "", '></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ').concat(detail.messageBlocked ? "checked" : "", '></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="').concat(id, '">从列表移除</button><button data-contact="block" data-user="').concat(id, '">加入黑名单</button></div>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
       bind("contact-save", async () => {
         await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, specialCare: $2("#contact-special-care").checked, messageBlocked: $2("#contact-message-blocked").checked } });
         closeModal2();
@@ -3133,7 +3602,7 @@
       modal2("黑名单", '<p class="hint">解除拉黑后可以再次直接聊天。</p>'.concat(list.map((u) => '<div class="contact-block-row">'.concat(av2(u), "<span><b>").concat(esc2(u.name), "</b><small>").concat(esc2(u.number), '</small></span><button class="secondary" data-contact="unblock" data-user="').concat(u.id, '">解除</button></div>')).join("") || '<p class="empty-list">黑名单为空</p>'), '<button class="secondary" data-contact="privacy">返回</button>');
     }
     async function privacy() {
-      modal2("联系人设置", '<p class="hint">不需要添加或批准好友。通过昵称、号码或用户 ID 搜索即可聊天；从列表移除后仍保留聊天记录。</p><button class="contact-settings-row" data-contact="blocks">黑名单' + icon2("chevron") + '</button><button class="contact-settings-row" data-contact="groups">联系人分组' + icon2("chevron") + "</button>", '<button class="primary" data-action="close-modal">完成</button>');
+      modal2("联系人设置", '<p class="hint">不需要添加或批准好友。通过姓名、号码或用户 ID 搜索即可聊天；从列表移除后仍保留聊天记录。</p><button class="contact-settings-row" data-contact="blocks">黑名单' + icon2("chevron") + '</button><button class="contact-settings-row" data-contact="groups">联系人分组' + icon2("chevron") + "</button>", '<button class="primary" data-action="close-modal">完成</button>');
     }
     function syncComposer() {
       var _a;
@@ -3165,7 +3634,7 @@
     });
     bindLongPress(".contact-row[data-profile]", (row, x, y) => menu(row.dataset.profile, x, y));
     document.addEventListener("click", async (e) => {
-      var _a, _b;
+      var _a, _b, _c;
       const b = e.target.closest("[data-contact]");
       if (!b || !S2.user) return;
       try {
@@ -3186,10 +3655,14 @@
             break;
           }
           case "messages": {
-            const detail = await api2("/api/contacts/" + b.dataset.user);
-            await api2("/api/contacts/" + b.dataset.user, { method: "PATCH", body: { messageBlocked: !detail.messageBlocked } });
+            const id = b.dataset.user, detail = await api2("/api/contacts/" + id), blocked = !detail.messageBlocked;
+            await api2("/api/contacts/" + id, { method: "PATCH", body: { messageBlocked: blocked } });
             await refresh2();
-            toast2(detail.messageBlocked ? "已取消屏蔽" : "已屏蔽此人的私聊消息");
+            if (((_c = S2.profile) == null ? void 0 : _c.id) === id) {
+              S2.profile.messageBlocked = blocked;
+              renderMain2();
+            }
+            toast2(blocked ? "已屏蔽此人的私聊消息" : "已取消屏蔽");
             break;
           }
           case "edit":
@@ -3320,7 +3793,7 @@
       }
       ;
       const g = c.group, self = id === S2.user.id, canManage = manager(g) && !self && u.role !== "owner" && (g.role === "owner" || u.role !== "admin"), canCard = self || canManage;
-      modal2("群成员资料", '<div class="group-summary">'.concat(av2(u, "large"), "<div><h3>").concat(esc2(u.name), "</h3><p>WeLink 号 ").concat(esc2(u.number), '</p><span class="group-role ').concat(u.role, '">').concat(roles[u.role], '</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="').concat(esc2(u.nickname || ""), '" placeholder="').concat(esc2(u.name), '" ').concat(canCard ? "" : "disabled", ">").concat(canManage ? '<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">'.concat(u.muteUntil > Date.now() ? "禁言至 " + esc2(new Date(u.muteUntil).toLocaleString()) : "当前未禁言", "</p>") : "").concat(g.role === "owner" && !self ? '<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" '.concat(u.role === "admin" ? "checked" : "", "></label>") : "").concat(canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""), '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
+      modal2("群成员资料", '<div class="group-summary">'.concat(av2(u, "large"), "<div><h3>").concat(esc2(u.name), "</h3><p>LinkMe 号 ").concat(esc2(u.number), '</p><span class="group-role ').concat(u.role, '">').concat(roles[u.role], '</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="').concat(esc2(u.nickname || ""), '" placeholder="').concat(esc2(u.name), '" ').concat(canCard ? "" : "disabled", ">").concat(canManage ? '<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">'.concat(u.muteUntil > Date.now() ? "禁言至 " + esc2(new Date(u.muteUntil).toLocaleString()) : "当前未禁言", "</p>") : "").concat(g.role === "owner" && !self ? '<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" '.concat(u.role === "admin" ? "checked" : "", "></label>") : "").concat(canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""), '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
       bind("group-member-save", async () => {
         var _a;
         const p = { nickname: $2("#group-member-card").value };
@@ -4385,7 +4858,7 @@
     const el = (id) => document.getElementById(id);
     const when = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无活动记录";
     function open() {
-      modal2("账号与安全", '<div class="security-account">'.concat(icon2("shield"), "<div><b>").concat(esc2(S2.user.name), "</b><p>WeLink 号：").concat(esc2(S2.user.number), '</p></div></div><button class="utility-row security-option" data-security="devices">').concat(icon2("monitor"), '<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>').concat(icon2("chevron"), '</button><button class="utility-row security-option" data-security="password">').concat(icon2("shield"), '<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>').concat(icon2("chevron"), "</button>"));
+      modal2("账号与安全", '<div class="security-account">'.concat(icon2("shield"), "<div><b>").concat(esc2(S2.user.name), "</b>").concat(S2.user.email ? "<p>邮箱：".concat(esc2(S2.user.email), "</p>") : "", "<p>LinkMe 号：").concat(esc2(S2.user.number), '</p></div></div><button class="utility-row security-option" data-security="devices">').concat(icon2("monitor"), '<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>').concat(icon2("chevron"), '</button><button class="utility-row security-option" data-security="password">').concat(icon2("shield"), '<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>').concat(icon2("chevron"), "</button>"));
     }
     async function devices() {
       if (!S2.user) return;
@@ -4478,17 +4951,17 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2()).concat(authShowcase(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 WeLink「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 WeLink 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">WeLink ').concat(CLIENT_VERSION, "</small></main>");
+      el("app").innerHTML = '<main class="auth-shell">'.concat(windows2()).concat(authShowcase(), '<section class="auth-card qr-auth">').concat(logo2(), '<h2>扫码登录</h2><p class="subtitle">使用安卓 LinkMe「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 LinkMe 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>').concat(S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : "", '</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">LinkMe ').concat(CLIENT_VERSION, "</small></main>");
       el("qr-refresh").onclick = open;
       try {
-        const q = await action2("/api/auth/qr", { device: "WeLink Windows 客户端" });
+        const q = await action2("/api/auth/qr", { device: "LinkMe Windows 客户端" });
         if (active !== current) {
           action2("/api/auth/qr/cancel", q).catch(() => {
           });
           return;
         }
         Object.assign(current, q);
-        el("qr-image").innerHTML = '<img alt="WeLink 桌面登录二维码" src="'.concat(q.image, '">');
+        el("qr-image").innerHTML = '<img alt="LinkMe 桌面登录二维码" src="'.concat(q.image, '">');
         el("qr-check").textContent = "核对码 " + q.checkCode;
         await poll(current);
       } catch (e) {
@@ -4509,7 +4982,7 @@
           return;
         }
         const ended = result.state === "expired" || result.state === "rejected";
-        el("qr-status").textContent = result.state === "scanned" ? "扫码成功，请在手机上确认" : result.state === "expired" ? "二维码已过期，请刷新" : result.state === "rejected" ? "手机已取消登录，请刷新" : "请使用安卓 WeLink 扫描二维码";
+        el("qr-status").textContent = result.state === "scanned" ? "扫码成功，请在手机上确认" : result.state === "expired" ? "二维码已过期，请刷新" : result.state === "rejected" ? "手机已取消登录，请刷新" : "请使用安卓 LinkMe 扫描二维码";
         el("qr-image").classList.toggle("qr-inactive", ended);
         if (!ended) current.timer = setTimeout(() => poll(current), 1200);
       } catch (e) {
@@ -4524,19 +4997,19 @@
     }
     async function scanned(payload) {
       if (!S2.user) {
-        toast2("请先在手机上登录 WeLink");
+        toast2("请先在手机上登录 LinkMe");
         return;
       }
       const match = /^welink:\/\/login\/([a-f0-9]{32})\?key=([a-f0-9]{64})$/.exec(String(payload));
       if (!match) {
-        toast2("这不是 WeLink 登录二维码");
+        toast2("这不是 LinkMe 登录二维码");
         return;
       }
       const request = { id: match[1], key: match[2] };
       try {
         const result = await action2("/api/auth/qr/scan", request);
         phonePending = request;
-        modal2("登录 Windows 版 WeLink", '<div class="qr-confirm"><div class="qr-computer">'.concat(icon2("monitor"), "</div><h3>").concat(esc2(result.device), "</h3><p>将使用 ").concat(esc2(S2.user.name), " 登录</p><p>WeLink 号：").concat(esc2(S2.user.number), '</p><div class="qr-check">核对码 ').concat(esc2(result.checkCode), '</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>'), '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
+        modal2("登录 Windows 版 LinkMe", '<div class="qr-confirm"><div class="qr-computer">'.concat(icon2("monitor"), "</div><h3>").concat(esc2(result.device), "</h3><p>将使用 ").concat(esc2(S2.user.name), " 登录</p><p>LinkMe 号：").concat(esc2(S2.user.number), '</p><div class="qr-check">核对码 ').concat(esc2(result.checkCode), '</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>'), '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
         const resolve = async (accept) => {
           var _a;
           const button = el(accept ? "qr-phone-confirm" : "qr-phone-cancel");
@@ -4568,7 +5041,7 @@
           return;
         }
         if ((_b = window.WeLinkAndroid) == null ? void 0 : _b.scanQRCode) window.WeLinkAndroid.scanQRCode();
-        else toast2("请在安卓 WeLink 中使用扫一扫");
+        else toast2("请在安卓 LinkMe 中使用扫一扫");
       }
       if (a === "close-modal" && phonePending) {
         const request = phonePending;
@@ -4583,10 +5056,55 @@
     return { open, stop, scanned };
   }
 
+  // internal/ui/src/meeting-tuning.js
+  function videoBudget(screen, peers, available = 0) {
+    const count = Math.max(1, peers), floor = screen ? 5e5 : 3e5, emergency = screen ? 25e4 : 15e4, ceiling = screen ? 35e5 : 15e5, total = screen ? 8e6 : 4e6;
+    let target = Math.max(floor, Math.min(ceiling, Math.round(total / count)));
+    if (available > 0) target = Math.min(target, Math.max(emergency, available * 0.82));
+    return Math.max(emergency, Math.round(target));
+  }
+  async function tuneMeetingPeer(peer, screen, peers) {
+    var _a, _b;
+    if (peer.tuning || peer.pc.signalingState === "closed") return;
+    const bitrate = videoBudget(screen, peers, (_a = peer.route) == null ? void 0 : _a.available), key = screen + ":" + Math.round(bitrate / 1e5);
+    if (peer.tuningKey === key) return;
+    peer.tuning = true;
+    let complete = true;
+    try {
+      for (const sender of peer.pc.getSenders()) {
+        if (!sender.track || !sender.getParameters) continue;
+        try {
+          const p = sender.getParameters();
+          if (!((_b = p.encodings) == null ? void 0 : _b.length)) {
+            complete = false;
+            continue;
+          }
+          for (const e of p.encodings) {
+            if (sender.track.kind === "audio") {
+              e.maxBitrate = 64e3;
+              if ("priority" in e) e.priority = "high";
+              if ("networkPriority" in e) e.networkPriority = "high";
+            } else {
+              e.maxBitrate = Math.round(bitrate / p.encodings.length);
+              e.maxFramerate = screen ? 30 : 24;
+            }
+          }
+          if (sender.track.kind === "video") p.degradationPreference = screen ? "maintain-resolution" : "maintain-framerate";
+          await sender.setParameters(p);
+        } catch (e) {
+          complete = false;
+        }
+      }
+    } finally {
+      if (complete) peer.tuningKey = key;
+      peer.tuning = false;
+    }
+  }
+
   // internal/ui/src/rtc-path.js
   function directFirstICE(pc, policy, { alive, changed, negotiate }) {
     const servers = policy.iceServers || [], hasRelay = servers.some((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u) => /^turns?:/.test(u)));
-    let relay = false, closed = false, deadline, recovery, statsTimer, restarts = 0, path = "正在直连";
+    let relay = false, closed = false, deadline, recovery, statsTimer, restarts = 0, path = "正在直连", rtt = -1, available = 0;
     const connected = () => ["connected", "completed"].includes(pc.iceConnectionState) || pc.connectionState === "connected";
     const valid = () => !closed && alive() && pc.connectionState !== "closed";
     const setPath = (value) => {
@@ -4609,6 +5127,9 @@
           }
         }
         if (pair) {
+          rtt = Number.isFinite(pair.currentRoundTripTime) ? Math.round(pair.currentRoundTripTime * 1e3) : -1;
+          available = Number(pair.availableOutgoingBitrate) || 0;
+          changed();
           const local = report.get(pair.localCandidateId), remote = report.get(pair.remoteCandidateId);
           setPath((local == null ? void 0 : local.candidateType) === "relay" || (remote == null ? void 0 : remote.candidateType) === "relay" ? "中转连接" : "P2P 直连");
         }
@@ -4657,10 +5178,14 @@
         }, 5e3);
       }
     }
-    deadline = setTimeout(fallback, policy.directTimeoutMs || 8e3);
+    deadline = setTimeout(fallback, policy.directTimeoutMs || 15e3);
     statsTimer = setInterval(stats, 2500);
     return { update, get path() {
       return path;
+    }, get rtt() {
+      return rtt;
+    }, get available() {
+      return available;
     }, close() {
       closed = true;
       clearTimeout(deadline);
@@ -4764,7 +5289,7 @@
       return n;
     };
     function invitationText(code) {
-      return "邀请你加入 WeLink 会议\n会议号：" + grouped(code) + "\n会议链接：" + S2.config.server.replace(/\/$/, "") + "/join/" + code;
+      return "邀请你加入 LinkMe 会议\n会议号：" + grouped(code) + "\n会议链接：" + S2.config.server.replace(/\/$/, "") + "/join/" + code;
     }
     async function copyInvitation(code) {
       const text = invitationText(code);
@@ -4806,11 +5331,11 @@
       throw Error("请粘贴有效的会议邀请链接或 9 位会议号");
     }
     async function checkNativeInvitation(force = false) {
-      var _a;
+      var _a, _b;
       if (checkingInvitation || !S2.user || S2.signingOut || room || nativeCall || document.querySelector("#call-layer") || !force && document.querySelector(".modal")) return;
       checkingInvitation = true;
       try {
-        const code = ((_a = window.WeLinkAndroid) == null ? void 0 : _a.takeMeetingInvitation) ? window.WeLinkAndroid.takeMeetingInvitation() : window.welinkMeetingInvitation ? await window.welinkMeetingInvitation() : "";
+        const code = ((_a = window.WeLinkAndroid) == null ? void 0 : _a.takeMeetingInvitation) ? window.WeLinkAndroid.takeMeetingInvitation() : window.welinkMeetingInvitation ? await window.welinkMeetingInvitation() : ((_b = await api2("/local/meeting-invitation").catch(() => null)) == null ? void 0 : _b.code) || "";
         if (code && S2.user && !S2.signingOut) openJoin(code);
       } catch (e) {
       } finally {
@@ -4962,13 +5487,15 @@
     function renderConnection(active) {
       var _a;
       if (room !== active || !el("meeting-network")) return;
+      for (const p of active.peers.values()) tuneMeetingPeer(p, !!active.screen, active.peers.size);
       const paths2 = [...active.peers.values()].map((p) => p.route.path);
       let label = paths2.includes("中转连接") ? "中转连接" : paths2.length && paths2.every((p) => p === "P2P 直连") ? "P2P 直连" : paths2.find((p) => p !== "P2P 直连") || "等待其他成员";
       if ((_a = active.call) == null ? void 0 : _a.started) label = formatDuration((Date.now() - active.call.started) / 1e3) + " · " + label;
-      el("meeting-network").textContent = label;
+      const rtt = Math.max(-1, ...[...active.peers.values()].map((p) => p.route.rtt));
+      el("meeting-network").textContent = label + (rtt >= 0 ? " · " + rtt + " ms" : "");
     }
     function renderRoom() {
-      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>WeLink 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">').concat(icon2("minus"), '</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
+      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>LinkMe 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">').concat(icon2("minus"), '</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
       el("meeting-copy").onclick = () => {
         if (root().classList.contains("meeting-minimized")) {
           show();
@@ -5299,6 +5826,8 @@
           if (track && transceiver.direction === "recvonly") transceiver.direction = "sendrecv";
           await transceiver.sender.replaceTrack(track);
         } else if (track) p.pc.addTrack(track, stream);
+        p.tuningKey = "";
+        await tuneMeetingPeer(p, !!room.screen, room.peers.size);
       }
     }
     async function share() {
@@ -5313,7 +5842,7 @@
       active.sharePending = true;
       el("meeting-share").disabled = true;
       try {
-        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 20 } }, audio: false, selfBrowserSurface: "exclude" });
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 } }, audio: false, selfBrowserSurface: "exclude" });
         if (room !== active || active.id !== active.host) {
           screen.getTracks().forEach((t) => t.stop());
           return;
@@ -5395,7 +5924,7 @@
       recorder.onstop = () => {
         const blob = new Blob(capture.chunks, { type: mime || "video/webm" }), a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "WeLink-会议-".concat(capture.code, "-").concat(Date.now(), ".webm");
+        a.download = "LinkMe-会议-".concat(capture.code, "-").concat(Date.now(), ".webm");
         a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 3e4);
         stream.getTracks().forEach((t) => t.stop());
@@ -5530,7 +6059,7 @@
       box.className = "meeting-invitation-notice";
       box.dataset.meetingNotice = m.code;
       box.setAttribute("role", "alert");
-      box.innerHTML = '<header><b>WeLink · 会议邀请</b><button data-meeting-notice-close title="关闭">'.concat(icon2("close"), "</button></header><h3>").concat(esc2(m.title), "</h3><p>会议号 ").concat(grouped(m.code), '</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>');
+      box.innerHTML = '<header><b>LinkMe · 会议邀请</b><button data-meeting-notice-close title="关闭">'.concat(icon2("close"), "</button></header><h3>").concat(esc2(m.title), "</h3><p>会议号 ").concat(grouped(m.code), '</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>');
       area.append(box);
       box.querySelectorAll("[data-meeting-notice-close]").forEach((b) => b.onclick = () => dismissInvitation(m.code));
       box.querySelector("[data-meeting-notice-enter]").onclick = () => {
@@ -5662,10 +6191,11 @@
   var icon = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'.concat(paths[n] || paths.chat, '"/></svg>');
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => {
+    if (u.ai || u.avatar === "bot:me") return '<span class="avatar me-avatar ' + size + '" data-avatar-user="' + esc(u.id) + '">M</span>';
     const cartoon = cartoonURL(u.avatar), photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
     return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
-  var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>WeLink</b></div>';
+  var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>LinkMe</b></div>';
   var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], myGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
@@ -5758,6 +6288,7 @@
     Navigation.complete();
   }
   var pageHistory = [];
+  var NativeNotifications = createNativeNotifications({ S, action, selectConversation, refresh, toast });
   function pageBack() {
     var _a;
     if ($(".remote-screen")) {
@@ -5823,9 +6354,10 @@
     return true;
   } });
   function windows() {
-    return '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>");
+    return S.config.platform === "windows" ? '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>") : "";
   }
   function renderAuth(register = false) {
+    if (S.emailAuthEnabled) return EmailAuth.render(register ? "register" : "login");
     if (register && !S.registrationEnabled) {
       toast("暂未开放自助注册，请联系管理员");
       register = false;
@@ -5834,7 +6366,7 @@
     QR.stop();
     S.user = null;
     Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows()).concat(authShowcase(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 WeLink 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 WeLink 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">WeLink ').concat(CLIENT_VERSION, " · 让沟通更近一步</small></main>");
+    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows()).concat(authShowcase(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 LinkMe 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 LinkMe 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ').concat(CLIENT_VERSION, " · 让沟通更近一步</small></main>");
     if (register) {
       $("#register-avatar-shuffle").onclick = () => {
         const next = cartoonChoices(8);
@@ -5865,7 +6397,7 @@
         localStorage.setItem("welink_token", S.token);
         S.user = result.user;
         await enter();
-        if (register) modal("注册成功", '<p class="hint">请记住你的 WeLink 号码，可用于登录和搜索用户。</p><div class="welink-number">'.concat(esc(S.user.number), "</div>"), '<button class="primary" data-action="close-modal">开始使用</button>');
+        if (register) modal("注册成功", '<p class="hint">请记住你的 LinkMe 号码，可用于登录和搜索用户。</p><div class="welink-number">'.concat(esc(S.user.number), "</div>"), '<button class="primary" data-action="close-modal">开始使用</button>');
       } catch (err) {
         $("#auth-error").textContent = err.message;
         submit.disabled = false;
@@ -5904,16 +6436,17 @@
       return (c.name + (((_a = c.peer) == null ? void 0 : _a.number) || "") + (((_b = c.group) == null ? void 0 : _b.number) || "") + (((_c = c.last) == null ? void 0 : _c.text) || "")).toLowerCase().includes(q);
     });
     const users = q ? S.friends.filter((u) => (u.name + (u.remark || "") + u.number + u.id + u.account).toLowerCase().includes(q)) : [];
-    list.innerHTML = result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
+    list.innerHTML = Me.sidebar() + result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
   }
   function conversationRow(c) {
-    return '<div class="conversation-item"><button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b>").concat(c.kind === "direct" ? Contacts.badge(c.peer) : "", "<time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", '</div></div></button><button type="button" class="conversation-more" data-conversation-menu="').concat(c.id, '" aria-label="').concat(esc(c.name), '的会话操作" title="会话操作">').concat(icon("more"), "</button></div>");
+    var _a;
+    return '<div class="conversation-item"><button class="conversation-row '.concat(S.active === c.id ? "selected" : "", " ").concat(c.pinned ? "pinned" : "", '" data-conversation="').concat(c.id, '">').concat(av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c), '<div class="row-text"><div class="row-title"><b>').concat(esc(c.name), "</b>").concat(((_a = c.peer) == null ? void 0 : _a.ai) ? '<em class="ai-label">AI</em>' : "").concat(c.kind === "direct" ? Contacts.badge(c.peer) : "", "<time>").concat(c.last ? shortTime(c.last.created) : "", '</time></div><div class="row-preview"><span>').concat(c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : "").concat(esc(c.kind === "group" && c.last && !c.last.recalled ? "".concat(c.last.name, "：") : "")).concat(esc(preview(c.last)), "</span>").concat(c.muted ? icon("mute") : "").concat(c.unread ? '<i class="badge">'.concat(c.unread > 99 ? "99+" : c.unread, "</i>") : "", '</div></div></button><button type="button" class="conversation-more" data-conversation-menu="').concat(c.id, '" aria-label="').concat(esc(c.name), '的会话操作" title="会话操作">').concat(icon("more"), "</button></div>");
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);
   }
   function renderMain() {
-    var _a, _b;
+    var _a, _b, _c, _d;
     const main = $("#main-content");
     if (!main) return;
     if (S.tab === "drive") {
@@ -5956,11 +6489,11 @@
     ;
     const c = activeConversation();
     if (!c) {
-      main.innerHTML = empty("WeLink", "每一句，都有回应。", true);
+      main.innerHTML = empty("LinkMe", "每一句，都有回应。", true);
       return;
     }
     ;
-    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")).concat(c.kind === "direct" ? btn("monitor", "远程协助", "remote") : "").concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot"), '<span class="spacer"></span></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_b = S.drafts[c.id]) == null ? void 0 : _b.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
+    main.innerHTML = '<header class="chat-head">'.concat(btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"'), "<h2>").concat(esc(c.name), '<small id="typing-status">').concat(c.kind === "direct" ? ((_a = c.peer) == null ? void 0 : _a.online) ? "在线" : "离线" : "群聊", '</small></h2><div class="chat-actions">').concat(((_b = c.peer) == null ? void 0 : _b.ai) ? "" : c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")).concat(c.kind === "direct" && !((_c = c.peer) == null ? void 0 : _c.ai) ? btn("monitor", "远程协助", "remote") : "").concat(btn("search", "搜索聊天记录", "search-history")).concat(btn("more", "聊天设置", "chat-detail"), '</div></header><div id="sharing-banner"></div><div id="me-panel" class="hidden"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">').concat(Media.tools()).concat(Mentions.tool()).concat(btn("emoji", "表情", "emoji")).concat(btn("image", "发送图片", "image"), '<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">').concat(icon("video"), "</button>").concat(btn("folder", "发送文件", "file")).concat(btn("scissors", "截图", "screenshot"), '<span class="spacer"></span></div><textarea id="composer" placeholder="" aria-label="输入消息" maxlength="6000">').concat(esc(S.drafts[c.id] || ""), "</textarea>").concat(Media.input(), '<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ').concat(((_d = S.drafts[c.id]) == null ? void 0 : _d.trim()) ? "" : "disabled", '>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>');
     renderMessages();
     const input = $("#composer");
     input.oninput = () => {
@@ -6005,6 +6538,7 @@
     Groups.syncComposer();
     Contacts.syncComposer();
     Mentions.mount();
+    Me.mount();
   }
   function empty(title, sub, add = false) {
     return '<div class="empty-chat"><img src="/assets/icon.svg" alt=""><h2>'.concat(title, "</h2><p>").concat(sub, "</p></div>");
@@ -6030,7 +6564,7 @@
     }
     if (m.kind === "image") content = S.offline ? '<div class="file-card">' + icon("image") + "<span><b>" + esc(m.fileName || "图片") + "</b><small>联网后查看图片</small></span></div>" : '<img src="'.concat(fileURL(m.attachmentId), '" alt="').concat(esc(m.fileName || "图片"), '" loading="lazy" data-preview-image="').concat(m.attachmentId, '">');
     if (m.kind === "file") content = '<button class="file-card" data-download="'.concat(m.attachmentId, '" data-filename="').concat(esc(m.fileName), '">').concat(icon("file"), "<span><b>").concat(esc(m.fileName), "</b><small>").concat(bytes(m.fileSize), " · 点击下载</small></span></button>");
-    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body">').concat(((_a = activeConversation()) == null ? void 0 : _a.kind) === "group" && !mine ? '<span class="message-name">'.concat(esc(m.name), "</span>") : "", '<div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
+    return '<article class="message '.concat(mine ? "mine" : "", '" data-message="').concat(m.id, '">').concat(Forwarding.checkbox(m)).concat(av(m), '<div class="message-body"><span class="message-name">').concat(esc(m.name || (mine ? S.user.name : (_a = activeConversation()) == null ? void 0 : _a.name) || "LinkMe 用户"), '</span><div class="bubble ').concat(m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : "", '">').concat(content, "</div>").concat(m.replyId ? '<button class="quote" data-action="jump-message" data-mid="'.concat(m.replyId, '" title="查看原消息">').concat(quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用", "</button>") : "", '<span class="message-time">').concat(shortTime(m.created), '</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="').concat(m.id, '">').concat(icon("send"), "</button>").concat(btn("reply", "引用", "quote", 'data-mid="'.concat(m.id, '"'))).concat(btn("star", "收藏", "favorite", 'data-mid="'.concat(m.id, '"'))).concat(mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", 'data-mid="'.concat(m.id, '"')) : "").concat(btn("trash", "删除", "delete-message", 'data-mid="'.concat(m.id, '"')), "</div></article>");
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -6108,6 +6642,10 @@
   }
   async function sendMessage() {
     var _a;
+    if (Me.busy()) {
+      toast("Me 正在处理，请等待完成或停止任务");
+      return;
+    }
     const input = $("#composer");
     if (!(input == null ? void 0 : input.value.trim()) || input.disabled) return;
     const text = input.value, cid = S.active, owner2 = Outbox.scope();
@@ -6205,12 +6743,15 @@
     }, 200);
   }
   async function enter() {
+    await Sounds.ready;
     if (!S.cacheView) await Received.identified(S.user);
     await Promise.all([api("/api/config").then((policy) => {
       S.policy = policy;
     }), refresh()]);
+    await Me.start();
     await Outbox.start();
     renderShell();
+    await NativeNotifications.start().catch(() => toast("消息通知连接暂不可用，正在重试"));
     connectEvents(true);
     Calls.start();
   }
@@ -6262,7 +6803,9 @@
         return;
       }
       const d = event.data;
-      if (event.type === "call") {
+      if (event.type === "ai-delta" || event.type === "ai-state") {
+        Me.changed(event.type, d);
+      } else if (event.type === "call") {
         Calls.changed(d);
       } else if (event.type === "drive") {
         Cloud.changed(event.type);
@@ -6280,9 +6823,9 @@
           });
         }
         if ((S.active !== d.conversationId || S.tab !== "messages" || Desktop.hidden()) && d.sender !== S.user.id && (!((_a2 = S.conversations.find((c) => c.id === d.conversationId)) == null ? void 0 : _a2.muted) || Mentions.applies(d))) {
-          Sounds.notify();
-          if (!Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg", silent: true });
-          document.title = Mentions.applies(d) ? "有人 @你 · WeLink" : "新消息 · WeLink";
+          if (!NativeNotifications.active()) Sounds.notify();
+          if (!NativeNotifications.active() && !Desktop.native && document.hidden && ((_b = window.Notification) == null ? void 0 : _b.permission) === "granted") new Notification(((_c = S.friends.find((u) => u.id === d.sender)) == null ? void 0 : _c.remark) || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg", silent: true });
+          document.title = Mentions.applies(d) ? "有人 @你 · LinkMe" : "新消息 · LinkMe";
         }
         queueRefresh(true);
       } else if (event.type === "read") {
@@ -6345,6 +6888,7 @@
     Forwarding.reset(false);
     S.signingOut = true;
     Calls.stop();
+    Me.stop();
     Outbox.stop();
     Transfers.stop();
     Cloud.reset();
@@ -6353,6 +6897,8 @@
     Mentions.reset();
     S.drafts = {};
     try {
+      await NativeNotifications.stop().catch(() => {
+      });
       Meetings.close();
       await Received.forget();
       if (notify) try {
@@ -6383,7 +6929,7 @@
     }
   }
   function addFriend() {
-    modal("查找用户", '<label for="find-user">WeLink 号码 / 姓名</label><input id="find-user" placeholder="输入 WeLink 号码或姓名" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>');
+    modal("查找用户", '<label for="find-user">LinkMe 号码 / 姓名</label><input id="find-user" placeholder="输入 LinkMe 号码或姓名" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>');
     $("#find-user").oninput = (e) => {
       clearTimeout(searchTimer);
       const q = e.target.value;
@@ -6498,7 +7044,7 @@
   }
   function profile(initial = {}) {
     const user = __spreadValues(__spreadValues({}, S.user), initial);
-    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">WeLink 账号：').concat(esc(user.number), '</p><label>姓名</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="').concat(esc(user.phone || ""), '" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>').concat([["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="'.concat(v, '" ').concat(user.gender === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label>职位</label><input id="profile-job" value="').concat(esc(user.jobTitle || ""), '" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("编辑资料", '<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">'.concat(av(S.user, "large"), '<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">LinkMe 账号：').concat(esc(user.number), '</p><label>姓名</label><input id="profile-name" value="').concat(esc(user.name), '" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="').concat(esc(user.phone || ""), '" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>').concat([["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => '<option value="'.concat(v, '" ').concat(user.gender === v ? "selected" : "", ">").concat(t, "</option>")).join(""), '</select><label>职位</label><input id="profile-job" value="').concat(esc(user.jobTitle || ""), '" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="').concat(esc(user.bio), '" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>'), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, phone: $("#profile-phone").value, gender: $("#profile-gender").value, jobTitle: $("#profile-job").value, avatar: user.avatar } });
       closeModal();
@@ -6508,11 +7054,11 @@
     };
   }
   function renderMyPage() {
-    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">WeLink 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("cloud"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
+    $("#main-content").innerHTML = '<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">'.concat(av(S.user, "large"), "<h2>").concat(esc(S.user.name), '</h2><span class="profile-line">LinkMe 号：').concat(esc(S.user.number || S.user.account), '</span></div><button class="utility-row" style="width:100%" data-action="profile">').concat(icon("user"), '<div class="body" style="text-align:left">个人资料</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="drive">').concat(icon("cloud"), '<div class="body" style="text-align:left">我的网盘</div>').concat(icon("chevron"), "</button>").concat(Admin.settingsRow(), '<button class="utility-row" style="width:100%" data-nav="files">').concat(icon("folder"), '<div class="body" style="text-align:left">我的文件</div>').concat(icon("chevron"), '</button><button class="utility-row" style="width:100%" data-nav="favorites">').concat(icon("star"), '<div class="body" style="text-align:left">我的收藏</div>').concat(icon("chevron"), "</button>").concat(S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : "", '<button class="utility-row" style="width:100%" data-action="settings">').concat(icon("settings"), '<div class="body" style="text-align:left">设置</div>').concat(icon("chevron"), "</button></div></section>");
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">桌面消息通知<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>').concat(CLIENT_VERSION.replace("-preview", ""), ' 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>').concat(CLIENT_VERSION.replace("-preview", ""), ' 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -6742,13 +7288,13 @@
     clearInterval(S.remoteTimer);
     if (v.host !== S.user.id) showRemoteScreen();
     else renderSharing();
-    S.remoteTimer = setInterval(remoteTick, 120);
+    S.remoteTimer = setInterval(remoteTick, 33);
     await remoteTick();
   }
   var frameVersion = 0;
   var frameURL = "";
   var remoteTickBusy = false;
-  var inputChain = Promise.resolve();
+  var remoteInput = null;
   async function remoteTick() {
     if (remoteTickBusy || !S.remote) return;
     remoteTickBusy = true;
@@ -6804,13 +7350,9 @@
     document.body.append(node);
     const img = $("#remote-image");
     let held = false;
-    const send = (events) => {
-      inputChain = inputChain.then(() => action("/local/remote/input", { events })).catch((e) => toast(e.message));
-    };
-    const point = (e) => {
-      const r = img.getBoundingClientRect();
-      return { type: "move", x: Math.max(0, Math.round((e.clientX - r.left) * Number(img.dataset.width) / r.width)), y: Math.max(0, Math.round((e.clientY - r.top) * Number(img.dataset.height) / r.height)) };
-    };
+    remoteInput = createRemoteInput((events) => action("/local/remote/input", { events }), () => action("/local/remote/release"), (e) => toast(e.message));
+    const send = remoteInput.push;
+    const point = (e) => remotePoint(e, img);
     let moveAt = 0;
     img.onpointerdown = (e) => {
       var _a;
@@ -6823,7 +7365,7 @@
     };
     img.onpointermove = (e) => {
       var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control" || Date.now() - moveAt < 35) return;
+      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control" || Date.now() - moveAt < 8) return;
       moveAt = Date.now();
       send([point(e)]);
     };
@@ -6834,8 +7376,7 @@
     };
     img.onpointercancel = () => {
       held = false;
-      action("/local/remote/release").catch(() => {
-      });
+      remoteInput == null ? void 0 : remoteInput.release();
     };
     img.oncontextmenu = (e) => e.preventDefault();
     img.onwheel = (e) => {
@@ -6856,11 +7397,12 @@
       e.preventDefault();
       send([{ type: "key_up", key: e.key, code: e.code }]);
     };
-    img.onblur = () => action("/local/remote/release").catch(() => {
-    });
+    img.onblur = () => remoteInput == null ? void 0 : remoteInput.release();
   }
   async function stopRemote(notify = true) {
     var _a;
+    remoteInput == null ? void 0 : remoteInput.close();
+    remoteInput = null;
     const v = S.remote;
     S.remote = null;
     S.remoteLocal = null;
@@ -7223,7 +7765,7 @@
   }, true);
   document.addEventListener("visibilitychange", () => {
     if (!Desktop.hidden()) {
-      document.title = "WeLink";
+      document.title = "LinkMe";
       if (S.active && S.user) markRead().catch(() => {
       });
     } else action("/local/remote/release").catch(() => {
@@ -7262,7 +7804,8 @@
   var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc, upload });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
-  var Outbox = createOutbox({ sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
+  var Me = createMe({ S, api, action, esc, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar });
+  var Outbox = createOutbox({ onSent: (message) => Me.onSent(message), sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
@@ -7271,10 +7814,12 @@
   var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, renderMessages, queueRefresh, fullTime });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
+  var EmailAuth = createEmailAuth({ S, action, enter, QR, Desktop, windows, logo });
   async function loadRegistration() {
     try {
       const value = await api("/api/public-config");
       S.registrationEnabled = !!value.registrationEnabled;
+      S.emailAuthEnabled = !!value.emailAuthEnabled;
       const links = document.querySelector("#auth-form .auth-links");
       if (links && !S.user) {
         const button = links.querySelector("[data-action=register]");
@@ -7287,7 +7832,7 @@
   async function bootstrap() {
     try {
       S.config = await api("/local/config");
-      loadRegistration();
+      await loadRegistration();
       if (S.token) {
         try {
           S.user = await api("/api/me");

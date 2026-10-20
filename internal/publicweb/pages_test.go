@@ -10,7 +10,7 @@ import (
 
 func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 	for _, page := range []Page{
-		{Kind: "download", Title: "WeLink", DriveGB: 5},
+		{Kind: "download", Title: "LinkMe", DriveGB: 5},
 		{Kind: "meeting", Title: "会议", Code: "123456789", DisplayCode: "123 456 789", DownloadURL: "http://example.com:8251"},
 		{Kind: "share", Title: "分享", Name: `<script>alert("file")</script>.txt`, Size: "1.00 MB", Validity: "永久有效"},
 		{Kind: "space", Title: "空间", Name: "同事", DocumentOpen: true, Content: `</pre><script>alert("content")</script>`},
@@ -42,7 +42,7 @@ func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 			if page.Kind == "share" && (!strings.Contains(html, `href="?download=1"`) || !strings.Contains(html, "永久有效")) {
 				t.Fatal("shared-file download is broken")
 			}
-			if page.Kind == "download" && (!strings.Contains(html, "/downloads/WeLink-Setup.exe") || !strings.Contains(html, "/downloads/WeLink-Android.apk") || !strings.Contains(html, "每人 5 GB")) {
+			if page.Kind == "download" && (!strings.Contains(html, "/downloads/LinkMe-Setup.exe") || !strings.Contains(html, "/downloads/LinkMe-Android.apk") || !strings.Contains(html, "/downloads/LinkMe-macOS-arm64.zip") || !strings.Contains(html, "Apple Silicon") || !strings.Contains(html, "每人 5 GB")) {
 				t.Fatal("missing client downloads or configured quota")
 			}
 		})

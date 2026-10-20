@@ -38,7 +38,7 @@ type MediaSettings struct {
 }
 
 func defaultMediaSettings() MediaSettings {
-	return MediaSettings{Listen: ":8252", PublicAddress: "www.yucg.cn", URLs: []string{"turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"}, Realm: "welink", CredentialSeconds: 21600, DirectTimeoutMS: 8000, RelayMinPort: 8260, RelayMaxPort: 8359, MaxAllocationsPerUser: 32, BytesPerSecond: 4 << 20}
+	return MediaSettings{Listen: ":8252", PublicAddress: "www.yucg.cn", URLs: []string{"turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"}, Realm: "welink", CredentialSeconds: 21600, DirectTimeoutMS: 15000, RelayMinPort: 8260, RelayMaxPort: 8359, MaxAllocationsPerUser: 32, BytesPerSecond: 4 << 20}
 }
 func (m MediaSettings) validate() error {
 	if m.DirectTimeoutMS < 1000 || m.DirectTimeoutMS > 30000 {

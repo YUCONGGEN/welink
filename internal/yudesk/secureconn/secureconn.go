@@ -1,6 +1,7 @@
 package secureconn
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -261,6 +262,7 @@ type Conn struct {
 	writePacket []byte
 	readErr     error
 	writeErr    error
+	ciphertext  *bufio.Reader // readMu owns ciphertext read-ahead; never plaintext
 }
 
 func newConn(raw net.Conn, readKey, writeKey []byte) (*Conn, error) {
@@ -280,7 +282,7 @@ func newConn(raw net.Conn, readKey, writeKey []byte) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Conn{Conn: raw, readAEAD: readAEAD, writeAEAD: writeAEAD}, nil
+	return &Conn{Conn: raw, readAEAD: readAEAD, writeAEAD: writeAEAD, ciphertext: bufio.NewReaderSize(raw, 16<<10)}, nil
 }
 
 func (c *Conn) Read(p []byte) (int, error) {
@@ -293,7 +295,10 @@ func (c *Conn) Read(p []byte) (int, error) {
 		if c.readErr != nil {
 			return 0, c.readErr
 		}
-		if n, err := io.ReadFull(c.Conn, c.readHeader[:]); err != nil {
+		// Read ahead ciphertext instead of issuing a separate socket receive
+		// for the four-byte header and then for every small Opus record body.
+		// Record boundaries, authentication and sequence checks are unchanged.
+		if n, err := io.ReadFull(c.ciphertext, c.readHeader[:]); err != nil {
 			// A failure before consuming any header bytes leaves framing intact,
 			// so callers can still reset a deadline and retry that read.
 			if n > 0 {
@@ -310,7 +315,7 @@ func (c *Conn) Read(p []byte) (int, error) {
 			c.readPacket = make([]byte, size)
 		}
 		c.readPacket = c.readPacket[:size]
-		if _, err := io.ReadFull(c.Conn, c.readPacket); err != nil {
+		if _, err := io.ReadFull(c.ciphertext, c.readPacket); err != nil {
 			clear(c.readPacket)
 			c.readErr = err
 			return 0, err

@@ -1,11 +1,14 @@
 package client
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDomainUpgradePreservesCustomServersAndOverrides(t *testing.T) {
@@ -28,6 +31,49 @@ func TestDomainUpgradePreservesCustomServersAndOverrides(t *testing.T) {
 				t.Fatalf("got %s want %s", got, test.want)
 			}
 		})
+	}
+}
+
+func TestLocalMeetingInviteIsDeliveredOnce(t *testing.T) {
+	dir := t.TempDir()
+	c, err := New(Options{Directory: dir, Listen: "127.0.0.1:0", Server: "http://127.0.0.1:9"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	raw, _ := json.Marshal(localMeetingInvite{Code: "123456789", Created: time.Now().UnixMilli()})
+	if err = os.WriteFile(filepath.Join(dir, "meeting-invitation.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	browser := &http.Client{Jar: jar}
+	if response, getErr := browser.Get(c.URL()); getErr != nil {
+		t.Fatal(getErr)
+	} else {
+		response.Body.Close()
+	}
+	base := "http://" + c.host
+	endpoint, _ := url.JoinPath(base, "/local/meeting-invitation")
+	response, err := browser.Get(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var invite localMeetingInvite
+	if err = json.NewDecoder(response.Body).Decode(&invite); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || invite.Code != "123456789" {
+		t.Fatalf("unexpected meeting invite: %d %#v", response.StatusCode, invite)
+	}
+	response, err = browser.Get(endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("invite was delivered more than once: %d", response.StatusCode)
 	}
 }
 

@@ -52,6 +52,8 @@ type Client struct {
 	assets         fs.FS
 	upstream       *httputil.ReverseProxy
 	transport      *http.Transport
+	notifications  notificationState
+	ai             localAIState
 }
 
 func New(o Options) (*Client, error) {
@@ -60,7 +62,7 @@ func New(o Options) (*Client, error) {
 		if e != nil {
 			return nil, e
 		}
-		o.Directory = filepath.Join(root, "WeLink")
+		o.Directory = filepath.Join(root, "LinkMe")
 	}
 	if err := os.MkdirAll(o.Directory, 0700); err != nil {
 		return nil, err
@@ -118,6 +120,8 @@ func New(o Options) (*Client, error) {
 }
 func (c *Client) URL() string { return "http://" + c.host + "/?access_token=" + c.key }
 func (c *Client) Close() {
+	c.stopAI()
+	_ = c.SetNotificationSession("")
 	c.Remote.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -182,7 +186,7 @@ func (c *Client) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie, err := r.Cookie("welink_local")
 	if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(c.key)) != 1 {
-		http.Error(w, "请通过 WeLink 客户端打开", 403)
+		http.Error(w, "请通过 LinkMe 客户端打开", 403)
 		return
 	}
 	origin := r.Header.Get("Origin")
@@ -191,6 +195,10 @@ func (c *Client) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/local/") {
+		if r.URL.Path == "/local/meeting-invitation" {
+			c.localMeetingInvitation(w, r)
+			return
+		}
 		c.local(w, r)
 		return
 	}
@@ -279,6 +287,10 @@ func localDecode(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 func (c *Client) local(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/local/ai/") {
+		c.serveAI(w, r)
+		return
+	}
 	path := r.URL.Path
 	if r.Method == "GET" {
 		switch path {
@@ -305,6 +317,16 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch path {
+	case "/local/notifications":
+		var p struct{ Token string }
+		if !localDecode(w, r, &p) {
+			return
+		}
+		if err := c.SetNotificationSession(p.Token); err != nil {
+			localError(w, 400, err.Error())
+			return
+		}
+		localJSON(w, map[string]bool{"ok": true})
 	case "/local/config":
 		var cfg Config
 		if !localDecode(w, r, &cfg) {
@@ -324,6 +346,7 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 			localError(w, 500, "保存连接设置失败")
 			return
 		}
+		_ = c.SetNotificationSession("")
 		c.Remote.Stop()
 		c.mu.Lock()
 		if c.transport != nil {

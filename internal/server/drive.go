@@ -355,7 +355,7 @@ func (s *Server) publicDriveShare(w http.ResponseWriter, r *http.Request) {
 	if expires != 0 {
 		validity = "有效至 " + time.UnixMilli(expires).Format("2006-01-02")
 	}
-	if err := publicweb.Render(w, publicweb.Page{Kind: "share", Title: "WeLink 网盘分享", Name: name, Size: fmt.Sprintf("%.2f MB", float64(size)/(1<<20)), Validity: validity, DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}); err != nil {
+	if err := publicweb.Render(w, publicweb.Page{Kind: "share", Title: "LinkMe 网盘分享", Name: name, Size: fmt.Sprintf("%.2f MB", float64(size)/(1<<20)), Validity: validity, DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}); err != nil {
 		s.logger.Printf("render file share: %v", err)
 	}
 }

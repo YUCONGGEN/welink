@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 
-/** Native light meeting UI matching the WeLink / QQ white, gray and blue palette. */
+/** Native light meeting UI matching the LinkMe / QQ white, gray and blue palette. */
 final class ConferenceUi {
     private MicrophoneMeter microphoneMeter;
     void setMicrophoneLevel(float value){if(microphoneMeter!=null)microphoneMeter.setLevel(value);}
@@ -70,7 +70,7 @@ final class ConferenceUi {
         root.addView(grid,new FrameLayout.LayoutParams(-1,-1));
 
         LinearLayout top=row();top.setPadding(dp(18),dp(8),dp(12),dp(8));top.setBackground(fade(0xffffffff,0xffffffff));
-        LinearLayout heading=column();TextView title=text(callMode.isEmpty()?"WeLink 会议":peerName,15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(callMode.isEmpty()?code.replaceAll("(\\d{3})(?=\\d)","$1 "):"video".equals(callMode)?"WeLink 视频通话":"WeLink 语音通话",12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));if(callMode.isEmpty()){roomNumber.setTextColor(0xff0099ff);roomNumber.setContentDescription("复制邀请链接和会议号");roomNumber.setOnClickListener(v->actions.copyInvitation());heading.setOnClickListener(v->actions.copyInvitation());heading.setContentDescription("复制邀请链接和会议号");}top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
+        LinearLayout heading=column();TextView title=text(callMode.isEmpty()?"LinkMe 会议":peerName,15,0xff22262b);title.setTypeface(Typeface.DEFAULT_BOLD);heading.addView(title,new LinearLayout.LayoutParams(-1,dp(22)));TextView roomNumber=text(callMode.isEmpty()?code.replaceAll("(\\d{3})(?=\\d)","$1 "):"video".equals(callMode)?"LinkMe 视频通话":"LinkMe 语音通话",12,0xff8995a4);heading.addView(roomNumber,new LinearLayout.LayoutParams(-1,dp(20)));if(callMode.isEmpty()){roomNumber.setTextColor(0xff0099ff);roomNumber.setContentDescription("复制邀请链接和会议号");roomNumber.setOnClickListener(v->actions.copyInvitation());heading.setOnClickListener(v->actions.copyInvitation());heading.setContentDescription("复制邀请链接和会议号");}top.addView(heading,new LinearLayout.LayoutParams(0,dp(42),1));
         recordingBadge=text("● 录制中",12,0xffff7272);recordingBadge.setVisibility(View.GONE);recordingBadge.setPadding(dp(10),0,dp(10),0);top.addView(recordingBadge,new LinearLayout.LayoutParams(-2,dp(42)));
         connection=text("正在连接…",12,0xff8995a4);connection.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);top.addView(connection,new LinearLayout.LayoutParams(-2,dp(42)));
         FrameLayout.LayoutParams topParams=new FrameLayout.LayoutParams(-1,dp(58),Gravity.TOP);root.addView(top,topParams);

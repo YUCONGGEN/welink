@@ -245,7 +245,16 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/downloads/") && s.downloads != "" {
 		name := strings.TrimPrefix(r.URL.Path, "/downloads/")
-		if name != "WeLink-Windows.exe" && name != "WeLink-Android.apk" && name != "SHA256SUMS.txt" && name != "WeLink-Setup.exe" {
+		// New public filenames serve the same versioned binaries as existing links.
+		switch name {
+		case "LinkMe-Windows.exe":
+			name = "WeLink-Windows.exe"
+		case "LinkMe-Setup.exe":
+			name = "WeLink-Setup.exe"
+		case "LinkMe-Android.apk":
+			name = "WeLink-Android.apk"
+		}
+		if name != "LinkMe-Windows.exe" && name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" && name != "WeLink-Windows.exe" && name != "WeLink-Android.apk" && name != "WeLink-Setup.exe" {
 			http.NotFound(w, r)
 			return
 		}
@@ -256,7 +265,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "WeLink · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB}); err != nil {
+	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "LinkMe · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB}); err != nil {
 		s.logger.Printf("render download page: %v", err)
 	}
 }

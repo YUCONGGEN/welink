@@ -30,6 +30,7 @@ func main() {
 	bootstrapPasswordFile := flag.String("bootstrap-admin-password-file", "", "private file containing the initial administrator password")
 	bootstrapAlias := flag.String("bootstrap-admin-account", "", "initial administrator login alias")
 	bootstrapName := flag.String("bootstrap-admin-name", "", "initialize the first account in an empty database")
+	bootstrapEmail := flag.String("bootstrap-admin-email", "", "verified email for an initial email-authenticated administrator")
 	bootstrapOutput := flag.String("bootstrap-admin-output", "", "private file for initial credentials")
 	addr := flag.String("listen", ":8250", "API listen address")
 	data := flag.String("data", "data", "database and uploads directory")
@@ -57,7 +58,7 @@ func main() {
 	})
 	*addr, *web, *data, *downloads = settings.Listen, settings.DownloadListen, settings.DataDir, settings.DownloadsDir
 	if *bootstrapName != "" {
-		id, err := server.BootstrapAdmin(settings, *bootstrapName, *bootstrapAlias, *bootstrapPasswordFile, *bootstrapOutput)
+		id, err := server.BootstrapAdmin(settings, *bootstrapName, *bootstrapAlias, *bootstrapPasswordFile, *bootstrapOutput, *bootstrapEmail)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -106,7 +107,7 @@ func main() {
 			_ = downloadServer.Shutdown(c)
 		}
 	}()
-	log.Printf("WeLink 0.1.0 listening on %s", *addr)
+	log.Printf("LinkMe 0.1.15 listening on %s", *addr)
 	if *cert != "" && *key != "" {
 		e = srv.ListenAndServeTLS(*cert, *key)
 	} else {
@@ -135,7 +136,7 @@ func generateTLS(dir string) error {
 	if e != nil {
 		return e
 	}
-	template := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "WeLink Server"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{net.ParseIP("223.166.147.252"), net.ParseIP("127.0.0.1")}, DNSNames: []string{"localhost"}}
+	template := x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "LinkMe Server"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(5, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, IPAddresses: []net.IP{net.ParseIP("223.166.147.252"), net.ParseIP("127.0.0.1")}, DNSNames: []string{"localhost"}}
 	der, e := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if e != nil {
 		return e

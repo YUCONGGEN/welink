@@ -261,8 +261,17 @@ func TestAuthenticateDirectLifetimeWrapAndSilentTether(t *testing.T) {
 	// local writes cannot mask lack of authenticated inbound management traffic.
 	viewerBase.drop.Store(true)
 	agentBase.drop.Store(true)
-	await(t, session.closed)
-	if _, err := pc.Conn.Read(make([]byte, 1)); !errors.Is(err, ErrRelayLost) {
-		t.Fatalf("silent tether not terminal: %v", err)
+	// Either tether deadline can expire first. That endpoint closes SCTP,
+	// so its peer may observe direct loss before its own tether timeout.
+	// Both endpoints must retire the session and reject all further I/O;
+	// the local error cannot identify which remote worker closed it first.
+	for i, retired := range []*sessionConn{session, peer.c.Conn.(*sessionConn)} {
+		await(t, retired.closed)
+		if n, err := retired.Read(make([]byte, 1)); n != 0 || (!errors.Is(err, ErrRelayLost) && !errors.Is(err, ErrDirectLost)) {
+			t.Fatalf("silent tether endpoint %d still readable: n=%d err=%v", i, n, err)
+		}
+		if n, err := retired.Write([]byte("must not replay")); n != 0 || (!errors.Is(err, ErrRelayLost) && !errors.Is(err, ErrDirectLost)) {
+			t.Fatalf("silent tether endpoint %d still writable: n=%d err=%v", i, n, err)
+		}
 	}
 }

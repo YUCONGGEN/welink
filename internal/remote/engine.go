@@ -55,6 +55,7 @@ type Engine struct {
 	conn                      *protocol.Conn
 	frame                     []byte
 	inputs                    chan string
+	performance               Performance
 	mobile                    bool
 	sharing                   bool
 	sourceWidth, sourceHeight int
@@ -80,6 +81,10 @@ func New(dir string, mobile bool) (*Engine, error) {
 		return nil, errors.New("invalid local identity")
 	}
 	e := &Engine{key: key, mobile: mobile, inputs: make(chan string, 64), held: map[string]desktop.InputEvent{}}
+	e.performance, err = loadPerformance(dir)
+	if err != nil {
+		return nil, err
+	}
 	e.state = State{DeviceID: secureconn.DeviceID(e.key.Public().(ed25519.PublicKey)), Status: "idle"}
 	return e, nil
 }
@@ -211,13 +216,14 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 	if inv.Host == user {
 		role = "agent"
 	}
-	pc, info, err := peerpath.Negotiate(ctx, base, role, nil, peerpath.Options{STUNURLs: []string{"stun:www.yucg.cn:8233"}, Timeout: 3 * time.Second})
+	pc, info, err := negotiateTransport(ctx, base, role, peerpath.Options{STUNURLs: e.performance.STUNURLs, Timeout: time.Duration(e.performance.DirectTimeoutMS) * time.Millisecond, PortMapping: e.performance.PortMapping})
 	if err != nil {
 		finalErr = err
 		return
 	}
 	defer pc.Close()
 	pc.EnableInterleaving()
+	pc.SetBulkRate(e.performance.MaxMbps * 1000000 / 8)
 	e.mu.Lock()
 	e.conn = pc
 	e.state.Status = "connected"
@@ -312,14 +318,17 @@ func (e *Engine) ping(ctx context.Context, pc *protocol.Conn) {
 	}
 }
 func (e *Engine) capture(ctx context.Context, pc *protocol.Conn) {
-	t := time.NewTicker(time.Second / 15)
+	controller := e.performance.controller()
+	budget := e.performance.interval()
+	t := time.NewTicker(budget)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			shot, err := desktop.CaptureWithOptions(desktop.CaptureOptions{Quality: 72, MaxWidth: 1280})
+			started := time.Now()
+			shot, err := desktop.CaptureWithOptions(desktop.CaptureOptions{Quality: controller.Quality, MaxWidth: controller.Width})
 			if err != nil {
 				e.mu.Lock()
 				e.state.Error = err.Error()
@@ -338,7 +347,10 @@ func (e *Engine) capture(ctx context.Context, pc *protocol.Conn) {
 			e.state.Width = shot.Width
 			e.state.Height = shot.Height
 			e.state.Frame++
+			rtt := e.state.RTT
 			e.mu.Unlock()
+			controller.Ack(time.Duration(rtt) * time.Millisecond)
+			controller.Update(time.Now(), time.Since(started), budget, shot.SourceWidth)
 		}
 	}
 }

@@ -41,7 +41,7 @@ func (s *Server) createQRLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Device = strings.TrimSpace(input.Device)
 	if input.Device == "" {
-		input.Device = "WeLink Windows 客户端"
+		input.Device = "LinkMe Windows 客户端"
 	}
 	if !validText(input.Device, 60) {
 		fail(w, 400, "设备名称过长")

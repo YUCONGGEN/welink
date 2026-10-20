@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
+	"welink/internal/yudesk/mediabudget"
 )
 
 const (
@@ -33,15 +34,18 @@ type Message struct {
 
 type Conn struct {
 	net.Conn
-	reader          *bufio.Reader
-	write           priorityGate
-	bulk            chan struct{}
-	interleave      atomic.Bool
-	acceptFragments atomic.Bool
-	bulkRate        atomic.Int64
-	bulkNext        time.Time       // protected by bulk gate
-	packetBuf       []byte          // protected by write gate, never shared between connections
-	partial         *partialMessage // owned by the single ReadMessage caller
+	reader                         *bufio.Reader
+	write                          priorityGate
+	bulk                           chan struct{}
+	interleave                     atomic.Bool
+	acceptFragments                atomic.Bool
+	bulkRate                       atomic.Int64
+	bulkNext                       time.Time       // protected by bulk gate
+	packetBuf                      []byte          // protected by write gate, never shared between connections
+	partial                        *partialMessage // owned by the single ReadMessage caller
+	lanes                          atomic.Pointer[messageLanes]
+	audioEvents                    atomic.Pointer[audioEventConsumer]
+	readDataLimit, readHeaderLimit uint32 // fixed before lane pumps start
 }
 
 func NewConn(c net.Conn) *Conn {
@@ -49,6 +53,13 @@ func NewConn(c net.Conn) *Conn {
 }
 
 func (c *Conn) ReadMessage() (Message, error) {
+	if lanes := c.lanes.Load(); lanes != nil {
+		return lanes.read()
+	}
+	return c.readMessage()
+}
+
+func (c *Conn) readMessage() (Message, error) {
 	for {
 		message, complete, err := c.readPacket()
 		if err != nil {
@@ -78,6 +89,9 @@ func (c *Conn) readPacket() (Message, bool, error) {
 	if headerSize == 0 || headerSize > MaxHeaderSize || dataSize > MaxDataSize {
 		return message, false, fmt.Errorf("invalid message sizes %d/%d", headerSize, dataSize)
 	}
+	if c.readDataLimit != 0 && dataSize > c.readDataLimit || c.readHeaderLimit != 0 && headerSize > c.readHeaderLimit {
+		return message, false, errors.New("session lane message exceeds limit")
+	}
 	header := make([]byte, headerSize)
 	if _, err := io.ReadFull(c.reader, header); err != nil {
 		return message, false, err
@@ -102,6 +116,15 @@ func (c *Conn) WriteMessage(message Message) error {
 // session. Once writing has begun, cancellation closes the connection because
 // a partially written encrypted record cannot safely be reused.
 func (c *Conn) WriteMessageContext(ctx context.Context, message Message) error {
+	if lanes := c.lanes.Load(); lanes != nil {
+		if lane := lanes.destination(message); lane != nil {
+			return lane.WriteMessageContext(ctx, message)
+		}
+	}
+	if messageLane(message) != 0 {
+		leave := mediabudget.InteractiveWorker()
+		defer leave()
+	}
 	data := message.Data
 	message.Data = nil
 	header, err := json.Marshal(message)

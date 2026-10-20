@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"welink/internal/emailaddress"
 )
 
 const adminSchema = `
@@ -116,7 +117,7 @@ func temporaryPassword() (string, error) {
 
 // Bootstrap is deliberately limited to an empty database and writes credentials
 // to a private file, never stdout or the public configuration.
-func BootstrapAdmin(settings Settings, name, alias, passwordFile, output string) (string, error) {
+func BootstrapAdmin(settings Settings, name, alias, passwordFile, output string, email ...string) (string, error) {
 	if output == "" {
 		return "", errors.New("bootstrap credential output is required")
 	}
@@ -143,6 +144,22 @@ func BootstrapAdmin(settings Settings, name, alias, passwordFile, output string)
 	if count != 0 {
 		return "", errors.New("bootstrap requires an empty database; configure an existing immutable user ID instead")
 	}
+	adminEmail := ""
+	if len(email) > 0 {
+		adminEmail = strings.TrimSpace(email[0])
+	}
+	if settings.EmailAuth.Enabled && adminEmail == "" {
+		return "", errors.New("email is required when bootstrapping an email-authenticated administrator")
+	}
+	if adminEmail != "" {
+		adminEmail, err = emailaddress.Normalize(adminEmail)
+		if err != nil {
+			return "", errors.New("invalid bootstrap administrator email")
+		}
+		if _, err = db.Exec(emailSchema); err != nil {
+			return "", err
+		}
+	}
 	password, err := temporaryPassword()
 	if err != nil {
 		return "", err
@@ -154,7 +171,12 @@ func BootstrapAdmin(settings Settings, name, alias, passwordFile, output string)
 		}
 		password = strings.TrimRight(string(raw), "\r\n")
 	}
-	u, err := createAccountInDB(db, name, alias, password, true, func(_ *sql.Tx, user User) error {
+	u, err := createAccountInDB(db, name, alias, password, true, func(tx *sql.Tx, user User) error {
+		if adminEmail != "" {
+			if _, e := tx.Exec("INSERT INTO user_emails(user_id,email,verified) VALUES(?,?,1)", user.ID, adminEmail); e != nil {
+				return e
+			}
+		}
 		if e := json.NewEncoder(f).Encode(map[string]string{"userId": user.ID, "number": user.Number, "name": user.Name, "account": user.Account, "password": password, "server": settings.PublicURL}); e != nil {
 			return e
 		}
@@ -199,6 +221,10 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 	ok(w, out)
 }
 func (s *Server) adminCreateUser(w http.ResponseWriter, r *http.Request) {
+	if s.settings.EmailAuth.Enabled {
+		s.createEmailUser(w, r, true)
+		return
+	}
 	if !s.adminOnly(w, r) {
 		return
 	}
@@ -243,6 +269,10 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := r.PathValue("id")
+	if s.isAI(target) {
+		fail(w, 409, "请在配置文件中停用 Me 助手")
+		return
+	}
 	if target == uid(r) || s.isAdmin(target) {
 		fail(w, 409, "不能在此删除管理员账号")
 		return
@@ -275,7 +305,7 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.ConfirmNumber != number {
-		fail(w, 400, "请输入被删除账号的 WeLink 号码确认")
+		fail(w, 400, "请输入被删除账号的 LinkMe 号码确认")
 		return
 	}
 	keys := map[string]bool{}

@@ -1,7 +1,7 @@
 package server
 
-// YuDesk has no WeLink password or general-purpose session. Only the trusted
-// YuDesk server can act on a verified phone, and only with configured staff. Email identities use a separate namespace.
+// Only the authenticated YuDesk server can provision verified identities or
+// synchronize password verifiers. Clients receive no general LinkMe session.
 import (
 	"bytes"
 	"context"
@@ -19,19 +19,23 @@ import (
 	"strings"
 )
 
-const yudeskSchema = `CREATE TABLE IF NOT EXISTS yudesk_identities(phone TEXT PRIMARY KEY,user_id TEXT UNIQUE NOT NULL REFERENCES users(id));`
+const yudeskSchema = `CREATE TABLE IF NOT EXISTS yudesk_identities(phone TEXT PRIMARY KEY,user_id TEXT UNIQUE NOT NULL REFERENCES users(id));CREATE TABLE IF NOT EXISTS yudesk_credential_versions(user_id TEXT PRIMARY KEY REFERENCES users(id),revision INTEGER NOT NULL);`
 
 var yudeskPhone = regexp.MustCompile(`^1[3-9][0-9]{9}$`)
 var yudeskNumber = regexp.MustCompile(`^[1-9][0-9]{5}$`)
 
 type yudeskSupportRequest struct {
-	Phone    string   `json:"phone"`
-	Email    string   `json:"email"`
-	Staff    []string `json:"staff"`
-	Action   string   `json:"action"`
-	Peer     string   `json:"peer"`
-	Text     string   `json:"text"`
-	ClientID string   `json:"clientId"`
+	Phone        string   `json:"phone"`
+	Email        string   `json:"email"`
+	Staff        []string `json:"staff"`
+	Action       string   `json:"action"`
+	Peer         string   `json:"peer"`
+	Text         string   `json:"text"`
+	ClientID     string   `json:"clientId"`
+	AttachmentID string   `json:"attachmentId"`
+	MessageID    string   `json:"messageId"`
+	Credential   string   `json:"credential"`
+	Revision     int64    `json:"revision"`
 }
 
 func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
@@ -61,9 +65,15 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 			p.Phone = "email:" + email
 		}
 	}
-	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send") {
+	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send" && p.Action != "account-sync" && p.Action != "image" && p.Action != "read") {
 		fail(w, 400, "客服请求无效")
 		return
+	}
+	if p.Action == "account-sync" {
+		if _, _, ok := yudeskVerifier(p.Credential); !ok || p.Revision < 1 {
+			fail(w, 400, "账号同步数据无效")
+			return
+		}
 	}
 	// Validate the whole list before provisioning an account or adding contacts.
 	staff := []User{}
@@ -78,7 +88,7 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[number] = true
 		var id string
-		err := s.db.QueryRow(`SELECT n.user_id FROM user_numbers n WHERE n.number=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=n.user_id) AND NOT EXISTS(SELECT 1 FROM yudesk_identities y WHERE y.user_id=n.user_id)`, number).Scan(&id)
+		err := s.db.QueryRow(`SELECT n.user_id FROM user_numbers n WHERE n.number=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=n.user_id)`, number).Scan(&id)
 		if err != nil {
 			fail(w, 400, "客服账号不存在或不可用")
 			return
@@ -95,7 +105,7 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var peer User
-	if p.Action != "bootstrap" {
+	if p.Action != "bootstrap" && p.Action != "account-sync" {
 		for _, u := range staff {
 			if u.Number == p.Peer {
 				peer = u
@@ -111,13 +121,33 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "忙碌中")
 		return
 	}
+	if p.Action == "account-sync" {
+		s.yudeskSyncCredential(w, r, id, p.Credential, p.Revision)
+		return
+	}
 	if p.Action == "bootstrap" {
 		// Return only support identity/contact information, never a login token.
 		contacts := []map[string]any{}
 		for _, u := range staff {
-			contacts = append(contacts, map[string]any{"number": u.Number, "name": u.Name, "online": u.Online})
+			var unread int
+			cid, e := s.yudeskConversation(id, u.ID)
+			if e != nil {
+				fail(w, 503, "忙碌中")
+				return
+			}
+			if e = s.db.QueryRow(`SELECT COUNT(*) FROM messages m JOIN members x ON x.conversation_id=m.conversation_id AND x.user_id=? WHERE m.conversation_id=? AND m.seq>x.read_seq AND m.sender<>? AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=m.id AND d.user_id=?)`, id, cid, id, id).Scan(&unread); e != nil {
+				s.dbError(w, e)
+				return
+			}
+			contacts = append(contacts, map[string]any{"number": u.Number, "name": u.Name, "online": u.Online, "unread": unread})
 		}
-		ok(w, map[string]any{"ok": true, "userId": id, "origin": "来自 YuDesk", "staff": contacts})
+		var revision int64
+		e := s.db.QueryRow(`SELECT revision FROM yudesk_credential_versions WHERE user_id=?`, id).Scan(&revision)
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			s.dbError(w, e)
+			return
+		}
+		ok(w, map[string]any{"ok": true, "userId": id, "origin": "来自 YuDesk", "staff": contacts, "credentialRevision": revision})
 		return
 	}
 	if !contactAllowed(s.db, id, peer.ID) {
@@ -127,6 +157,23 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 	cid, err := s.yudeskConversation(id, peer.ID)
 	if err != nil {
 		s.dbError(w, err)
+		return
+	}
+	if p.Action == "read" {
+		var seq int64
+		if s.db.QueryRow(`SELECT seq FROM messages WHERE id=? AND conversation_id=? AND NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=messages.id AND d.user_id=?)`, p.MessageID, cid, id).Scan(&seq) != nil {
+			fail(w, 404, "消息不存在")
+			return
+		}
+		if _, err = s.db.Exec(`UPDATE members SET read_seq=MAX(read_seq,?) WHERE conversation_id=? AND user_id=?`, seq, cid, id); err != nil {
+			s.dbError(w, err)
+			return
+		}
+		ok(w, map[string]bool{"ok": true})
+		return
+	}
+	if p.Action == "image" {
+		s.yudeskSupportImage(w, r, id, cid, p.AttachmentID)
 		return
 	}
 	child := r.Clone(context.WithValue(r.Context(), userKey{}, id))
@@ -173,26 +220,39 @@ func (s *Server) yudeskIdentity(phone string, staff []User) (string, error) {
 	var id string
 	err = tx.QueryRow("SELECT user_id FROM yudesk_identities WHERE phone=?", phone).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		id = newID()
-		// An unrelated editable WeLink profile with the same phone is never claimed.
-		// Invalid bcrypt bytes intentionally disable password login for bridge users.
-		label, profilePhone := phone[:3]+"****"+phone[7:], phone
 		if strings.HasPrefix(phone, "email:") {
-			email := strings.TrimPrefix(phone, "email:")
-			parts := strings.SplitN(email, "@", 2)
-			label, profilePhone = parts[0][:1]+"***@"+parts[1], ""
+			err = tx.QueryRow(`SELECT e.user_id FROM user_emails e WHERE e.email=? AND e.verified>0 AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=e.user_id)`, strings.TrimPrefix(phone, "email:")).Scan(&id)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return "", err
+			}
 		}
-		_, err = tx.Exec("INSERT INTO users(id,account,name,password,avatar,bio,created) VALUES(?,?,?,?,?,?,?)", id, "yd_"+id[:20], label+" · 来自YuDesk", []byte("external:yudesk"), defaultCartoonAvatar(id), "来自 YuDesk", now())
-		if err != nil {
-			return "", err
-		}
-		if err = assignNumber(tx, id); err != nil {
-			return "", err
+		if id == "" {
+			id = newID()
+			// An unrelated editable LinkMe profile with the same phone is never claimed.
+			// Invalid bcrypt bytes intentionally disable password login for bridge users.
+			label, profilePhone := phone[:3]+"****"+phone[7:], phone
+			if strings.HasPrefix(phone, "email:") {
+				email := strings.TrimPrefix(phone, "email:")
+				parts := strings.SplitN(email, "@", 2)
+				label, profilePhone = parts[0][:1]+"***@"+parts[1], ""
+			}
+			_, err = tx.Exec("INSERT INTO users(id,account,name,password,avatar,bio,created) VALUES(?,?,?,?,?,?,?)", id, "yd_"+id[:20], label+" · 来自YuDesk", []byte("external:yudesk"), defaultCartoonAvatar(id), "来自 YuDesk", now())
+			if err != nil {
+				return "", err
+			}
+			if err = assignNumber(tx, id); err != nil {
+				return "", err
+			}
+			if strings.HasPrefix(phone, "email:") {
+				if _, err = tx.Exec(`INSERT INTO user_emails(user_id,email,verified) VALUES(?,?,?)`, id, strings.TrimPrefix(phone, "email:"), now()); err != nil {
+					return "", err
+				}
+			}
+			if _, err = tx.Exec("INSERT INTO user_profile_details(user_id,phone) VALUES(?,?)", id, profilePhone); err != nil {
+				return "", err
+			}
 		}
 		if _, err = tx.Exec("INSERT INTO yudesk_identities VALUES(?,?)", phone, id); err != nil {
-			return "", err
-		}
-		if _, err = tx.Exec("INSERT INTO user_profile_details(user_id,phone) VALUES(?,?)", id, profilePhone); err != nil {
 			return "", err
 		}
 	} else if err != nil {

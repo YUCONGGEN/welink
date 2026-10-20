@@ -28,7 +28,7 @@ final class IcePathController {
     IcePathController(PeerConnection pc,String policy,Handler main,BooleanSupplier alive,Runnable changed,Runnable negotiate){
         this.pc=pc;this.policy=policy;this.main=main;this.alive=alive;this.changed=changed;this.negotiate=negotiate;
         hasRelay=configuration(policy,true).iceServers.size()>configuration(policy,false).iceServers.size();
-        int timeout=8000;try{timeout=new JSONObject(policy).optInt("directTimeoutMs",8000);}catch(Exception ignored){}
+        int timeout=15000;try{timeout=new JSONObject(policy).optInt("directTimeoutMs",15000);}catch(Exception ignored){}
         main.postDelayed(deadline,Math.max(1000,Math.min(30000,timeout)));main.post(statistics);
     }
     static PeerConnection.RTCConfiguration configuration(String raw,boolean relay){
@@ -42,12 +42,14 @@ final class IcePathController {
                 List<String> allowed=new ArrayList<>();for(int j=0;j<list.length()&&j<8;j++){String url=list.optString(j);if(url.length()<=256&&!url.matches(".*[\\r\\n\\t ].*")&&(url.startsWith("stun:")||(relay&&(url.startsWith("turn:")||url.startsWith("turns:")))))allowed.add(url);}
                 if(!allowed.isEmpty()){PeerConnection.IceServer.Builder builder=PeerConnection.IceServer.builder(allowed);if(object!=null)builder.setUsername(object.optString("username","")).setPassword(object.optString("credential",""));servers.add(builder.createIceServer());}
             }
-        }catch(Exception failure){android.util.Log.w("WeLink","Invalid ICE configuration");}
+        }catch(Exception failure){android.util.Log.w("LinkMe","Invalid ICE configuration");}
         PeerConnection.RTCConfiguration config=new PeerConnection.RTCConfiguration(servers);
         config.bundlePolicy=PeerConnection.BundlePolicy.MAXBUNDLE;config.continualGatheringPolicy=PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;config.iceTransportsType=PeerConnection.IceTransportsType.ALL;
         return config;
     }
-    String path(){return path;}
+    private int rtt=-1;private long available;
+ int rttMs(){return rtt;}long availableOutgoingBitrate(){return available;}
+ String path(){return path;}
     private boolean valid(){return !closed&&alive.getAsBoolean();}
     private boolean connected(){PeerConnection.IceConnectionState state=pc.iceConnectionState();return state==PeerConnection.IceConnectionState.CONNECTED||state==PeerConnection.IceConnectionState.COMPLETED;}
     private void path(String value){if(!path.equals(value)){path=value;changed.run();}}
@@ -71,7 +73,7 @@ final class IcePathController {
             if(!valid())return;Map<String,RTCStats> stats=report.getStatsMap();RTCStats pair=null;
             for(RTCStats value:stats.values())if("transport".equals(value.getType())){Object id=value.getMembers().get("selectedCandidatePairId");if(id!=null)pair=stats.get(id.toString());}
             if(pair==null)for(RTCStats value:stats.values())if("candidate-pair".equals(value.getType())&&"succeeded".equals(value.getMembers().get("state"))&&Boolean.TRUE.equals(value.getMembers().get("nominated"))){pair=value;break;}
-            if(pair==null)return;RTCStats local=stats.get(String.valueOf(pair.getMembers().get("localCandidateId"))),remote=stats.get(String.valueOf(pair.getMembers().get("remoteCandidateId")));
+            if(pair==null)return;Object delay=pair.getMembers().get("currentRoundTripTime"),capacity=pair.getMembers().get("availableOutgoingBitrate");rtt=delay instanceof Number?(int)Math.round(((Number)delay).doubleValue()*1000):-1;available=capacity instanceof Number?((Number)capacity).longValue():0;changed.run();RTCStats local=stats.get(String.valueOf(pair.getMembers().get("localCandidateId"))),remote=stats.get(String.valueOf(pair.getMembers().get("remoteCandidateId")));
             boolean viaRelay=local!=null&&"relay".equals(local.getMembers().get("candidateType"))||remote!=null&&"relay".equals(remote.getMembers().get("candidateType"));path(viaRelay?"中转连接":"P2P 直连");
         }));}catch(RuntimeException ignored){}
     }

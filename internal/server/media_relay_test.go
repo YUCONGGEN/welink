@@ -39,7 +39,7 @@ func TestMediaRelayAuthenticationDataAndRevocation(t *testing.T) {
 	f.request("GET", "/api/rtc-config", "", nil, 401, nil)
 	var policy rtcPolicy
 	f.request("GET", "/api/rtc-config", a.Token, nil, 200, &policy)
-	if !policy.RelayEnabled || len(policy.ICEServers) != 2 || policy.DirectTimeoutMS != 8000 {
+	if !policy.RelayEnabled || len(policy.ICEServers) != 2 || policy.DirectTimeoutMS != 15000 {
 		t.Fatal("missing relay policy")
 	}
 	credential := policy.ICEServers[1]

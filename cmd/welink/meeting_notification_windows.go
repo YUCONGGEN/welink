@@ -3,12 +3,14 @@
 package main
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
+	"welink/internal/client"
 )
 
 type meetingNotice struct {
@@ -16,6 +18,7 @@ type meetingNotice struct {
 	host    *windowsHost
 	code    string
 	created int64
+	message *client.Notification
 }
 
 var meetingNotices sync.Map
@@ -38,7 +41,12 @@ var noticeCallback = syscall.NewCallback(func(hwnd, msg, wp, lp uintptr) uintptr
 		switch msg {
 		case 0x111: // WM_COMMAND from Enter / Dismiss buttons.
 			if wp&0xffff == 101 {
-				if saveMeetingInvite(n.host.desktop.directory, n.code) == nil {
+				if n.message != nil {
+					raw, _ := json.Marshal(n.message)
+					n.host.desktop.pendingMessage = string(raw)
+					n.host.showWindow()
+					n.host.view.Eval(`window.dispatchEvent(new CustomEvent('welink-open-message'))`)
+				} else if saveMeetingInvite(n.host.desktop.directory, n.code) == nil {
 					n.host.showWindow()
 					n.host.view.Eval(`window.dispatchEvent(new CustomEvent('welink-open-meeting'))`)
 				}
@@ -80,6 +88,15 @@ func (h *windowsHost) closeMeetingNotices() {
 		return true
 	})
 }
+func (h *windowsHost) closeMessageNotices() {
+	meetingNotices.Range(func(key, value any) bool {
+		n := value.(*meetingNotice)
+		if n.host == h && n.message != nil {
+			destroyMeetingNotice(key.(uintptr))
+		}
+		return true
+	})
+}
 func (h *windowsHost) layoutMeetingNotices() {
 	var notices []*meetingNotice
 	meetingNotices.Range(func(_, v any) bool {
@@ -103,7 +120,10 @@ func (h *windowsHost) layoutMeetingNotices() {
 }
 
 func (h *windowsHost) showMeetingNotice(code, title string, expires int64) bool {
-	if !meetingCodePattern.MatchString(code) || expires <= time.Now().UnixMilli() || h.desktop.closing {
+	return h.showNotice(code, title, expires, nil)
+}
+func (h *windowsHost) showNotice(code, title string, expires int64, message *client.Notification) bool {
+	if (message == nil && !meetingCodePattern.MatchString(code)) || expires <= time.Now().UnixMilli() || h.desktop.closing {
 		return false
 	}
 	if len([]rune(title)) > 60 {
@@ -123,7 +143,11 @@ func (h *windowsHost) showMeetingNotice(code, title string, expires int64) bool 
 	meetingNotices.Range(func(_, value any) bool {
 		n := value.(*meetingNotice)
 		if n.host == h {
-			if n.code == code {
+			if message != nil && n.message != nil && n.message.ConversationID == message.ConversationID {
+				destroyMeetingNotice(n.window)
+				return true
+			}
+			if message == nil && n.message == nil && n.code == code {
 				duplicate = true
 			}
 			count++
@@ -152,12 +176,16 @@ func (h *windowsHost) showMeetingNotice(code, title string, expires int64) bool 
 	w, hgt := scale(360), scale(166)
 	x := uintptr(area.Right) - w - scale(16)
 	y := uintptr(area.Bottom) - hgt - scale(16) - uintptr(count)*(hgt+scale(10))
-	label, _ := syscall.UTF16PtrFromString("WeLink 会议邀请")
+	caption := "LinkMe 会议邀请"
+	if message != nil {
+		caption = "LinkMe 新消息"
+	}
+	label, _ := syscall.UTF16PtrFromString(caption)
 	hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(0x08000088, uintptr(unsafe.Pointer(noticeClassName)), uintptr(unsafe.Pointer(label)), 0x80800000, x, y, w, hgt, 0, 0, module, 0)
 	if hwnd == 0 {
 		return false
 	}
-	n := &meetingNotice{window: hwnd, host: h, code: code, created: time.Now().UnixNano()}
+	n := &meetingNotice{window: hwnd, host: h, code: code, created: time.Now().UnixNano(), message: message}
 	meetingNotices.Store(hwnd, n)
 	child := func(class, text string, id uintptr, left, top, width, height int32, style uintptr) {
 		c, _ := syscall.UTF16PtrFromString(class)
@@ -166,15 +194,23 @@ func (h *windowsHost) showMeetingNotice(code, title string, expires int64) bool 
 		font, _, _ := syscall.NewLazyDLL("gdi32.dll").NewProc("GetStockObject").Call(17)
 		user32.NewProc("SendMessageW").Call(v, 0x30, font, 1)
 	}
-	child("STATIC", "WeLink · 会议邀请", 0, 18, 14, 320, 23, 0)
-	child("STATIC", title, 0, 18, 43, 320, 23, 0x0c)
-	child("STATIC", "会议号 "+code[:3]+" "+code[3:6]+" "+code[6:], 0, 18, 72, 320, 22, 0)
-	child("BUTTON", "进入会议", 101, 216, 111, 122, 34, 0x10000)
+	if message != nil {
+		child("STATIC", "LinkMe · "+title, 0, 18, 14, 320, 23, 0x80)
+		child("STATIC", message.Body, 0, 18, 44, 320, 57, 0x80)
+		child("BUTTON", "查看消息", 101, 216, 111, 122, 34, 0x10000)
+	} else {
+		child("STATIC", "LinkMe · 会议邀请", 0, 18, 14, 320, 23, 0)
+		child("STATIC", title, 0, 18, 43, 320, 23, 0x0c)
+		child("STATIC", "会议号 "+code[:3]+" "+code[3:6]+" "+code[6:], 0, 18, 72, 320, 22, 0)
+		child("BUTTON", "进入会议", 101, 216, 111, 122, 34, 0x10000)
+	}
 	child("BUTTON", "忽略", 102, 118, 111, 84, 34, 0x10000)
 	user32.NewProc("SetTimer").Call(hwnd, 1, uintptr(min(expires-time.Now().UnixMilli(), 7200000)), 0)
 	user32.NewProc("ShowWindow").Call(hwnd, 4)
 	user32.NewProc("SetWindowPos").Call(hwnd, ^uintptr(0), x, y, w, hgt, 0x10|0x40)
-	user32.NewProc("MessageBeep").Call(0x40)
+	if message == nil {
+		user32.NewProc("MessageBeep").Call(0x40)
+	}
 	h.layoutMeetingNotices()
 	return true
 }

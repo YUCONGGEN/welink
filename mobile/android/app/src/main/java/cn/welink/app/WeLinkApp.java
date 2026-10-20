@@ -8,9 +8,12 @@ import java.io.*;
 
 public final class WeLinkApp extends Application {
     private Engine engine;
+	private MessageNotifications messages;
+	@Override public void onCreate(){super.onCreate();messages=new MessageNotifications(this);}
+	MessageNotifications messages(){return messages;}
     volatile String notice="";
     volatile boolean sharing;
-    synchronized Engine engine() throws Exception { if(engine==null){installUiAssets();engine=Core.start(getFilesDir().getAbsolutePath());}return engine; }
+    synchronized Engine engine() throws Exception { if(engine==null){installUiAssets();engine=Core.start(getFilesDir().getAbsolutePath());engine.setNotificationListener(messages::receive);}return engine; }
     private void installUiAssets() throws IOException {
         UiAssets.install(new UiAssets.Source(){
             public String[] list(String path) throws IOException{return getAssets().list(path);}

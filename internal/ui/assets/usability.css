@@ -43,3 +43,23 @@
 /* Hide the registration scrollbar while keeping wheel, touch and focus scrolling. */
 .auth-shell.registering .auth-card{max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);overflow:auto;scrollbar-width:none;-ms-overflow-style:none}
 .auth-shell.registering .auth-card::-webkit-scrollbar{display:none;width:0;height:0}
+/* Email registration shares the existing light/dark palette and safe-area layout. */
+.email-code-row{display:flex;gap:8px;align-items:stretch;width:100%}
+.email-code-row input{flex:1;min-width:0;width:0}
+.email-code-row button{flex:none;padding:0 12px;min-height:44px;white-space:nowrap}
+.email-auth .auth-fields{gap:10px}
+.email-auth .register-avatars{margin-bottom:14px}
+.email-auth .auth-error{min-height:30px;height:auto;font-size:12px;line-height:1.5;margin:10px 0}
+.email-auth .auth-links{flex-wrap:wrap;row-gap:10px}
+@media(max-height:760px){.email-auth.registering .logo{margin-bottom:8px}.email-auth.registering .logo img{width:40px;height:40px}.email-auth.registering .logo b{font-size:32px}.email-auth.registering h2{margin:6px 0}.email-auth.registering .subtitle{margin:6px 0 12px}}
+/* Me uses the same light/dark surfaces as the conversation around it. */
+.me-avatar{display:inline-flex;align-items:center;justify-content:center;flex:none;background:linear-gradient(135deg,#17bcff,#7862ed);color:#fff;font:700 24px/1 system-ui;border-radius:15px;width:44px;height:44px}
+.ai-label{display:inline-flex;align-items:center;padding:2px 6px;border-radius:5px;background:rgba(117,97,234,.15);color:#9182ed;font:600 11px/1.5 system-ui;font-style:normal}
+#me-panel{padding:8px 20px;border-bottom:1px solid var(--border);font-size:12px;max-height:40vh;overflow:auto}
+.me-config,.me-progress{display:flex;align-items:center;gap:8px;min-height:25px}
+[data-me-workspace]{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.me-progress:has([data-me-status]:empty){display:none}
+.me-progress [data-me-status]{flex:1;color:var(--muted)}
+.me-approval{padding:12px;margin:8px 0;border:1px solid #8a79e8;border-radius:12px}
+.me-approval p{margin:6px 0}.me-approval pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;font-size:12px}
+.me-approval>div{display:flex;gap:8px}.me-approval button{min-height:36px;padding:7px 14px}.me-approval label{display:block;margin:8px 0}.me-approval textarea{width:100%;min-height:58px}

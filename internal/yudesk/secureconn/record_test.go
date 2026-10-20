@@ -296,6 +296,30 @@ func TestRecordRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestCoalescedAudioRecordsRetainAuthenticationWithoutExtraSocketReads(t *testing.T) {
+	key := bytes.Repeat([]byte{19}, 32)
+	aead := v1RecordAEAD(t, key)
+	first, second := []byte("audio-one"), []byte("audio-two")
+	good := append(v1SealRecord(aead, 0, first), v1SealRecord(aead, 1, second)...)
+	bad := v1SealRecord(aead, 2, []byte("unauthenticated"))
+	bad[len(bad)-1] ^= 1
+	wire := bytes.NewReader(append(good, bad...))
+	reads := 0
+	c := testRecordConn(t, &recordFuncConn{read: func(p []byte) (int, error) { reads++; return wire.Read(p) }}, key)
+	for _, expected := range [][]byte{first, second} {
+		got := make([]byte, len(expected))
+		if _, err := io.ReadFull(c, got); err != nil || !bytes.Equal(got, expected) {
+			t.Fatalf("record mismatch: %q, %v", got, err)
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("coalesced audio caused %d socket reads", reads)
+	}
+	if n, err := c.Read(make([]byte, 32)); n != 0 || err == nil {
+		t.Fatalf("read-ahead bypassed authentication: %d, %v", n, err)
+	}
+}
+
 func TestRecordReadBoundaryRetryAndEmptyRecord(t *testing.T) {
 	key := bytes.Repeat([]byte{17}, 32)
 	aead := v1RecordAEAD(t, key)

@@ -15,13 +15,15 @@ import (
 // Settings contains deployment and product policy. LoadSettings overlays a file
 // on documented defaults, so omitted fields stay compatible with upgrades.
 type Settings struct {
-	Listen         string        `json:"listen"`
-	DownloadListen string        `json:"download_listen"`
-	DataDir        string        `json:"data_dir"`
-	DownloadsDir   string        `json:"downloads_dir"`
-	Media          MediaSettings `json:"media"`
-	PublicURL      string        `json:"public_url"`
-	DownloadURL    string        `json:"download_url"`
+	Listen         string            `json:"listen"`
+	DownloadListen string            `json:"download_listen"`
+	DataDir        string            `json:"data_dir"`
+	DownloadsDir   string            `json:"downloads_dir"`
+	Media          MediaSettings     `json:"media"`
+	EmailAuth      EmailAuthSettings `json:"email_auth"`
+	AI             AISettings        `json:"ai"`
+	PublicURL      string            `json:"public_url"`
+	DownloadURL    string            `json:"download_url"`
 	Storage        struct {
 		PrimaryEnabled    bool            `json:"primary_enabled"`
 		Root              string          `json:"root"`
@@ -81,6 +83,7 @@ func DefaultSettings() Settings {
 	s.DownloadURL = "http://www.yucg.cn:8251"
 	s.Storage.PrimaryEnabled = true
 	s.Media = defaultMediaSettings()
+	s.AI = AISettings{Model: "gpt-6-luna", ReasoningEffort: "xhigh", ContextMessages: 80, ContextCharacters: 60000, ConcurrentRequests: 4}
 	s.Storage.ReserveBytes = 256 << 20
 	s.Storage.ConcurrentUploads = 4
 	s.Chat.PersistAttachmentBytes = 50 << 20
@@ -123,6 +126,12 @@ func LoadSettings(path string) (Settings, error) {
 	return s, s.Validate()
 }
 func (s Settings) Validate() error {
+	if s.AI.Enabled && (s.AI.CredentialsFile == "" || s.AI.Model == "" || s.AI.ReasoningEffort == "" || s.AI.ContextMessages < 2 || s.AI.ContextMessages > 200 || s.AI.ContextCharacters < 1000 || s.AI.ContextCharacters > 200000 || s.AI.ConcurrentRequests < 1 || s.AI.ConcurrentRequests > 32) {
+		return errors.New("invalid ai configuration")
+	}
+	if s.EmailAuth.Enabled && s.EmailAuth.CredentialsFile == "" {
+		return errors.New("email_auth.credentials_file is required when email authentication is enabled")
+	}
 	if s.Chat.ReceivedCacheMessages < 0 || s.Chat.ReceivedCacheBytes < 0 || s.Chat.ReceivedCacheDays < 1 || s.Chat.ReceivedCacheConversations < 1 {
 		return errors.New("invalid received message cache settings")
 	}

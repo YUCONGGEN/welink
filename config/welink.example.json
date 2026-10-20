@@ -41,7 +41,20 @@
     "users": []
   },
   "registration": {
-    "enabled": false
+    "enabled": true
+  },
+  "email_auth": {
+    "enabled": true,
+    "credentials_file": "/Users/yu/bin/welink/private/tencent-email.json"
+  },
+  "ai": {
+    "enabled": true,
+    "credentials_file": "/Users/yu/bin/welink/private/me-provider.json",
+    "model": "gpt-6-luna",
+    "reasoning_effort": "xhigh",
+    "context_messages": 80,
+    "context_characters": 60000,
+    "concurrent_requests": 4
   },
   "media": {
     "enabled": false,
@@ -54,7 +67,7 @@
     "secret_file": "/Users/yu/bin/welink/media-secret",
     "realm": "welink",
     "credential_seconds": 21600,
-    "direct_timeout_ms": 8000,
+    "direct_timeout_ms": 15000,
     "relay_min_port": 20000,
     "relay_max_port": 20127,
     "max_allocations_per_user": 32,

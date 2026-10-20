@@ -13,6 +13,18 @@ type Engine struct {
 	accessibility atomic.Bool
 }
 
+// NotificationListener is held by the Application, never by a WebView Activity.
+type NotificationListener interface{ OnNotification(string) }
+
+func (e *Engine) SetNotificationListener(listener NotificationListener) {
+	if listener == nil {
+		e.client.SetNotificationHandler(nil)
+		return
+	}
+	e.client.SetNotificationHandler(func(n client.Notification) { b, _ := json.Marshal(n); listener.OnNotification(string(b)) })
+}
+func (e *Engine) StopNotifications() { _ = e.client.SetNotificationSession("") }
+
 func Start(directory string) (*Engine, error) {
 	c, e := client.New(client.Options{Directory: directory, AssetsDirectory: filepath.Join(directory, "ui"), Listen: "127.0.0.1:18746", Mobile: true})
 	if e != nil {

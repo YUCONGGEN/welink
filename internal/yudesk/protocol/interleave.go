@@ -15,6 +15,30 @@ const (
 	fragmentHeaderSize        = 9 // flags, offset, total data length
 )
 
+// Limit one bulk scheduling unit to about 10 ms of the configured payload
+// budget. A fixed 8 KiB fragment alone occupies 33 ms at 2 Mbps, before any
+// priority audio or control message can pass it. Keep the negotiated receive
+// maximum and unlimited/fast-path size unchanged for older peers and CPU cost.
+// The floor bounds per-record overhead; headers, encryption, kernel buffering
+// and actual link speed mean this is not an end-to-end latency guarantee.
+func bulkFragmentPayload(rate int64) int {
+	if rate <= 0 {
+		return fragmentSize
+	}
+	return int(min(int64(fragmentSize), max(int64(512), rate/100)))
+}
+
+// Carry a slightly late wake into the next deadline instead of adding its
+// rounding error to every fragment. Never bank more than one scheduling unit:
+// after an idle period or a long blocked write, restart from the current time.
+func nextBulkDeadline(previous, sentAt time.Time, payload int, rate int64) time.Time {
+	interval := time.Duration(int64(payload) * int64(time.Second) / rate)
+	if previous.IsZero() || previous.Before(sentAt.Add(-interval)) {
+		return sentAt.Add(interval)
+	}
+	return previous.Add(interval)
+}
+
 type partialMessage struct {
 	message  Message
 	received int
@@ -66,7 +90,10 @@ func (c *Conn) writeFragments(ctx context.Context, header, data []byte) error {
 				return ctx.Err()
 			}
 		}
-		n := min(fragmentSize, len(data)-offset)
+		n := min(bulkFragmentPayload(rate), len(data)-offset)
+		if sizing, ok := c.Conn.(interface{ BulkPayload() int }); ok {
+			n = min(n, max(512, sizing.BulkPayload()))
+		}
 		h := make([]byte, fragmentHeaderSize)
 		if offset == 0 {
 			h[0] |= 1
@@ -77,6 +104,16 @@ func (c *Conn) writeFragments(ctx context.Context, header, data []byte) error {
 		}
 		binary.BigEndian.PutUint32(h[1:5], uint32(offset))
 		binary.BigEndian.PutUint32(h[5:9], uint32(len(data)))
+		if admission, ok := c.Conn.(interface {
+			WaitBulk(context.Context, int) error
+		}); ok {
+			if err := admission.WaitBulk(ctx, 8+len(h)+n); err != nil {
+				if started {
+					_ = c.Conn.Close()
+				}
+				return err
+			}
+		}
 		sentAt := time.Now()
 		if err := c.writePacket(ctx, h, data[offset:offset+n], true, false); err != nil {
 			// Once any fragment is sent, queued cancellation leaves an unfinished
@@ -88,7 +125,7 @@ func (c *Conn) writeFragments(ctx context.Context, header, data []byte) error {
 		}
 		started = true
 		if rate > 0 {
-			c.bulkNext = sentAt.Add(time.Duration(int64(n) * int64(time.Second) / rate))
+			c.bulkNext = nextBulkDeadline(c.bulkNext, sentAt, n, rate)
 		} else {
 			c.bulkNext = time.Time{}
 		}

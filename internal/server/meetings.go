@@ -1,7 +1,7 @@
 package server
 
 // Room signaling and host succession follow E:/yudesk/cmd/yudesk-relay/conference.go.
-// Authentication is adapted to WeLink sessions. WebRTC media stays on peer links.
+// Authentication is adapted to LinkMe sessions. WebRTC media stays on peer links.
 import (
 	"crypto/rand"
 	"encoding/json"

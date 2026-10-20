@@ -3,7 +3,7 @@
  if(!button)return;
  button.addEventListener('click',async()=>{
   const code=document.querySelector('[data-meeting-code]').getAttribute('data-meeting-code');
-  const text='邀请你加入 WeLink 会议\n会议号：'+code.slice(0,3)+' '+code.slice(3,6)+' '+code.slice(6)+'\n会议链接：'+location.origin+'/join/'+code;
+  const text='邀请你加入 LinkMe 会议\n会议号：'+code.slice(0,3)+' '+code.slice(3,6)+' '+code.slice(6)+'\n会议链接：'+location.origin+'/join/'+code;
   let copied=false;
   try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);copied=true}}catch{}
   if(!copied){

@@ -61,7 +61,7 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err = db.Exec(directorySchema + contactSchema + yudeskSchema); err != nil {
+	if _, err = db.Exec(directorySchema + contactSchema + yudeskSchema + emailSchema); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func assignNumber(tx *sql.Tx, id string) error {
 			return err
 		}
 		if number < 100001 || number > 999999 {
-			return groupFail(409, "六位 WeLink 号码已分配完毕")
+			return groupFail(409, "六位 LinkMe 号码已分配完毕")
 		}
 		var taken int
 		if err = tx.QueryRow("SELECT COUNT(*) FROM users WHERE account=CAST(? AS TEXT)", number).Scan(&taken); err != nil {
@@ -172,6 +172,8 @@ func newID() string {
 func now() int64 { return time.Now().UnixMilli() }
 
 type User struct {
+	AI             bool   `json:"ai,omitempty"`
+	Email          string `json:"email,omitempty"`
 	Phone          string `json:"phone,omitempty"`
 	Gender         string `json:"gender,omitempty"`
 	JobTitle       string `json:"jobTitle,omitempty"`

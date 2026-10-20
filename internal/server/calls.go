@@ -133,6 +133,10 @@ func (s *Server) createCall(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "你正在通话或会议中")
 		return
 	}
+	if s.isAI(peer) {
+		fail(w, 400, "Me 支持对话和本地任务，请直接发送消息")
+		return
+	}
 	c := callRecord{ID: newID(), ConversationID: p.ConversationID, Caller: uid(r), Callee: peer, CallerSession: sessionHash(r), ClientID: p.ClientID, Mode: p.Mode, State: "ringing", Created: now(), Revision: 1, MessageID: newID()}
 	if s.busyCallLocked(peer) {
 		c.State = "ended"
@@ -290,7 +294,7 @@ func (s *Server) respondCall(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
-	s.meetings.rooms[code] = &meetingRoom{Code: code, Title: "WeLink 通话", Owner: c.Caller, HostID: c.Caller, ConversationID: c.ConversationID, Created: c.Accepted, Expires: c.Accepted + 7200000, CallID: c.ID, Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}}
+	s.meetings.rooms[code] = &meetingRoom{Code: code, Title: "LinkMe 通话", Owner: c.Caller, HostID: c.Caller, ConversationID: c.ConversationID, Created: c.Accepted, Expires: c.Accepted + 7200000, CallID: c.ID, Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}}
 	s.publishCall(c)
 	ok(w, s.callView(c, uid(r), sessionHash(r)))
 }

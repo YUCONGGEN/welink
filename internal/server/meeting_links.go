@@ -25,7 +25,7 @@ func (s *Server) meetingLink(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := publicweb.Render(w, publicweb.Page{Kind: "meeting", Title: "WeLink 会议邀请", Code: code, DisplayCode: code[:3] + " " + code[3:6] + " " + code[6:], DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}); err != nil {
+	if err := publicweb.Render(w, publicweb.Page{Kind: "meeting", Title: "LinkMe 会议邀请", Code: code, DisplayCode: code[:3] + " " + code[3:6] + " " + code[6:], DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}); err != nil {
 		s.logger.Printf("render meeting invitation: %v", err)
 	}
 }

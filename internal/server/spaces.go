@@ -322,7 +322,7 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	var name string
 	_ = s.db.QueryRow("SELECT name FROM users WHERE id=?", owner).Scan(&name)
-	page := publicweb.Page{Kind: "space", Title: "WeLink 空间", Name: name + " 的 WeLink 空间", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}
+	page := publicweb.Page{Kind: "space", Title: "LinkMe 空间", Name: name + " 的 LinkMe 空间", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/")}
 	id := r.URL.Query().Get("doc")
 	if id != "" {
 		var title, blob string
@@ -345,7 +345,7 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 			fail(w, 503, "文档读取失败")
 			return
 		}
-		page.Name = title + " · " + name + " 的 WeLink 空间"
+		page.Name = title + " · " + name + " 的 LinkMe 空间"
 		page.Content = string(raw)
 		page.DocumentOpen = true
 	} else {

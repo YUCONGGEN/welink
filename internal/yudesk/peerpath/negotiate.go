@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -99,6 +101,29 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 		read = base.ReadMessage
 	}
 	o := options.normalized()
+	o.laneRole = role
+	started := time.Now()
+	var progressMu sync.Mutex
+	progressDone := false
+	if report := o.OnProgress; report != nil {
+		o.OnProgress = func(p Progress) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
+			if !progressDone {
+				progressDone = p.Stage == "p2p" || p.Stage == "relay" || p.Stage == "udp-relay" || p.Stage == "failed"
+				p.ElapsedMS, p.TimeoutMS = time.Since(started).Milliseconds(), o.Timeout.Milliseconds()
+				report(p)
+			}
+		}
+	}
+	o.progress("started")
+	defer func() {
+		stage := info.Mode
+		if err != nil {
+			stage = "failed"
+		}
+		o.progress(stage)
+	}()
 	attemptCtx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 	deadline := time.Now().Add(o.Timeout + signalGrace)
@@ -125,40 +150,67 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 			final, info = nil, Info{}
 			err = fmt.Errorf("%w: %w", ErrSignaling, err)
 		}
-		if a != nil && (err != nil || info.Mode != "p2p") {
+		if a != nil && (err != nil || info.Mode == "relay") {
 			a.close()
 		}
 	}()
 
-	gatherBudget := min(o.Timeout/5, 500*time.Millisecond)
+	// Multi-STUN and TURN gathering gets enough time to expose all useful
+	// candidates, while very short caller deadlines remain authoritative.
+	gatherBudget := min(o.Timeout, min(1200*time.Millisecond, max(250*time.Millisecond, o.Timeout/4)))
+	if len(o.STUNURLs) > 1 || len(o.ICEServers) != 0 {
+		gatherBudget = min(o.Timeout, max(gatherBudget, 700*time.Millisecond))
+	}
+	if o.TrickleICE {
+		// Gathering now overlaps connectivity checks instead of delaying the
+		// offer. Keep late STUN/TURN useful until the bounded ICE attempt ends.
+		gatherBudget = o.Timeout
+	}
 	local := signal{}
 	remote := signal{}
+	// Initialize both peers' UDP muxes before signaling. Mutually negotiated
+	// Trickle ICE overlaps router mapping with candidate exchange and checks;
+	// legacy peers still finish mapping before publishing their single SDP.
+	if attemptCtx.Err() != nil {
+		local.Reason = "ice_timeout"
+	} else {
+		a, err = newAttempt(attemptCtx, o, gatherBudget)
+		if err != nil {
+			local.Reason = "rtc_unavailable"
+			if attemptCtx.Err() != nil {
+				local.Reason = "ice_timeout"
+			}
+		}
+	}
+	if o.TrickleICE {
+		var stream *dataConn
+		stream, info, err = negotiateTrickle(attemptCtx, s, role, a, local.Reason, o.pathV2, len(o.ICEServers) != 0)
+		if err != nil {
+			return nil, Info{}, err
+		}
+		return finishPath(ctx, base, read, a, stream, info, o)
+	}
 	if role == "agent" {
 		remote, err = s.receive("offer")
 		if err != nil {
 			return nil, Info{}, err
 		}
-		if err = validDescription(remote); err != nil {
+		if err = validDescription(remote, len(o.ICEServers) != 0); err != nil {
 			return nil, Info{}, err
 		}
 	}
 	if role == "agent" && remote.SDP == "" {
 		local.Reason = "peer_unavailable"
-	} else if attemptCtx.Err() != nil {
-		local.Reason = "ice_timeout"
-	} else {
-		a, err = newAttempt(o, gatherBudget)
-		if err != nil {
-			// A local configuration/socket failure is a normal initial fallback.
-			local.Reason = "rtc_unavailable"
-		} else {
-			if role == "agent" {
-				if err = a.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: remote.SDP}); err != nil {
-					return nil, Info{}, err
-				}
+	} else if local.Reason == "" {
+		if role == "agent" {
+			if err = a.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: remote.SDP}); err != nil {
+				return nil, Info{}, err
 			}
-			local.SDP, local.Reason = a.description(attemptCtx, role == "viewer", gatherBudget)
 		}
+		local.SDP, local.Reason = a.description(attemptCtx, role == "viewer", gatherBudget)
+		// An endpoint-dependent IPv4 mapping does not rule out LAN, IPv6,
+		// or peer-reflexive connectivity. Let ICE try every gathered candidate
+		// within attemptCtx's budget before agreeing on relay fallback.
 	}
 	if role == "viewer" {
 		if err = s.send("offer", local); err != nil {
@@ -168,7 +220,7 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 		if err != nil {
 			return nil, Info{}, err
 		}
-		if err = validDescription(remote); err != nil {
+		if err = validDescription(remote, len(o.ICEServers) != 0); err != nil {
 			return nil, Info{}, err
 		}
 		if remote.SDP != "" {
@@ -185,19 +237,28 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 
 	var stream *dataConn
 	reason := local.Reason
+	selected := Info{Reason: reason}
 	if reason == "" {
 		if remote.SDP == "" {
 			reason = "peer_unavailable"
 		} else {
-			stream, reason = a.ready(attemptCtx)
+			stream, selected = a.ready(attemptCtx, len(o.ICEServers) != 0)
+			reason = selected.Reason
 		}
 	}
-	ownReady := signal{Ready: stream != nil, Info: Info{Reason: reason}}
+	if stream == nil {
+		selected = Info{Reason: reason}
+		o.progress("fallback")
+	}
+	ownReady := signal{Ready: stream != nil, Info: selected}
+	if ownReady.Ready && !o.pathV2 {
+		ownReady.Info = Info{}
+	}
 	otherReady, err := s.exchange(role, "ready", ownReady)
 	if err != nil {
 		return nil, Info{}, err
 	}
-	if otherReady.SDP != "" || otherReady.Mode != "" || otherReady.Ready != (otherReady.Reason == "") || (!otherReady.Ready && !validReason(otherReady.Reason)) {
+	if otherReady.SDP != "" || !validReady(otherReady, o.pathV2) {
 		return nil, Info{}, errors.New("invalid ready state")
 	}
 	viewer, agent := ownReady, otherReady
@@ -213,6 +274,10 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 		if info.Reason == "" {
 			info.Reason = "peer_unavailable"
 		}
+	} else if viewer.Mode == "udp-relay" || agent.Mode == "udp-relay" {
+		info = Info{Mode: "udp-relay", Reason: "turn_udp"}
+	} else if viewer.Reason == "ipv6_direct" && agent.Reason == "ipv6_direct" {
+		info.Reason = "ipv6_direct"
 	}
 	// Both sides acknowledge the identical decision. A lost/malformed commit
 	// closes the session; neither side unilaterally falls back after committing.
@@ -223,10 +288,17 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 	if commit.Info != info || commit.Ready || commit.SDP != "" {
 		return nil, Info{}, errors.New("inconsistent path commit")
 	}
-	if err = base.SetDeadline(time.Time{}); err != nil {
+	return finishPath(ctx, base, read, a, stream, info, o)
+}
+
+func finishPath(ctx context.Context, base *protocol.Conn, read func() (protocol.Message, error), a *attempt, stream *dataConn, info Info, o Options) (*protocol.Conn, Info, error) {
+	if err := base.SetDeadline(time.Time{}); err != nil {
 		return nil, Info{}, err
 	}
 	if info.Mode == "relay" {
+		if err := EnableRelayLanes(ctx, base, o.laneRole, read, o); err != nil {
+			return nil, Info{}, err
+		}
 		return base, info, nil
 	}
 	select {
@@ -235,11 +307,21 @@ func Negotiate(ctx context.Context, base *protocol.Conn, role string, read func(
 	default:
 	}
 	direct := newSessionConn(ctx, stream, a, base, read)
-	final = protocol.NewConn(o.wrap(direct))
+	final := protocol.NewConn(o.wrap(direct))
+	if len(o.laneSeed) == 32 {
+		input, audio := net.Conn(a.extra[0]), net.Conn(a.extra[1])
+		if o.WrapLane != nil {
+			input, audio = o.WrapLane(input), o.WrapLane(audio)
+		}
+		if err := final.EnableLanes(input, audio); err != nil {
+			_ = final.Close()
+			return nil, Info{}, err
+		}
+	}
 	return final, info, nil
 }
 
-func validDescription(v signal) error {
+func validDescription(v signal, allowRelay bool) error {
 	if v.Ready || v.Mode != "" {
 		return errors.New("invalid description state")
 	}
@@ -252,12 +334,28 @@ func validDescription(v signal) error {
 	if v.Reason != "" {
 		return errors.New("description with failure reason")
 	}
-	return validateSDP(v.SDP)
+	return validateSDP(v.SDP, allowRelay)
+}
+
+func validReady(value signal, pathV2 bool) bool {
+	if !pathV2 {
+		if value.Mode != "" {
+			return false
+		}
+		if value.Ready {
+			return value.Reason == ""
+		}
+		return validReason(value.Reason)
+	}
+	if value.Ready {
+		return (value.Mode == "p2p" && (value.Reason == "udp_direct" || value.Reason == "ipv6_direct")) || value.Mode == "udp-relay" && value.Reason == "turn_udp"
+	}
+	return value.Mode == "" && validReason(value.Reason)
 }
 
 func validReason(s string) bool {
 	switch s {
-	case "rtc_unavailable", "udp_unavailable", "peer_unavailable", "ice_timeout", "ice_failed":
+	case "rtc_unavailable", "udp_unavailable", "peer_unavailable", "ice_timeout", "ice_failed", "endpoint_dependent_nat":
 		return true
 	}
 	return false

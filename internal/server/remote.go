@@ -46,6 +46,10 @@ func (s *Server) inviteRemote(w http.ResponseWriter, r *http.Request) {
 	}
 	var recipient string
 	_ = s.db.QueryRow("SELECT user_id FROM members WHERE conversation_id=? AND user_id<>?", p.ConversationID, uid(r)).Scan(&recipient)
+	if s.isAI(recipient) {
+		fail(w, 400, "Me 支持对话和本地任务，请直接发送消息")
+		return
+	}
 	if !contactAllowed(s.db, uid(r), recipient) {
 		fail(w, 403, "只有当前好友可以发起远程协助")
 		return

@@ -2,6 +2,7 @@ package peerpath
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -42,14 +43,23 @@ func Authenticate(ctx context.Context, conn net.Conn, params map[string]any, opt
 	if err = pc.SetDeadline(deadline); err != nil {
 		return nil, auth, Info{}, err
 	}
-	offer := make(map[string]any, len(params)+2)
+	offer := make(map[string]any, len(params)+3)
 	for k, v := range params {
 		offer[k] = v
 	}
 	p2p, isBool := params["p2pV1"].(bool)
 	p2p = !isBool || p2p
 	offer["p2pV1"] = p2p
+	trickle, explicitTrickle := params["p2pTrickleV1"].(bool)
+	trickle = p2p && (!explicitTrickle || trickle)
+	offer["p2pTrickleV1"] = trickle
+	offer["p2pProbe15V1"] = true
 	offer["interleaveV1"] = true
+	seed := make([]byte, 32)
+	if _, err = rand.Read(seed); err != nil {
+		return nil, auth, Info{}, err
+	}
+	offer["sessionLanesV1"], offer["sessionLaneSeed"] = true, seed
 	pc.OfferInterleaving()
 	encoded, err := json.Marshal(offer)
 	if err != nil {
@@ -80,6 +90,9 @@ func Authenticate(ctx context.Context, conn net.Conn, params map[string]any, opt
 		return nil, auth, Info{}, err
 	}
 	interleave, _ := auth.Meta["interleaveV1"].(bool)
+	if accepted, _ := auth.Meta["sessionLanesV1"].(bool); accepted {
+		options = options.WithSessionLanes(seed)
+	}
 	if interleave {
 		pc.EnableInterleaving()
 	}
@@ -89,8 +102,15 @@ func Authenticate(ctx context.Context, conn net.Conn, params map[string]any, opt
 		if !p2p {
 			reason = "disabled"
 		}
+		if err = EnableRelayLanes(ctx, pc, "viewer", pc.ReadMessage, options); err != nil {
+			return nil, auth, Info{}, err
+		}
 		return pc, auth, Info{Mode: "relay", Reason: reason}, nil
 	}
+	acceptedTrickle, _ := auth.Meta["p2pTrickleV1"].(bool)
+	options.TrickleICE = trickle && acceptedTrickle
+	probe15, _ := auth.Meta["p2pProbe15V1"].(bool)
+	options = options.WithProbe15(probe15)
 	final, info, err = Negotiate(ctx, pc, "viewer", pc.ReadMessage, options)
 	if err != nil {
 		return nil, auth, Info{}, err

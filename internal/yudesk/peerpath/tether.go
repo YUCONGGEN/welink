@@ -11,10 +11,13 @@ import (
 	"welink/internal/yudesk/protocol"
 )
 
-// sessionConn owns both paths. Once committed, any transport failure ends the
-// session. It never resends application bytes over relay or changes their order.
+// sessionConn owns both paths. Once committed, permanent transport failure ends
+// the session; transient ICE disconnects retain the stream within ICE's bounded
+// recovery window. It never resends application bytes over relay or changes
+// their order.
 type sessionConn struct {
 	net.Conn
+	bulk   *bulkAdmission
 	ctx    context.Context
 	a      *attempt
 	base   *protocol.Conn
@@ -27,6 +30,7 @@ type sessionConn struct {
 
 func newSessionConn(ctx context.Context, stream *dataConn, a *attempt, base *protocol.Conn, read func() (protocol.Message, error)) *sessionConn {
 	c := &sessionConn{Conn: stream, ctx: ctx, a: a, base: base, done: make(chan struct{}), closed: make(chan struct{})}
+	c.bulk = newBulkAdmission(stream, a.pc)
 	c.wg.Add(3)
 	go func() {
 		defer c.wg.Done()
@@ -126,7 +130,9 @@ func (c *sessionConn) Write(p []byte) (int, error) {
 	if err := c.terminal(); err != nil {
 		return 0, err
 	}
+	started := time.Now()
 	n, err := c.Conn.Write(p)
+	c.bulk.recordWrite(p, n, err, started)
 	return n, c.check(err)
 }
 
@@ -148,4 +154,19 @@ func (c *sessionConn) Close() error {
 	c.end(net.ErrClosed)
 	<-c.closed
 	return nil
+}
+
+// Called serially by the negotiated protocol bulk writer, before it acquires
+// the short-message write gate. The two-millisecond wait never consumes the
+// transport writer's buffered-amount notification.
+func (c *sessionConn) BulkPayload() int { return c.bulk.BulkPayload() }
+func (c *sessionConn) WaitBulk(ctx context.Context, size int) error {
+	if err := c.terminal(); err != nil {
+		return err
+	}
+	err := c.bulk.WaitBulk(ctx, size)
+	if terminal := c.terminal(); terminal != nil {
+		return terminal
+	}
+	return err
 }

@@ -2,13 +2,16 @@ package peerpath
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/datachannel"
+	"github.com/pion/sctp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -85,6 +88,7 @@ type dataConn struct {
 	raw                 datachannel.ReadWriteCloserDeadliner
 	dc                  *webrtc.DataChannel
 	done                chan struct{}
+	written             atomic.Uint64
 	closeOnce           sync.Once
 	readGate, writeGate chan struct{}
 	drained             chan struct{}
@@ -120,6 +124,13 @@ func (c *dataConn) Read(p []byte) (int, error) {
 	for len(c.tail) == 0 {
 		n, text, err := c.raw.ReadDataChannel(c.buffer[:])
 		if err != nil {
+			// SCTP Abort interrupts its transport with an immediate deadline and
+			// propagates that transport error to every stream before OnClose runs.
+			// Only the stream's own deadline sentinel is a retryable read timeout.
+			var timeout net.Error
+			if errors.As(err, &timeout) && timeout.Timeout() && !errors.Is(err, sctp.ErrReadDeadlineExceeded) {
+				err = fmt.Errorf("%w: %v", ErrDirectLost, err)
+			}
 			return 0, c.ioError(err)
 		}
 		if text || n <= 0 || n > chunkSize {
@@ -159,6 +170,7 @@ func (c *dataConn) Write(p []byte) (int, error) {
 		}
 		n, err := c.raw.Write(p[:next])
 		total += n
+		c.written.Add(uint64(n))
 		if err != nil {
 			return total, c.ioError(err)
 		}

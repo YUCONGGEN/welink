@@ -58,7 +58,7 @@ func waitGate(t testing.TB, g *priorityGate, high, low int) {
 // This records a real request/reply on the loaded protocol connection. The
 // unbuffered, bandwidth-limited wire isolates application queueing, NOT an
 // Internet RTT prediction. Every frame is read and verified before returning.
-func probeBehindFrame(t testing.TB, enabled bool, size, rate int) time.Duration {
+func probeBehindFrame(t testing.TB, enabled bool, size, rate int, paced ...bool) time.Duration {
 	t.Helper()
 	a, b := net.Pipe()
 	defer a.Close()
@@ -70,6 +70,9 @@ func probeBehindFrame(t testing.TB, enabled bool, size, rate int) time.Duration 
 	if enabled {
 		server.EnableInterleaving()
 		client.EnableInterleaving()
+	}
+	if len(paced) != 0 && paced[0] {
+		server.SetBulkRate(rate)
 	}
 	data := bytes.Repeat([]byte{0x6d}, size)
 	bulkDone := make(chan error, 1)

@@ -7,7 +7,7 @@ export function openLocalStore(){
   const request=indexedDB.open('welink-local',1);
   request.onupgradeneeded=()=>{const db=request.result;for(const name of ['queue','drafts','cache']){const store=db.createObjectStore(name,{keyPath:'id'});store.createIndex('scope','scope')}db.createObjectStore('blobs')};
   request.onsuccess=()=>{request.result.onversionchange=()=>request.result.close();resolve(request.result)};
-  request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('请关闭其他 WeLink 窗口后重试'));
+  request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('请关闭其他 LinkMe 窗口后重试'));
  }).catch(error=>{database=null;throw error});return database;
 }
 export async function transaction(names,mode,work){

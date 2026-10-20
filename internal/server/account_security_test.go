@@ -81,7 +81,7 @@ func TestDeviceRevokeClosesChatMeetingAndRemote(t *testing.T) {
 		if len(item.ID) != 32 || item.ID == phone.Token {
 			t.Fatal("invalid public device id")
 		}
-		if item.ID == desktopID && item.Device != "Windows · WeLink" {
+		if item.ID == desktopID && item.Device != "Windows · LinkMe" {
 			t.Fatal("client label missing")
 		}
 	}

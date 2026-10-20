@@ -25,7 +25,7 @@ func main() {
 		if e != nil {
 			log.Fatal(e)
 		}
-		*dir = filepath.Join(root, "WeLink")
+		*dir = filepath.Join(root, "LinkMe")
 	}
 	_ = os.MkdirAll(*dir, 0700)
 	if flag.NArg() > 0 {
@@ -93,6 +93,9 @@ func main() {
 	windowMu.Lock()
 	window = created
 	windowMu.Unlock()
+	if notifier, ok := created.(interface{ Notify(client.Notification) }); ok {
+		c.SetNotificationHandler(notifier.Notify)
+	}
 	if *startup {
 		if h, ok := created.(interface{ startupWindow() }); ok {
 			h.startupWindow()
@@ -102,6 +105,8 @@ func main() {
 		instance.Watch(func() { created.Action("show") })
 	}
 	created.Run()
+	c.SetNotificationHandler(nil)
+	_ = c.SetNotificationSession("")
 	if instance != nil {
 		instance.Close()
 	}

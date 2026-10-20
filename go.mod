@@ -41,6 +41,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
+	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect

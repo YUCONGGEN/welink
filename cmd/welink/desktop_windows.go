@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"welink/internal/client"
 	"welink/internal/desktopconfig"
 )
 
@@ -47,6 +48,8 @@ type desktopState struct {
 	icon                           notifyIconData
 	trayAvailable, hidden, closing bool
 	taskbarCreated                 uint32
+	normalIcon, greenIcon          uintptr
+	greenPhase                     bool
 	unread                         int
 	lastAlert                      time.Time
 	hotkeys                        *desktopHotkeys
@@ -57,12 +60,18 @@ type desktopState struct {
 	captureVersion                 uint64
 	captureCancel                  chan struct{}
 	captureWasHidden               bool
+	pendingMessage                 string
 }
 
 var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref uintptr) uintptr {
 	if value, ok := desktopWindows.Load(hwnd); ok {
 		h := value.(*windowsHost)
 		switch message {
+		case 0x113: // WM_TIMER
+			if wp == unreadTimer {
+				h.unreadPulse()
+				return 0
+			}
 		case 0x83: // WM_NCCALCSIZE
 			if h.clientFrame(wp, lp) {
 				return 0
@@ -147,6 +156,7 @@ func (h *windowsHost) installDesktop(directory string) error {
 		icon, _, _ = user32.NewProc("LoadIconW").Call(0, 32512)
 	}
 	h.desktop.icon = notifyIconData{Window: h.hwnd, ID: 1, Flags: 0x87, Callback: desktopTrayMessage, Icon: icon}
+	h.desktop.normalIcon = icon
 	h.desktop.icon.Size = uint32(unsafe.Sizeof(h.desktop.icon))
 	name, _ := syscall.UTF16PtrFromString("TaskbarCreated")
 	restart, _, _ := user32.NewProc("RegisterWindowMessageW").Call(uintptr(unsafe.Pointer(name)))
@@ -200,6 +210,8 @@ func (h *windowsHost) installDesktop(directory string) error {
 	h.view.Bind("welinkMeetingInvitation", func() string { return takeMeetingInvite(directory) })
 	h.view.Bind("welinkMeetingNotify", func(code, title string, expires int64) bool { return h.showMeetingNotice(code, title, expires) })
 	h.view.Bind("welinkMeetingClear", func() { h.closeMeetingNotices() })
+	h.view.Bind("welinkMessageNotifications", func() bool { return true })
+	h.view.Bind("welinkTakeMessageNotification", func() string { value := h.desktop.pendingMessage; h.desktop.pendingMessage = ""; return value })
 	h.view.Init(`window.welinkNativeHidden=false;`)
 	return nil
 }
@@ -238,9 +250,9 @@ func (h *windowsHost) addTray() {
 }
 
 func (h *windowsHost) trayTip() {
-	text := "WeLink · 双击打开，右键退出"
+	text := "LinkMe · 双击打开，右键退出"
 	if h.desktop.unread > 0 {
-		text = fmt.Sprintf("WeLink · %d 条未读消息", h.desktop.unread)
+		text = fmt.Sprintf("LinkMe · %d 条未读消息", h.desktop.unread)
 	}
 	h.desktop.icon.Tip = [128]uint16{}
 	copy(h.desktop.icon.Tip[:], syscall.StringToUTF16(text))
@@ -248,8 +260,14 @@ func (h *windowsHost) trayTip() {
 
 func (h *windowsHost) setUnread(count int) {
 	count = max(0, min(99999, count))
-	before := h.desktop.unread
+	previous := h.desktop.unread
 	h.desktop.unread = count
+	if count == 0 {
+		h.stopUnreadPulse()
+	} else if previous == 0 {
+		h.unreadPulse()
+		user32.NewProc("SetTimer").Call(h.hwnd, unreadTimer, 650, 0)
+	}
 	if !h.desktop.trayAvailable {
 		return
 	}
@@ -259,17 +277,37 @@ func (h *windowsHost) setUnread(count int) {
 	if count == 0 {
 		d.Flags |= 0x10
 	} // Empty NIF_INFO dismisses a previous balloon.
-	if count > before && h.desktop.hidden && h.desktop.preferences.MessageAlerts && time.Since(h.desktop.lastAlert) > 5*time.Second {
-		d.Flags |= 0x10
-		d.InfoFlags = 0x81 // NIIF_INFO | NIIF_RESPECT_QUIET_TIME
-		if !h.desktop.preferences.MessageSound {
-			d.InfoFlags |= 0x10
-		} // NIIF_NOSOUND
-		copy(d.InfoTitle[:], syscall.StringToUTF16("WeLink"))
-		copy(d.Info[:], syscall.StringToUTF16(fmt.Sprintf("你有 %d 条未读消息，点击打开 WeLink。", count)))
-		h.desktop.lastAlert = time.Now()
-	}
 	shellNotify.Call(1, uintptr(unsafe.Pointer(&d)))
+}
+
+// Runs even while the WebView is hidden. The main window never owns popups.
+func (h *windowsHost) Notify(n client.Notification) {
+	h.view.Dispatch(func() {
+		if h.desktop.closing {
+			return
+		}
+		if n.Type == "reset" || n.Type == "signed-out" {
+			h.closeMessageNotices()
+			h.setUnread(0)
+			h.desktop.pendingMessage = ""
+			return
+		}
+		if n.Type == "unread" {
+			h.setUnread(n.Unread)
+			return
+		}
+		if n.Type != "message" {
+			return
+		}
+		h.setUnread(h.desktop.unread + 1)
+		if h.desktop.preferences.MessageSound && time.Since(h.desktop.lastAlert) > 1500*time.Millisecond {
+			user32.NewProc("MessageBeep").Call(0x40)
+			h.desktop.lastAlert = time.Now()
+		}
+		if h.desktop.preferences.MessageAlerts {
+			h.showNotice("", n.Title, time.Now().Add(12*time.Second).UnixMilli(), &n)
+		}
+	})
 }
 
 func (h *windowsHost) visibility(hidden bool) {
@@ -327,8 +365,8 @@ func (h *windowsHost) trayMenu() {
 		return
 	}
 	defer user32.NewProc("DestroyMenu").Call(menu)
-	show, _ := syscall.UTF16PtrFromString("打开 WeLink")
-	quit, _ := syscall.UTF16PtrFromString("退出 WeLink")
+	show, _ := syscall.UTF16PtrFromString("打开 LinkMe")
+	quit, _ := syscall.UTF16PtrFromString("退出 LinkMe")
 	user32.NewProc("AppendMenuW").Call(menu, 0, 1, uintptr(unsafe.Pointer(show)))
 	user32.NewProc("AppendMenuW").Call(menu, 0x800, 0, 0)
 	user32.NewProc("AppendMenuW").Call(menu, 0, 2, uintptr(unsafe.Pointer(quit)))
@@ -359,6 +397,7 @@ func (h *windowsHost) exitDesktop() {
 }
 
 func (h *windowsHost) removeDesktop() {
+	h.destroyUnreadIcon()
 	h.stopDesktopExtras()
 	h.closeMeetingNotices()
 	if h.desktop.trayAvailable {

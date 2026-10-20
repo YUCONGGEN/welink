@@ -15,6 +15,10 @@ var accountPattern = regexp.MustCompile(`^[a-zA-Z0-9_]{5,24}$`)
 var numericAccount = regexp.MustCompile(`^[0-9]+$`)
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	if s.settings.EmailAuth.Enabled {
+		s.emailRegister(w, r)
+		return
+	}
 	if !s.settings.Registration.Enabled {
 		fail(w, 403, "暂未开放自助注册，请联系管理员")
 		return
@@ -29,12 +33,12 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Account = strings.ToLower(strings.TrimSpace(p.Account))
 	p.Name = strings.TrimSpace(p.Name)
-	// An optional alias supplements the automatically assigned WeLink number.
+	// An optional alias supplements the automatically assigned LinkMe number.
 	if p.Account == "" {
 		p.Account = "wl_" + newID()[:20]
 	}
 	if numericAccount.MatchString(p.Account) {
-		fail(w, 400, "WeLink 号码由系统自动分配，登录别名请包含字母或下划线")
+		fail(w, 400, "LinkMe 号码由系统自动分配，登录别名请包含字母或下划线")
 		return
 	}
 	if !accountPattern.MatchString(p.Account) || p.Name == "" || !validText(p.Name, 32) || len(p.Password) < 8 || len(p.Password) > 72 {
@@ -76,6 +80,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	s.directoryChanged()
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.settings.EmailAuth.Enabled {
+		s.emailLogin(w, r)
+		return
+	}
 	if !s.rate(r, "login", 30, time.Minute) {
 		fail(w, 429, "尝试次数过多，请稍后再试")
 		return
@@ -88,11 +96,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var hash []byte
 	login := strings.TrimSpace(p.Account)
 	if !regexp.MustCompile(`^[1-9][0-9]{5}$`).MatchString(login) {
-		fail(w, 401, "请输入正确的 6 位 WeLink 账号和密码")
+		fail(w, 401, "请输入正确的 6 位 LinkMe 账号和密码")
 		return
 	}
 	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE CAST(n.number AS TEXT)=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login).Scan(&id, &hash)
-	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte(p.Password)) != nil {
+	if err != nil || !storedPasswordMatches(hash, p.Password) {
 		fail(w, 401, "账号或密码不正确")
 		return
 	}
@@ -133,6 +141,7 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id string,
 	_, _ = s.db.Exec("DELETE FROM sessions WHERE expires<?", now())
 	http.SetCookie(w, &http.Cookie{Name: "welink_session", Value: token, Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 30 * 86400})
 	u, _ := s.user(id)
+	_ = s.db.QueryRow("SELECT email FROM user_emails WHERE user_id=?", id).Scan(&u.Email)
 	ok(w, map[string]any{"token": token, "user": u})
 	return true
 }
@@ -152,6 +161,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
+	_ = s.db.QueryRow("SELECT email FROM user_emails WHERE user_id=?", uid(r)).Scan(&u.Email)
 	ok(w, u)
 }
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
@@ -215,6 +225,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 	for i := range out {
 		out[i].Online = s.online(out[i].ID) && contactAllowed(s.db, uid(r), out[i].ID)
+		out[i].AI = s.isAI(out[i].ID)
 	}
 	ok(w, out)
 }
@@ -238,6 +249,7 @@ func (s *Server) friends(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.Online = s.online(u.ID)
+		u.AI = s.isAI(u.ID)
 		out = append(out, u)
 	}
 	if e = rows.Err(); e != nil {

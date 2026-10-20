@@ -24,9 +24,9 @@ func loginDevice(r *http.Request) string {
 	platform := strings.ToLower(r.Header.Get("X-WeLink-Client"))
 	switch platform {
 	case "windows":
-		return "Windows · WeLink"
+		return "Windows · LinkMe"
 	case "android":
-		return "Android · WeLink"
+		return "Android · LinkMe"
 	}
 	agent := strings.ToLower(r.UserAgent())
 	if strings.Contains(agent, "android") {
@@ -154,7 +154,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var oldHash []byte
-	if s.db.QueryRow("SELECT password FROM users WHERE id=?", uid(r)).Scan(&oldHash) != nil || bcrypt.CompareHashAndPassword(oldHash, []byte(input.OldPassword)) != nil {
+	if s.db.QueryRow("SELECT password FROM users WHERE id=?", uid(r)).Scan(&oldHash) != nil || !storedPasswordMatches(oldHash, input.OldPassword) {
 		fail(w, 400, "原密码不正确")
 		return
 	}

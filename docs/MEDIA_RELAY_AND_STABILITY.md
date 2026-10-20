@@ -11,7 +11,7 @@
 | HTTP API / 下载 | TCP 8250 / 8251 |
 | STUN / TURN | UDP / TCP 8252；STUN 使用 UDP |
 | UDP 中转端口 | 20000–20127，共 128 个 |
-| 直连等待 | `media.direct_timeout_ms: 8000` |
+| 直连等待 | `media.direct_timeout_ms: 15000`（远程、语音、视频与会议统一 15 秒） |
 | 中转凭证 | 默认 6 小时，绑定用户及登录会话 |
 | 每用户分配上限 | 32，全部设备合计 |
 | 每用户中转速率 | 4 MiB/s，上下行合计 |

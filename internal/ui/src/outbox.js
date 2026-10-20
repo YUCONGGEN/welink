@@ -1,6 +1,6 @@
 import {openLocalStore,transaction,scopedRows,localGet,localPut} from './local-store.js';
 
-export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentions,renderMessages,renderReply,queueRefresh,modal,closeModal}){
+export function createOutbox({onSent=()=>{},sendLarge,S,api,toast,esc,av,bytes,randomID,Mentions,renderMessages,renderReply,queueRefresh,modal,closeModal}){
  const $=selector=>document.querySelector(selector);
  let scope='',generation=0,rows=[],drafts=new Map(),timer,working=false,controller,saveChain=Promise.resolve(),storageWarning=false;
  const scopeFor=()=>JSON.stringify([new URL(S.config.server).href.replace(/\/$/,''),(S.config.fingerprint||'').toLowerCase(),S.user?.id]);
@@ -33,7 +33,7 @@ export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentio
  }
  async function update(id,changes){await transaction(['queue'],'readwrite',stores=>{const r=stores.queue.get(id);r.onsuccess=()=>{if(r.result)stores.queue.put({...r.result,...changes})}})}
  async function remove(id){await transaction(['queue','blobs'],'readwrite',stores=>{stores.queue.delete(id);stores.blobs.delete(id)})}
- async function ack(message){if(!scope||message.sender!==S.user?.id||!message.clientId)return;const g=generation,key=scope;const row=await localGet('queue',message.clientId);if(row?.scope!==key||row.cid!==message.conversationId)return;await remove(row.id);await refreshRows(g,key)}
+ async function ack(message){if(!scope||message.sender!==S.user?.id||!message.clientId)return;const g=generation,key=scope;const row=await localGet('queue',message.clientId);if(row?.scope!==key||row.cid!==message.conversationId)return;await remove(row.id);if(alive(g,key))Promise.resolve(onSent(message)).catch(()=>{});await refreshRows(g,key)}
  function kick(){clearTimeout(timer);if(scope&&!working)timer=setTimeout(()=>work().catch(storageError),100)}
  async function request(path,options,g,key){
   if(!alive(g,key))throw Error('账号已切换');const native=typeof AbortController==='function'?new AbortController():null;let rejectAbort;
@@ -58,7 +58,7 @@ export function createOutbox({sendLarge,S,api,toast,esc,av,bytes,randomID,Mentio
     if(row.attachment){body.attachmentId=row.attachment.id;if(body.kind==='auto')body.kind=/^image\/(png|jpeg|gif|webp)$/.test(row.attachment.mime)?'image':'file'}
     if(!(await localGet('queue',row.id)))return;
     const message=await request('/api/conversations/'+row.cid+'/messages',{method:'POST',body},g,key);if(!alive(g,key))return;
-    await remove(row.id);if(S.active===row.cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id)){S.messages.push(message);S.messages.sort((a,b)=>a.seq-b.seq)}queueRefresh(true);
+    await remove(row.id);Promise.resolve(onSent(message)).catch(()=>{});if(S.active===row.cid&&!S.historyMode&&!S.messages.some(m=>m.id===message.id)){S.messages.push(message);S.messages.sort((a,b)=>a.seq-b.seq)}queueRefresh(true);
    }catch(error){if(!alive(g,key))return;const permanent=error.status>=400&&error.status<500&&error.status!==408&&error.status!==429;await update(row.id,{state:permanent?'failed':'waiting',error:permanent?error.message:'网络异常，等待重试',next:Date.now()+(error.status===429?60000:Math.min(30000,2000*2**Math.min(row.attempts,4)))});}
   }finally{if(alive(g,key)){working=false;await refreshRows(g,key);timer=setTimeout(()=>work().catch(storageError),1000)}}
  }

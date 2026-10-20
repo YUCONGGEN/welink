@@ -42,7 +42,7 @@ public final class ConferenceProjectionService extends Service {
         boolean recording=intent.getBooleanExtra("recording",false);
         Notification notification = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(recording?"WeLink · 正在录制会议":"WeLink · 正在共享会议屏幕")
+                .setContentTitle(recording?"LinkMe · 正在录制会议":"LinkMe · 正在共享会议屏幕")
                 .setContentText(recording?"点击返回会议，或立即停止录制。":"点击返回会议，或立即停止共享。")
                 .setContentIntent(open)
                 .setOngoing(true)

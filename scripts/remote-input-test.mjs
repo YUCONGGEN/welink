@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {createRemoteInput,remotePoint} from '../internal/ui/src/remote-input.js';
+const sent=[],pending=[];let releases=0;
+const queue=createRemoteInput(events=>{sent.push(events);return new Promise(resolve=>pending.push(resolve))},async()=>{releases++});
+queue.push([{type:'move',x:1}]);for(let x=2;x<=100;x++)queue.push([{type:'move',x}]);
+queue.push([{type:'key_down',key:'A'},{type:'key_up',key:'A'}]);
+pending.shift()();await new Promise(r=>setTimeout(r,0));
+assert.deepEqual(sent[1],[{type:'move',x:100},{type:'key_down',key:'A'},{type:'key_up',key:'A'}]);
+queue.push([{type:'down',button:1},{type:'move',x:101},{type:'move',x:102},{type:'up',button:1}]);
+pending.shift()();await new Promise(r=>setTimeout(r,0));assert.equal(sent[2].length,4);
+const closing=queue.close();assert.equal(releases,0);pending.shift()();await closing;assert.equal(releases,1);
+assert.deepEqual(remotePoint({clientX:0,clientY:50},{dataset:{width:'100',height:'100'},getBoundingClientRect:()=>({left:0,top:0,width:200,height:100})}),{type:'move',x:0,y:50});
+console.log('PASS: stale hover coalesced, key/button ordering, drag points, release barrier and letterbox coordinates');

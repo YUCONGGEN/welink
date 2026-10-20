@@ -1,17 +1,20 @@
-# WeLink · 即时通讯
+# LinkMe · 即时通讯
 
-面向企业员工的即时通讯应用，支持 Windows 和 Android。使用 Go 构建服务端与共享客户端内核，提供单聊、群聊、文件传输、音视频通话、多人会议、远程协助和个人网盘。可自行部署，管理员可创建账号和维护员工资料，自助注册通过配置文件开启或关闭。
+面向企业员工的即时通讯应用，服务端和客户端内核使用 Go，提供 Windows、Apple Silicon macOS 与 Android 客户端。支持单聊、群聊、文件传输、音视频通话、多人会议、远程协助、5 GB 个人网盘和 AI 助手 Me。
 
-Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用独立品牌和账号系统。目前为 **0.1.14-preview** 预览版本，完整实现范围和待完善项目见 [功能对照](docs/FEATURE_PARITY.md)。
+Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。目前为 **0.1.15-preview** 预览版本。
 
 ## 下载
 
 | 平台 | 下载 | 要求 |
 | --- | --- | --- |
-| Windows | [安装版](http://www.yucg.cn:8251/downloads/WeLink-Setup.exe) · [便携版](http://www.yucg.cn:8251/downloads/WeLink-Windows.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
-| Android | [APK](http://www.yucg.cn:8251/downloads/WeLink-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
+| Windows | [安装版](http://www.yucg.cn:8251/downloads/LinkMe-Setup.exe) · [便携版](http://www.yucg.cn:8251/downloads/LinkMe-Windows.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
+| macOS | [Apple Silicon 应用](http://www.yucg.cn:8251/downloads/LinkMe-macOS-arm64.zip) | M1 或更新机型，macOS 12+ |
+| Android | [APK](http://www.yucg.cn:8251/downloads/LinkMe-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
 
-[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LIGHT_THEME_20260914.md)
+[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LINKME_RELEASE_0.1.15.md)
+
+macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 LinkMe 界面；首次打开未签名预览版时，在 Finder 里按住 Control 点击应用并选“打开”。
 
 ## 主要功能
 
@@ -20,6 +23,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 - **音视频与会议**：语音 / 视频通话、多人会议、屏幕共享、会议邀请和链接；优先 P2P，连接失败时使用中转。
 - **远程协助**：从单聊发起，受邀方同意后连接，支持远程画面全屏。
 - **个人网盘**：默认每人免费 **5 GB**，支持文件夹、上传、下载、移动、重命名、删除与永久分享；聊天附件不计入网盘额度。
+- **Me 助手**：服务器对话按消息增量流式显示并保留该会话上下文；Windows 和已配置 Codex CLI 的 macOS 可授权本机工作目录执行任务，审批操作会先询问用户。
 - **桌面与移动端**：浅色 / 深色主题、桌面托盘、提示音开关、截图、离线消息缓存，以及手机扫码登录电脑。
 
 ## 界面截图
@@ -29,6 +33,10 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 **Windows 即时聊天**
 
 ![Windows 即时聊天](docs/screenshots/readme-windows-chat.png)
+
+**Me 助手对话**
+
+![Me 助手实时回复](docs/screenshots/linkme-me-ai.png)
 
 **个人网盘：文件夹与 5 GB 额度**
 
@@ -44,11 +52,11 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 
 **下载页面：蓝紫渐变与飘雪**
 
-![WeLink 下载页面](docs/screenshots/readme-download.png)
+![LinkMe 下载页面](docs/screenshots/readme-download.png)
 
 ## 使用
 
-最新客户端：[0.1.14 · 浅色界面与服务器飘雪页面](docs/LIGHT_THEME_20260914.md)。此前更新：[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
+最新客户端：[0.1.15 · LinkMe 邮箱登录与 Apple Silicon macOS](docs/LINKME_RELEASE_0.1.15.md)。此前更新：[0.1.14 · 浅色界面与服务器飘雪页面](docs/LIGHT_THEME_20260914.md)。[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
 
 双端客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
 
@@ -56,11 +64,12 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`
-- Windows：运行 `WeLink-Setup.exe` 安装，或直接运行 `WeLink-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
-- 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 WeLink 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
+- Windows：运行 `LinkMe-Setup.exe` 安装，或直接运行 `LinkMe-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
+- macOS：解压 `LinkMe-macOS-arm64.zip`，将 `LinkMe.app` 放入“应用程序”后打开。预览版尚未做 Apple 公证；首次打开时在 Finder 中按住 Control 点击应用并选择“打开”。界面使用系统默认浏览器，本机 Go 客户端在浏览器关闭前保持运行。
+- 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 LinkMe 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。
-- Android：安装 `WeLink-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
-- 自助注册由服务器配置 `registration.enabled` 控制，当前部署已开放。登录页可填写姓名、密码并选择头像，系统分配永久 6 位 WeLink 号码。管理员也可从“设置 → 管理员 · 账号管理”注册员工账号，姓名必填，初始密码可留空自动生成。管理员可编辑员工姓名、手机号、性别、职位及个性签名，可重置任何账号的密码，并删除普通账号。仅用 6 位数字账号登录，不接受姓名或旧别名。
+- Android：安装 `LinkMe-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
+- 自助注册由服务器配置 `registration.enabled` 控制，当前部署已开放。Windows、Android 和 macOS 都使用邮箱与密码登录；新账号填写姓名并通过腾讯云邮箱验证码注册，忘记密码也通过验证码重置。系统会分配 6 位 LinkMe 号码作为员工搜索标识；桌面端也可用 Android 扫码登录。管理员可从“设置 → 管理员 · 账号管理”注册员工账号，姓名必填；管理员可编辑员工资料、重置密码和删除账号。
 - 注册和“编辑资料 → 更换头像”提供 100 个内置卡通头像，每次推荐 8 个，可换一批或查看全部；也可上传照片、拖动裁剪、缩放、旋转或恢复默认。照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
 - 桌面登录页点击“使用二维码登录”；安卓登录后从消息页“+ → 扫一扫”或“我的 → 扫一扫 · 电脑登录”扫描。手机核对数字后确认，电脑自动登录。二维码 3 分钟有效、单次使用；也支持选择二维码图片。
 - 会话列表点击每行“更多”、Windows 右键或 Android 长按，可置顶、免打扰、标为已读、从消息列表移除。移除直接执行、不弹确认，只隐藏本账号会话，保留聊天历史和群成员资格。设置子页左上角提供返回，安卓系统返回键按当前页面逐层返回。
@@ -83,7 +92,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主。界面交互参考 
 - 从“会议”或群聊右上角发起音视频会议，输入 9 位会议号加入，也可以邀请当前好友 / 群。参考 YuDesk 的会议目前最多 8 人、最长 2 小时；主持人可共享屏幕、转交主持、录制和结束会议。两端会议均采用白色面板、浅灰背景和蓝色控件。安卓录制当前只保存屏幕画面，不含声音。
 - 会议内可邀请好友并复制“会议链接 + 会议号”。Windows 邀请统一显示在桌面右下角的独立白色弹框，带系统提示音和进入按钮，主窗口隐藏时仍可接收；不显示 App 页面内邀请卡片。安装版可通过邀请链接唤起加入确认，详见 [会议邀请说明](docs/MEETING_INVITATIONS.md)。
 
-语音、视频和会议优先尝试 P2P 直连，默认 8 秒仍未连通时加入 TURN UDP / TCP 中转并重新协商；界面显示实际连接路径。HTTP 由本次部署要求指定：登录与聊天传输不使用 TLS。远控数据通道使用 YuDesk 加密协议；通话和会议媒体在直连与中转时均使用 WebRTC DTLS/SRTP，信令经 HTTP/WebSocket。详见 [媒体连接与稳定性](docs/MEDIA_RELAY_AND_STABILITY.md)。
+语音、视频、会议和远程协助优先尝试 P2P 直连，默认探测 15 秒后仍未连通时改走配置的中继；界面显示实际连接路径。HTTP 由本次部署要求指定：登录与聊天传输不使用 TLS。远控数据通道使用 YuDesk 加密协议；通话和会议媒体在直连与中继时均使用 WebRTC DTLS/SRTP，信令经 HTTP/WebSocket。详见 [媒体连接与稳定性](docs/MEDIA_RELAY_AND_STABILITY.md)。
 
 ## 构建
 
@@ -102,6 +111,8 @@ go build -trimpath -ldflags="-s -w -H=windowsgui" -o dist/WeLink-Setup.exe ./cmd
 ```
 
 Linux / Docker 中构建服务端：`CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/welink-server-darwin-arm64 ./cmd/welink-server`。Android 在隔离副本中执行 `bash scripts/build-android.sh`，脚本会安装固定版本 gomobile 并修改构建副本的 Go 工具依赖；离线构建时需预先缓存 Gradle 依赖 / WebRTC AAR。
+
+Apple Silicon 桌面包：`scripts/build-macos.sh`，生成 `.local/LinkMe-macOS-arm64` 与 `dist/LinkMe-macOS-arm64.zip`。设置 `GOOS=darwin GOARCH=arm64 CGO_ENABLED=0` 后可从其他平台交叉构建 Go 主程序，再用 Python 3 运行 `scripts/package-macos.py` 打包 `.app`。如随包提供 Codex CLI，将官方运行时放在 `.local/codex-macos/tools/codex/`。
 
 UI 源文件在 `internal/ui/src/`，构建到 `internal/ui/assets/`。Windows 由 Go 内嵌；Android 的 Gradle 任务会将同一份界面资源打包进 APK，并在启动时更新到应用私有目录。编辑源文件后先执行 `npm run build:ui`，再构建客户端；仅调整安卓界面时可直接运行 Gradle，不必重建 Go 绑定。无需另行部署前端服务器。
 
@@ -178,4 +189,4 @@ Windows 用户数据默认在 `%APPDATA%/WeLink`；安装路径默认 `%LOCALAPP
 
 YuDesk 参考仓库 `E:/yudesk`，核验提交 `8fb981decf57e4a5d26fc2dc13d96d476d9bfd6f`；会议文件还包含该工作区的最新修改。移植目录为 `internal/yudesk`，安卓会议类和会议信令 / UI 按 WeLink 身份系统适配。第三方许可保存在 `third_party/`。WeLink 使用独立品牌和账号，不接入 QQ 账号或消息系统。
 
-浅色主题和公共网页参考部署于 `www.yucg.cn:8240` 的 [sub2api](https://github.com/YUCONGGEN/sub2api_python) 登录页面及服务器 `~/bin/sub2api/frontend/src/styles.css`，使用蓝紫渐变、半透明卡片和飘雪效果，保留 WeLink 品牌。深色主题保持原样。
+浅色主题和公共网页参考部署于 `www.yucg.cn:8240` 的 [sub2api](https://github.com/YUCONGGEN/sub2api_python) 登录页面及服务器 `~/bin/sub2api/frontend/src/styles.css`，使用蓝紫渐变、半透明卡片和飘雪效果，保留 LinkMe 品牌。深色主题保持原样。

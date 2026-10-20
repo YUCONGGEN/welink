@@ -42,7 +42,7 @@ func main() {
 	if err := nativeinit.Prepare(filepath.Join(os.Getenv("LOCALAPPDATA"), "WeLink", "setup")); err != nil {
 		return
 	}
-	v := webview.NewWithOptions(webview.WebViewOptions{AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "安装 WeLink", Width: 1008, Height: 650, Center: true}})
+	v := webview.NewWithOptions(webview.WebViewOptions{AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "安装 LinkMe", Width: 1008, Height: 650, Center: true}})
 	if v == nil {
 		return
 	}
@@ -100,15 +100,15 @@ func install(directory string) error {
 	}
 	if err = os.Rename(tmp, target); err != nil {
 		_ = os.Remove(tmp)
-		return errors.New("无法更新程序，请先退出正在运行的 WeLink 后重试")
+		return errors.New("无法更新程序，请先退出正在运行的 LinkMe 后重试")
 	}
 	programs := filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs")
 	if err = os.MkdirAll(programs, 0755); err != nil {
 		return err
 	}
-	shortcut := filepath.Join(programs, "WeLink.lnk")
-	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop", "WeLink.lnk")
-	script := `$ErrorActionPreference='Stop'; $w=New-Object -ComObject WScript.Shell; foreach($name in @($env:WELINK_START_LINK,$env:WELINK_DESKTOP_LINK)) { $s=$w.CreateShortcut($name); $s.TargetPath=$env:WELINK_INSTALLED_EXE; $s.WorkingDirectory=$env:WELINK_INSTALLED_DIR; $s.Description='WeLink'; $s.Save() }`
+	shortcut := filepath.Join(programs, "LinkMe.lnk")
+	desktop := filepath.Join(os.Getenv("USERPROFILE"), "Desktop", "LinkMe.lnk")
+	script := `$ErrorActionPreference='Stop'; $w=New-Object -ComObject WScript.Shell; foreach($name in @($env:WELINK_START_LINK,$env:WELINK_DESKTOP_LINK)) { $s=$w.CreateShortcut($name); $s.TargetPath=$env:WELINK_INSTALLED_EXE; $s.WorkingDirectory=$env:WELINK_INSTALLED_DIR; $s.Description='LinkMe'; $s.Save() }; foreach($old in @((Join-Path (Split-Path $env:WELINK_START_LINK) 'WeLink.lnk'),(Join-Path (Split-Path $env:WELINK_DESKTOP_LINK) 'WeLink.lnk'))) { if((Test-Path -LiteralPath $old) -and $w.CreateShortcut($old).TargetPath -eq $env:WELINK_INSTALLED_EXE) { Remove-Item -LiteralPath $old } }`
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.Env = append(os.Environ(), "WELINK_START_LINK="+shortcut, "WELINK_DESKTOP_LINK="+desktop, "WELINK_INSTALLED_EXE="+target, "WELINK_INSTALLED_DIR="+dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -124,7 +124,7 @@ func install(directory string) error {
 	if err = os.WriteFile(uninstallPath, []byte("\xef\xbb\xbf"+uninstallScript), 0600); err != nil {
 		return err
 	}
-	for k, v := range map[string]string{"DisplayName": "WeLink", "DisplayVersion": "0.1.14", "Publisher": "WeLink", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
+	for k, v := range map[string]string{"DisplayName": "LinkMe", "DisplayVersion": "0.1.15", "Publisher": "LinkMe", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
 		if err = key.SetStringValue(k, v); err != nil {
 			return err
 		}
@@ -134,7 +134,7 @@ func install(directory string) error {
 		return err
 	}
 	defer protocol.Close()
-	if err = protocol.SetStringValue("", "URL:WeLink meeting"); err != nil {
+	if err = protocol.SetStringValue("", "URL:LinkMe meeting"); err != nil {
 		return err
 	}
 	if err = protocol.SetStringValue("URL Protocol", ""); err != nil {
@@ -155,19 +155,19 @@ func install(directory string) error {
 
 // Remove only files installed by WeLink. Unknown files and user chat data remain.
 const uninstallScript = `Add-Type -AssemblyName System.Windows.Forms
-$answer=[System.Windows.Forms.MessageBox]::Show('卸载 WeLink？个人资料和聊天缓存将保留。','WeLink 卸载','YesNo','Question')
+$answer=[System.Windows.Forms.MessageBox]::Show('卸载 LinkMe？个人资料和聊天缓存将保留。','LinkMe 卸载','YesNo','Question')
 if($answer -ne 'Yes'){exit}
 $installDirectory=[IO.Path]::GetFullPath($PSScriptRoot)
 $registered=(Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WeLink' -ErrorAction Stop).InstallLocation
 if([IO.Path]::GetFullPath($registered) -ne $installDirectory){throw '安装目录不匹配'}
 $targetExecutable=Join-Path $installDirectory 'WeLink-Windows.exe'
-if(Get-Process -Name 'WeLink-Windows' -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $targetExecutable}){[void][System.Windows.Forms.MessageBox]::Show('请先退出 WeLink，再运行卸载程序。','WeLink');exit}
+if(Get-Process -Name 'WeLink-Windows' -ErrorAction SilentlyContinue | Where-Object {$_.Path -eq $targetExecutable}){[void][System.Windows.Forms.MessageBox]::Show('请先退出 LinkMe，再运行卸载程序。','LinkMe');exit}
 Remove-Item -LiteralPath $targetExecutable -ErrorAction Stop
 $startupPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $startupKey=Get-Item -LiteralPath $startupPath -ErrorAction SilentlyContinue
 if($startupKey){foreach($entry in $startupKey.GetValueNames()){$command=$startupKey.GetValue($entry);if($entry -like 'WeLink-*' -and $command -is [string] -and $command.StartsWith(('"'+$targetExecutable+'" '),[StringComparison]::OrdinalIgnoreCase)){Remove-ItemProperty -LiteralPath $startupPath -Name $entry}}}
-$startLink=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\WeLink.lnk'
-$desktopLink=Join-Path ([Environment]::GetFolderPath('Desktop')) 'WeLink.lnk'
+$startLink=Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\LinkMe.lnk'
+$desktopLink=Join-Path ([Environment]::GetFolderPath('Desktop')) 'LinkMe.lnk'
 $shell=New-Object -ComObject WScript.Shell
 foreach($link in @($startLink,$desktopLink)){if((Test-Path -LiteralPath $link) -and $shell.CreateShortcut($link).TargetPath -eq $targetExecutable){Remove-Item -LiteralPath $link}}
 $protocolKey=Get-Item -LiteralPath 'HKCU:\Software\Classes\welink\shell\open\command' -ErrorAction SilentlyContinue
@@ -175,7 +175,7 @@ if($protocolKey -and $protocolKey.GetValue('') -eq ('"'+$targetExecutable+'" -- 
 Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WeLink'
 Remove-Item -LiteralPath $PSCommandPath
 if(@(Get-ChildItem -LiteralPath $installDirectory -Force).Count -eq 0){Remove-Item -LiteralPath $installDirectory}
-[void][System.Windows.Forms.MessageBox]::Show('WeLink 已卸载。','WeLink')
+[void][System.Windows.Forms.MessageBox]::Show('LinkMe 已卸载。','LinkMe')
 `
 
-const setupHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden;font:17px 'Microsoft YaHei',sans-serif;color:#8e99a8}body{background:radial-gradient(at 10% 10%,#fff0f2,transparent 55%),radial-gradient(at 90% 20%,#e4f8fe,transparent 70%),linear-gradient(#eef4ff,#f2fcfe 60%,white)}header{height:38px;display:flex;justify-content:flex-end}header button{height:32px;width:48px;border:0;background:none;color:#28323e;font-size:23px}header button:hover{background:#e6eef5}header button:last-child:hover{background:#ef5959;color:#fff}.brand{position:absolute;top:34%;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:20px;color:#101b2e}.brand img{width:88px;height:88px}.brand b{font-size:68px;letter-spacing:-3px;font-weight:600}#install{position:absolute;top:66%;left:50%;transform:translateX(-50%);background:#0099ff;color:white;border:0;border-radius:5px;font-size:23px;padding:9px 29px;cursor:pointer}#install:hover{background:#008eec}#install:disabled{opacity:.65;cursor:wait}.bottom{position:absolute;bottom:29px;left:34px;right:34px;display:flex;align-items:center;gap:9px;font-size:15px}.bottom input{accent-color:#0099ff;width:18px;height:18px}.bottom a{color:#0099ff;cursor:pointer}.bottom button{margin-left:auto;background:none;border:0;color:#8e99a8;font-size:15px;cursor:pointer}#custom{position:absolute;bottom:75px;left:45px;right:45px;display:none;font-size:13px}#custom input{width:100%;border:1px solid #d9e5ee;background:#fffd;padding:9px;border-radius:5px;margin-top:8px;color:#536376}#status{position:absolute;top:77%;left:35px;right:35px;font-size:13px;text-align:center;color:#ea6666}</style><header onpointerdown="if(event.target===this)dragSetup()"><button onclick="minimizeSetup()">−</button><button onclick="closeSetup()">×</button></header><div class="brand"><img src="data:image/svg+xml;base64,{{ICON}}"><b>WeLink</b></div><button id="install">立即安装</button><div id="status"></div><div id="custom">安装目录<input id="directory"></div><div class="bottom"><input id="agree" type="checkbox" checked><span>我已阅读 <a onclick="document.getElementById('status').textContent='WeLink 使用独立账号；远程协助必须经过双方同意。应用数据保存在个人目录及服务端。'">使用说明与隐私说明</a></span><button onclick="document.getElementById('custom').style.display=document.getElementById('custom').style.display==='block'?'none':'block'">⌄ 自定义选项</button></div><script>document.getElementById('directory').value={{DIRECTORY}};let executable='';document.getElementById('install').onclick=async function(){if(!document.getElementById('agree').checked){document.getElementById('status').textContent='请先阅读并同意使用说明';return}this.disabled=true;try{if(executable){await launchWeLink(executable);return}this.textContent='正在安装…';executable=await installWeLink(document.getElementById('directory').value);this.textContent='立即体验';document.getElementById('status').textContent='安装完成，已创建桌面和开始菜单快捷方式。';document.getElementById('status').style.color='#7a91a4'}catch(error){this.textContent='重新安装';document.getElementById('status').textContent=String(error)}finally{this.disabled=false}}</script></html>`
+const setupHTML = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden;font:17px 'Microsoft YaHei',sans-serif;color:#8e99a8}body{background:radial-gradient(at 10% 10%,#fff0f2,transparent 55%),radial-gradient(at 90% 20%,#e4f8fe,transparent 70%),linear-gradient(#eef4ff,#f2fcfe 60%,white)}header{height:38px;display:flex;justify-content:flex-end}header button{height:32px;width:48px;border:0;background:none;color:#28323e;font-size:23px}header button:hover{background:#e6eef5}header button:last-child:hover{background:#ef5959;color:#fff}.brand{position:absolute;top:34%;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:20px;color:#101b2e}.brand img{width:88px;height:88px}.brand b{font-size:68px;letter-spacing:-3px;font-weight:600}#install{position:absolute;top:66%;left:50%;transform:translateX(-50%);background:#0099ff;color:white;border:0;border-radius:5px;font-size:23px;padding:9px 29px;cursor:pointer}#install:hover{background:#008eec}#install:disabled{opacity:.65;cursor:wait}.bottom{position:absolute;bottom:29px;left:34px;right:34px;display:flex;align-items:center;gap:9px;font-size:15px}.bottom input{accent-color:#0099ff;width:18px;height:18px}.bottom a{color:#0099ff;cursor:pointer}.bottom button{margin-left:auto;background:none;border:0;color:#8e99a8;font-size:15px;cursor:pointer}#custom{position:absolute;bottom:75px;left:45px;right:45px;display:none;font-size:13px}#custom input{width:100%;border:1px solid #d9e5ee;background:#fffd;padding:9px;border-radius:5px;margin-top:8px;color:#536376}#status{position:absolute;top:77%;left:35px;right:35px;font-size:13px;text-align:center;color:#ea6666}</style><header onpointerdown="if(event.target===this)dragSetup()"><button onclick="minimizeSetup()">−</button><button onclick="closeSetup()">×</button></header><div class="brand"><img src="data:image/svg+xml;base64,{{ICON}}"><b>LinkMe</b></div><button id="install">立即安装</button><div id="status"></div><div id="custom">安装目录<input id="directory"></div><div class="bottom"><input id="agree" type="checkbox" checked><span>我已阅读 <a onclick="document.getElementById('status').textContent='LinkMe 使用独立账号；远程协助必须经过双方同意。应用数据保存在个人目录及服务端。'">使用说明与隐私说明</a></span><button onclick="document.getElementById('custom').style.display=document.getElementById('custom').style.display==='block'?'none':'block'">⌄ 自定义选项</button></div><script>document.getElementById('directory').value={{DIRECTORY}};let executable='';document.getElementById('install').onclick=async function(){if(!document.getElementById('agree').checked){document.getElementById('status').textContent='请先阅读并同意使用说明';return}this.disabled=true;try{if(executable){await launchWeLink(executable);return}this.textContent='正在安装…';executable=await installWeLink(document.getElementById('directory').value);this.textContent='立即体验';document.getElementById('status').textContent='安装完成，已创建桌面和开始菜单快捷方式。';document.getElementById('status').style.color='#7a91a4'}catch(error){this.textContent='重新安装';document.getElementById('status').textContent=String(error)}finally{this.disabled=false}}</script></html>`

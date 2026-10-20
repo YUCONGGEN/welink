@@ -22,6 +22,7 @@ type Config struct {
 	DataDir, DownloadsDir string
 	Logger                *log.Logger
 	Settings              *Settings
+	EmailSender           emailSender
 }
 type Server struct {
 	db                   *sql.DB
@@ -42,6 +43,8 @@ type Server struct {
 	uploadSlots          chan struct{}
 	storageDone          chan struct{}
 	media                *mediaRelay
+	emailSender          emailSender
+	ai                   *aiService
 }
 type bucket struct {
 	count int
@@ -81,6 +84,14 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux()}
 	s.settings = settings
+	if err = s.initEmail(cfg.EmailSender); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err = s.initAI(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	mode := "0"
 	if settings.Directory.AllUsers {
 		mode = "1"
@@ -106,6 +117,10 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 func (s *Server) Close() error {
+	if s.ai != nil {
+		s.ai.cancel()
+		s.ai.wg.Wait()
+	}
 	if s.media != nil {
 		s.media.close()
 	}
@@ -152,9 +167,10 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func (s *Server) routes() {
+	s.mux.HandleFunc("POST /api/ai/v1/responses", s.aiProxy)
 	s.mux.HandleFunc("POST /api/integrations/yudesk/support", s.yudeskSupport)
 	s.mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, r *http.Request) {
-		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled})
+		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled, "emailAuthEnabled": s.settings.EmailAuth.Enabled})
 	})
 	s.mux.HandleFunc("GET /share/{token}", s.publicDriveShare)
 	s.mux.HandleFunc("GET /space/{user}", s.publicSpace)
@@ -168,14 +184,18 @@ func (s *Server) routes() {
 	})
 	s.mux.HandleFunc("POST /api/auth/register", s.register)
 	s.mux.HandleFunc("POST /api/auth/login", s.login)
+	s.mux.HandleFunc("POST /api/auth/email/code", s.emailCode)
+	s.mux.HandleFunc("POST /api/auth/email/reset", s.emailReset)
 	s.mux.HandleFunc("POST /api/auth/qr", s.createQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/poll", s.pollQRLogin)
 	s.mux.HandleFunc("POST /api/auth/qr/cancel", s.cancelQRLogin)
 	for pattern, h := range map[string]http.HandlerFunc{
+		"GET /api/ai/config": s.aiConfig, "POST /api/ai/runs": s.aiPrepare, "GET /api/ai/runs/{id}": s.aiStatus, "POST /api/ai/runs/{id}/complete": s.aiComplete, "POST /api/ai/runs/{id}/cancel": s.aiCancel,
 		"POST /api/drive/folders": s.createDriveFolder, "PATCH /api/drive/folders/{id}": s.renameDriveFolder, "DELETE /api/drive/folders/{id}": s.deleteDriveFolder, "POST /api/drive/files/{id}/move": s.moveDriveFile,
 		"GET /api/drive": s.listDrive, "POST /api/drive/files": s.uploadDrive, "GET /api/drive/files/{id}": s.downloadDrive, "PATCH /api/drive/files/{id}": s.renameDrive, "DELETE /api/drive/files/{id}": s.deleteDrive, "POST /api/drive/files/{id}/share": s.shareDrive, "DELETE /api/drive/files/{id}/share": s.revokeDriveShare,
 		"GET /api/spaces/{user}": s.listSpace, "PATCH /api/spaces/me/access": s.setSpaceAccess, "GET /api/spaces/{user}/documents/{id}": s.readSpaceDocument, "POST /api/spaces/me/documents": s.saveSpaceDocument, "PUT /api/spaces/me/documents/{id}": s.saveSpaceDocument, "DELETE /api/spaces/me/documents/{id}": s.deleteSpaceDocument,
 		"POST /api/admin/users/{id}/password": s.adminResetPassword,
+		"POST /api/admin/users/email-code":    s.emailCode,
 		"GET /api/admin/users/{id}":           s.adminUserProfile, "PATCH /api/admin/users/{id}": s.adminUpdateProfile,
 		"GET /api/admin/users": s.adminUsers, "POST /api/admin/users": s.adminCreateUser, "DELETE /api/admin/users/{id}": s.adminDeleteUser,
 		"DELETE /api/conversations/{id}":    s.hideConversation,
@@ -200,8 +220,9 @@ func (s *Server) routes() {
 		"GET /api/users": s.users, "GET /api/friends": s.friends, "GET /api/requests": s.requests, "POST /api/requests": s.addRequest, "POST /api/requests/{id}": s.resolveRequest,
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
 		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
-		"GET /api/outbox/{clientId}": s.messageReceipt,
-		"POST /api/calls":            s.createCall, "GET /api/calls/active": s.activeCalls, "GET /api/calls/history": s.callHistory, "GET /api/calls/{id}": s.getCall, "POST /api/calls/{id}/respond": s.respondCall, "POST /api/calls/{id}/end": s.endCall, "DELETE /api/calls/{id}": s.deleteCall,
+		"GET /api/messages/{id}/notification": s.messageNotification,
+		"GET /api/outbox/{clientId}":          s.messageReceipt,
+		"POST /api/calls":                     s.createCall, "GET /api/calls/active": s.activeCalls, "GET /api/calls/history": s.callHistory, "GET /api/calls/{id}": s.getCall, "POST /api/calls/{id}/respond": s.respondCall, "POST /api/calls/{id}/end": s.endCall, "DELETE /api/calls/{id}": s.deleteCall,
 		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
 		"POST /api/conversations/{id}/messages/sync": s.syncCachedMessages,
@@ -293,6 +314,9 @@ func (s *Server) requireMember(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 func (s *Server) online(id string) bool {
+	if s.isAI(id) {
+		return true
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.clients[id]) > 0
@@ -303,6 +327,7 @@ func (s *Server) user(id string) (u User, err error) {
 		err = s.fillProfileDetails(&u)
 	}
 	u.Online = s.online(id)
+	u.AI = s.isAI(id)
 	return
 }
 func (s *Server) push(users []string, kind string, data any) {

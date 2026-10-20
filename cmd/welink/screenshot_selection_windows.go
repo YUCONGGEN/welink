@@ -125,7 +125,7 @@ func (h *windowsHost) openScreenshotSelection(frame *screenshotFrame, wasHidden 
 		return screenshotClassError
 	}
 	s := &screenshotSelection{host: h, frame: frame, wasHidden: wasHidden, version: h.desktop.captureVersion}
-	title, _ := syscall.UTF16PtrFromString("WeLink 截图 · 拖动框选，Enter 完成，Esc 取消")
+	title, _ := syscall.UTF16PtrFromString("LinkMe 截图 · 拖动框选，Enter 完成，Esc 取消")
 	window, _, err := user32.NewProc("CreateWindowExW").Call(0x88, uintptr(unsafe.Pointer(screenshotClassName)), uintptr(unsafe.Pointer(title)), 0x80000000, uintptr(frame.bounds.Min.X), uintptr(frame.bounds.Min.Y), uintptr(frame.bounds.Dx()), uintptr(frame.bounds.Dy()), h.hwnd, 0, module, 0)
 	if window == 0 {
 		return fmt.Errorf("无法打开截图选区：%w", err)
