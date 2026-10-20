@@ -245,14 +245,14 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/downloads/") && s.downloads != "" {
 		name := strings.TrimPrefix(r.URL.Path, "/downloads/")
-		// New public filenames serve the same versioned binaries as existing links.
+		// Keep legacy WeLink URLs working while LinkMe is the published name.
 		switch name {
-		case "LinkMe-Windows.exe":
-			name = "WeLink-Windows.exe"
-		case "LinkMe-Setup.exe":
-			name = "WeLink-Setup.exe"
-		case "LinkMe-Android.apk":
-			name = "WeLink-Android.apk"
+		case "WeLink-Windows.exe":
+			name = "LinkMe-Windows.exe"
+		case "WeLink-Setup.exe":
+			name = "LinkMe-Setup.exe"
+		case "WeLink-Android.apk":
+			name = "LinkMe-Android.apk"
 		}
 		if name != "LinkMe-Windows.exe" && name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" && name != "WeLink-Windows.exe" && name != "WeLink-Android.apk" && name != "WeLink-Setup.exe" {
 			http.NotFound(w, r)
