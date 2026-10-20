@@ -72,6 +72,43 @@ func TestYuDeskSupportBridge(t *testing.T) {
 	}
 }
 
+func TestYuDeskSupportAccountIsAlsoStaff(t *testing.T) {
+	key := strings.Repeat("s", 40)
+	t.Setenv("WELINK_YUDESK_SECRET", key)
+	f := setup(t)
+	staff := f.register("self_support")
+	other := f.register("second_support")
+	email := "staff@example.com"
+	if _, err := f.s.db.Exec("INSERT INTO user_emails(user_id,email,verified) VALUES(?,?,?)", staff.User.ID, email, now()); err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce the relation left by the old account-sync implementation.
+	f.s.db.Exec("INSERT INTO friends(user_id,peer_id) VALUES(?,?)", staff.User.ID, staff.User.ID)
+	var out struct {
+		UserID string
+		Staff  []struct {
+			Number string
+			Self   bool
+		}
+	}
+	body := map[string]any{"action": "bootstrap", "email": email, "staff": []string{staff.User.Number, other.User.Number}}
+	path := "/api/integrations/yudesk/support"
+	f.request("POST", path, key, body, 200, &out)
+	if out.UserID != staff.User.ID || len(out.Staff) != 2 || !out.Staff[0].Self || out.Staff[1].Self {
+		t.Fatalf("self roster %+v", out)
+	}
+	var selfFriends, members int
+	f.s.db.QueryRow("SELECT COUNT(*) FROM friends WHERE user_id=? AND peer_id=?", staff.User.ID, staff.User.ID).Scan(&selfFriends)
+	f.s.db.QueryRow("SELECT COUNT(*) FROM members WHERE user_id=?", staff.User.ID).Scan(&members)
+	if selfFriends != 0 || members != 1 {
+		t.Fatal("self contact/conversation", selfFriends, members)
+	}
+	body["action"], body["peer"] = "history", staff.User.Number
+	f.request("POST", path, key, body, 409, nil)
+	body["action"], body["peer"], body["text"], body["clientId"] = "send", other.User.Number, "Help", "self-staff-to-other"
+	f.request("POST", path, key, body, 200, nil)
+}
+
 func TestYuDeskEmailIdentityDoesNotAdoptPhone(t *testing.T) {
 	key := strings.Repeat("e", 40)
 	t.Setenv("WELINK_YUDESK_SECRET", key)

@@ -129,6 +129,10 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		// Return only support identity/contact information, never a login token.
 		contacts := []map[string]any{}
 		for _, u := range staff {
+			if u.ID == id {
+				contacts = append(contacts, map[string]any{"number": u.Number, "name": u.Name, "online": u.Online, "unread": 0, "self": true})
+				continue
+			}
 			var unread int
 			cid, e := s.yudeskConversation(id, u.ID)
 			if e != nil {
@@ -148,6 +152,10 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ok(w, map[string]any{"ok": true, "userId": id, "origin": "来自 YuDesk", "staff": contacts, "credentialRevision": revision})
+		return
+	}
+	if peer.ID == id {
+		fail(w, http.StatusConflict, "当前账号就是该客服，请选择其他客服")
 		return
 	}
 	if !contactAllowed(s.db, id, peer.ID) {
@@ -267,6 +275,14 @@ func (s *Server) yudeskIdentity(phone string, staff []User) (string, error) {
 	}
 	changed := []string{}
 	for _, u := range staff {
+		if u.ID == id {
+			// Older bridge releases inserted a self-contact before failing to
+			// create its duplicate conversation members. Repair only that pair.
+			if _, err = tx.Exec("DELETE FROM friends WHERE user_id=? AND peer_id=?", id, id); err != nil {
+				return "", err
+			}
+			continue
+		}
 		if contactBlocked(tx, id, u.ID) {
 			continue
 		}
