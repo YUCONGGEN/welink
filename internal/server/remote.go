@@ -69,7 +69,7 @@ func (s *Server) inviteRemote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var busy int
-	_ = s.db.QueryRow("SELECT COUNT(*) FROM remotes WHERE ((state='pending' AND updated>?) OR (state='accepted' AND updated>?)) AND (requester IN (?,?) OR recipient IN (?,?))", now()-60000, now()-7200000, uid(r), recipient, uid(r), recipient).Scan(&busy)
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM remotes WHERE (state='pending' OR (state='accepted' AND updated>?)) AND (requester IN (?,?) OR recipient IN (?,?))", now()-7200000, uid(r), recipient, uid(r), recipient).Scan(&busy)
 	if busy > 0 {
 		fail(w, 409, "已有远程协助正在等待或进行中")
 		return
@@ -89,10 +89,6 @@ func (s *Server) getRemote(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "远程协助不存在")
 		return
 	}
-	if v.State == "pending" && now()-v.Created > 60000 {
-		_, _ = s.db.Exec("UPDATE remotes SET state='expired',updated=? WHERE id=? AND state='pending'", now(), v.ID)
-		v.State = "expired"
-	}
 	ok(w, v)
 }
 func (s *Server) respondRemote(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +104,7 @@ func (s *Server) respondRemote(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无法处理此邀请")
 		return
 	}
-	if v.State != "pending" || now()-v.Created > 60000 {
+	if v.State != "pending" {
 		fail(w, 409, "邀请已失效")
 		return
 	}

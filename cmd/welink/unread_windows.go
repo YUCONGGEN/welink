@@ -31,15 +31,10 @@ func (h *windowsHost) setUnreadIcon(icon uintptr) {
 	if icon == 0 {
 		return
 	}
-	h.desktop.icon.Icon = icon
-	// WM_SETICON changes the actual taskbar icon as well as the window icon.
+	// Flash the actual application taskbar/window icon. Keep the system tray
+	// icon stable; it is a separate surface and is not the unread indicator.
 	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 0, icon)
 	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 1, icon)
-	if h.desktop.trayAvailable {
-		d := h.desktop.icon
-		d.Flags = 2
-		shellNotify.Call(1, uintptr(unsafe.Pointer(&d)))
-	}
 }
 func (h *windowsHost) stopUnreadPulse() {
 	user32.NewProc("KillTimer").Call(h.hwnd, unreadTimer)

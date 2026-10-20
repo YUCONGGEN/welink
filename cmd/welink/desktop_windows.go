@@ -3,12 +3,15 @@
 package main
 
 import (
+	_ "embed"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -50,7 +53,10 @@ type desktopState struct {
 	taskbarCreated                 uint32
 	normalIcon, greenIcon          uintptr
 	greenPhase                     bool
+	normalIconOwned                bool
 	unread                         int
+	messageUnread                  int
+	activityUnread                 map[string]bool
 	lastAlert                      time.Time
 	hotkeys                        *desktopHotkeys
 	startup                        *desktopStartup
@@ -61,6 +67,7 @@ type desktopState struct {
 	captureCancel                  chan struct{}
 	captureWasHidden               bool
 	pendingMessage                 string
+	pendingInviteAction            string
 }
 
 var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref uintptr) uintptr {
@@ -127,8 +134,57 @@ var desktopSubclass = syscall.NewCallback(func(hwnd, message, wp, lp, id, ref ui
 	return r
 })
 
+//go:embed resources/linkme.ico
+var linkMeIconICO []byte
+
+func loadLinkMeIcon(size int32) uintptr {
+	if len(linkMeIconICO) < 6 {
+		return 0
+	}
+	count := int(binary.LittleEndian.Uint16(linkMeIconICO[4:6]))
+	best, bestCost := -1, int(^uint(0)>>1)
+	for i := 0; i < count; i++ {
+		entry := 6 + i*16
+		if entry+16 > len(linkMeIconICO) {
+			break
+		}
+		w, h := int(linkMeIconICO[entry]), int(linkMeIconICO[entry+1])
+		if w == 0 {
+			w = 256
+		}
+		if h == 0 {
+			h = 256
+		}
+		dw, dh := w-int(size), h-int(size)
+		if dw < 0 {
+			dw = -dw
+		}
+		if dh < 0 {
+			dh = -dh
+		}
+		cost := dw*2 + dh*2
+		if w >= int(size) && h >= int(size) {
+			cost--
+		}
+		if cost < bestCost {
+			best, bestCost = i, cost
+		}
+	}
+	if best < 0 {
+		return 0
+	}
+	entry := 6 + best*16
+	length := int(binary.LittleEndian.Uint32(linkMeIconICO[entry+8 : entry+12]))
+	offset := int(binary.LittleEndian.Uint32(linkMeIconICO[entry+12 : entry+16]))
+	if length <= 0 || offset < 0 || offset+length > len(linkMeIconICO) {
+		return 0
+	}
+	icon, _, _ := user32.NewProc("CreateIconFromResourceEx").Call(uintptr(unsafe.Pointer(&linkMeIconICO[offset])), uintptr(length), 1, 0x30000, uintptr(size), uintptr(size), 0)
+	return icon
+}
+
 func (h *windowsHost) installDesktop(directory string) error {
-	h.desktop = desktopState{directory: directory, preferences: desktopconfig.Defaults(), done: make(chan struct{})}
+	h.desktop = desktopState{directory: directory, preferences: desktopconfig.Defaults(), done: make(chan struct{}), activityUnread: make(map[string]bool)}
 	if raw, err := os.ReadFile(filepath.Join(directory, "desktop.json")); err == nil {
 		preferences := h.desktop.preferences
 		if err = json.Unmarshal(raw, &preferences); err != nil {
@@ -151,12 +207,20 @@ func (h *windowsHost) installDesktop(directory string) error {
 		return fmt.Errorf("初始化桌面窗口失败: %v", err)
 	}
 	module, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
-	icon, _, _ := user32.NewProc("LoadImageW").Call(module, windowsIconResource, 1, 32, 32, 0x8000) // resource icon, LR_SHARED
+	icon := loadLinkMeIcon(32)
+	if icon != 0 {
+		h.desktop.normalIconOwned = true
+	}
+	if icon == 0 {
+		icon, _, _ = user32.NewProc("LoadImageW").Call(module, windowsIconResource, 1, 32, 32, 0x8000)
+	} // resource icon, LR_SHARED
 	if icon == 0 {
 		icon, _, _ = user32.NewProc("LoadIconW").Call(0, 32512)
 	}
 	h.desktop.icon = notifyIconData{Window: h.hwnd, ID: 1, Flags: 0x87, Callback: desktopTrayMessage, Icon: icon}
 	h.desktop.normalIcon = icon
+	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 0, icon)
+	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 1, icon)
 	h.desktop.icon.Size = uint32(unsafe.Sizeof(h.desktop.icon))
 	name, _ := syscall.UTF16PtrFromString("TaskbarCreated")
 	restart, _, _ := user32.NewProc("RegisterWindowMessageW").Call(uintptr(unsafe.Pointer(name)))
@@ -206,12 +270,19 @@ func (h *windowsHost) installDesktop(directory string) error {
 	h.view.Bind("welinkScreenshotCancel", h.cancelScreenshot)
 	h.view.Bind("welinkScreenshotCopy", func(encoded string) error { return copyScreenshot(encoded) })
 	h.view.Bind("welinkDesktopUnread", func(count int) { h.setUnread(count) })
+	h.view.Bind("welinkDesktopActivity", func(key string, active bool) { h.setActivityUnread(key, active) })
+	h.view.Bind("welinkDesktopClearActivities", func(prefix string) { h.clearActivityUnread(prefix) })
 	h.view.Bind("welinkDesktopExit", func() { h.Action("quit") })
 	h.view.Bind("welinkMeetingInvitation", func() string { return takeMeetingInvite(directory) })
 	h.view.Bind("welinkMeetingNotify", func(code, title string, expires int64) bool { return h.showMeetingNotice(code, title, expires) })
 	h.view.Bind("welinkMeetingClear", func() { h.closeMeetingNotices() })
 	h.view.Bind("welinkMessageNotifications", func() bool { return true })
 	h.view.Bind("welinkTakeMessageNotification", func() string { value := h.desktop.pendingMessage; h.desktop.pendingMessage = ""; return value })
+	h.view.Bind("welinkTakeNativeInviteAction", func() string {
+		value := h.desktop.pendingInviteAction
+		h.desktop.pendingInviteAction = ""
+		return value
+	})
 	h.view.Init(`window.welinkNativeHidden=false;`)
 	return nil
 }
@@ -260,24 +331,43 @@ func (h *windowsHost) trayTip() {
 
 func (h *windowsHost) setUnread(count int) {
 	count = max(0, min(99999, count))
+	h.desktop.messageUnread = count
+	h.updateUnread()
+}
+
+func (h *windowsHost) setActivityUnread(key string, active bool) {
+	if key == "" || len(key) > 180 {
+		return
+	}
+	if h.desktop.activityUnread == nil {
+		h.desktop.activityUnread = make(map[string]bool)
+	}
+	if active {
+		h.desktop.activityUnread[key] = true
+	} else {
+		delete(h.desktop.activityUnread, key)
+	}
+	h.updateUnread()
+}
+
+func (h *windowsHost) clearActivityUnread(prefix string) {
+	for key := range h.desktop.activityUnread {
+		if prefix == "" || strings.HasPrefix(key, prefix) {
+			delete(h.desktop.activityUnread, key)
+		}
+	}
+	h.updateUnread()
+}
+
+func (h *windowsHost) updateUnread() {
 	previous := h.desktop.unread
-	h.desktop.unread = count
-	if count == 0 {
+	h.desktop.unread = min(99999, h.desktop.messageUnread+len(h.desktop.activityUnread))
+	if h.desktop.unread == 0 {
 		h.stopUnreadPulse()
 	} else if previous == 0 {
 		h.unreadPulse()
 		user32.NewProc("SetTimer").Call(h.hwnd, unreadTimer, 650, 0)
 	}
-	if !h.desktop.trayAvailable {
-		return
-	}
-	h.trayTip()
-	d := h.desktop.icon
-	d.Flags = 0x84 // tooltip; balloon text never includes private message content
-	if count == 0 {
-		d.Flags |= 0x10
-	} // Empty NIF_INFO dismisses a previous balloon.
-	shellNotify.Call(1, uintptr(unsafe.Pointer(&d)))
 }
 
 // Runs even while the WebView is hidden. The main window never owns popups.
@@ -287,25 +377,51 @@ func (h *windowsHost) Notify(n client.Notification) {
 			return
 		}
 		if n.Type == "reset" || n.Type == "signed-out" {
-			h.closeMessageNotices()
+			h.closeMeetingNotices()
 			h.setUnread(0)
+			h.clearActivityUnread("")
 			h.desktop.pendingMessage = ""
+			h.desktop.pendingInviteAction = ""
 			return
 		}
 		if n.Type == "unread" {
 			h.setUnread(n.Unread)
 			return
 		}
-		if n.Type != "message" {
-			return
-		}
-		h.setUnread(h.desktop.unread + 1)
-		if h.desktop.preferences.MessageSound && time.Since(h.desktop.lastAlert) > 1500*time.Millisecond {
-			user32.NewProc("MessageBeep").Call(0x40)
-			h.desktop.lastAlert = time.Now()
-		}
-		if h.desktop.preferences.MessageAlerts {
-			h.showNotice("", n.Title, time.Now().Add(12*time.Second).UnixMilli(), &n)
+		switch n.Type {
+		case "message":
+			if h.desktop.preferences.MessageSound && time.Since(h.desktop.lastAlert) > 1500*time.Millisecond {
+				user32.NewProc("MessageBeep").Call(0x40)
+				h.desktop.lastAlert = time.Now()
+			}
+		case "call":
+			key := "call/" + n.ID
+			if n.CanRespond && n.State == "ringing" {
+				h.setActivityUnread(key, true)
+				h.showIncomingNotice(n)
+			} else if n.ID != "" {
+				h.closeIncomingNotice(key)
+				missed := n.State == "ended" && n.Started == 0 && n.Recipient == n.UserID && (n.Reason == "no_answer" || n.Reason == "cancelled" || n.Reason == "offline" || n.Reason == "interrupted")
+				h.setActivityUnread(key, missed)
+			}
+		case "remote":
+			key := "remote/" + n.ID
+			if n.Recipient == n.UserID && n.State == "pending" {
+				h.setActivityUnread(key, true)
+				h.showIncomingNotice(n)
+			} else if n.ID != "" {
+				h.closeIncomingNotice(key)
+				h.setActivityUnread(key, false)
+			}
+		case "meeting":
+			key := "meeting/" + n.Code
+			if n.State == "pending" {
+				h.setActivityUnread(key, true)
+				h.showIncomingNotice(n)
+			} else if n.Code != "" {
+				h.closeIncomingNotice(key)
+				h.setActivityUnread(key, false)
+			}
 		}
 	})
 }
@@ -404,6 +520,10 @@ func (h *windowsHost) removeDesktop() {
 		shellNotify.Call(2, uintptr(unsafe.Pointer(&h.desktop.icon)))
 	}
 	h.desktop.closing = true
+	if h.desktop.normalIconOwned && h.desktop.normalIcon != 0 {
+		user32.NewProc("DestroyIcon").Call(h.desktop.normalIcon)
+		h.desktop.normalIconOwned = false
+	}
 	commonControls.NewProc("RemoveWindowSubclass").Call(h.hwnd, desktopSubclass, 1)
 	desktopWindows.Delete(h.hwnd)
 }

@@ -3,17 +3,15 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 	"welink/internal/client"
 )
 
-func TestNativeMessageNotificationClickWhileHidden(t *testing.T) {
+func TestNativeMessageDoesNotPopupAndUnreadPulsesTaskbar(t *testing.T) {
 	if os.Getenv("WELINK_NATIVE_DESKTOP_TEST") != "1" {
 		t.Skip("opt-in native window test")
 	}
@@ -33,41 +31,23 @@ func TestNativeMessageNotificationClickWhileHidden(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		h.view.Dispatch(func() { h.closeWindow(); h.desktop.preferences.MessageSound = false })
 		h.Notify(n)
+		h.Notify(client.Notification{Type: "unread", Unread: 1})
 		h.view.Dispatch(func() {
 			var failure error
 			defer func() { done <- failure; h.exitDesktop() }()
-			var popup uintptr
+			count := 0
 			meetingNotices.Range(func(key, value any) bool {
-				v := value.(*meetingNotice)
-				if v.host == h && v.message != nil {
-					popup = key.(uintptr)
+				if value.(*meetingNotice).host == h {
+					count++
 				}
 				return true
 			})
-			visible, _, _ := user32.NewProc("IsWindowVisible").Call(popup)
-			if popup == 0 || visible == 0 {
-				failure = fmt.Errorf("message popup absent while main window hidden")
+			if count != 0 {
+				failure = fmt.Errorf("ordinary message created %d desktop popup(s)", count)
 				return
 			}
-			var rect, work noticeRect
-			user32.NewProc("GetWindowRect").Call(popup, uintptr(unsafe.Pointer(&rect)))
-			user32.NewProc("SystemParametersInfoW").Call(0x30, 0, uintptr(unsafe.Pointer(&work)), 0)
-			if rect.Right > work.Right || rect.Bottom > work.Bottom || work.Right-rect.Right > 80 || work.Bottom-rect.Bottom > 80 {
-				failure = fmt.Errorf("message popup outside bottom-right work area")
-				return
-			}
-			user32.NewProc("SendMessageW").Call(popup, 0x111, 101, 0)
-			var pending client.Notification
-			if json.Unmarshal([]byte(h.desktop.pendingMessage), &pending) != nil || pending.ConversationID != n.ConversationID || pending.UserID != n.UserID {
-				failure = fmt.Errorf("notification click did not target its conversation")
-				return
-			}
-			visible, _, _ = user32.NewProc("IsWindowVisible").Call(h.hwnd)
-			if visible == 0 {
-				failure = fmt.Errorf("notification click did not restore main window")
-			}
-			if _, exists := meetingNotices.Load(popup); exists {
-				failure = fmt.Errorf("clicked notification remained")
+			if h.desktop.unread != 1 || !h.desktop.greenPhase || h.desktop.greenIcon == 0 {
+				failure = fmt.Errorf("unread message did not pulse the taskbar icon: %+v", h.desktop)
 			}
 		})
 	}()

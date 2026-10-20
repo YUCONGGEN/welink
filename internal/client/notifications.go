@@ -21,6 +21,19 @@ type Notification struct {
 	UserID         string `json:"userId,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
 	MessageID      string `json:"messageId,omitempty"`
+	ID             string `json:"id,omitempty"`
+	State          string `json:"state,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	Started        int64  `json:"started,omitempty"`
+	From           string `json:"from,omitempty"`
+	FromName       string `json:"fromName,omitempty"`
+	Recipient      string `json:"recipient,omitempty"`
+	Requester      string `json:"requester,omitempty"`
+	Host           string `json:"host,omitempty"`
+	Code           string `json:"code,omitempty"`
+	CanRespond     bool   `json:"canRespond,omitempty"`
+	Expires        int64  `json:"expires,omitempty"`
 	Title          string `json:"title,omitempty"`
 	Body           string `json:"body,omitempty"`
 }
@@ -137,6 +150,77 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 		}
 		return nil
 	}
+	deliverEvent := func(kind string, data json.RawMessage) error {
+		var notice Notification
+		switch kind {
+		case "call":
+			var ref struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(data, &ref) != nil || !notificationIDPattern.MatchString(ref.ID) {
+				return nil
+			}
+			var call struct {
+				ID             string `json:"id"`
+				ConversationID string `json:"conversationId"`
+				Caller         string `json:"caller"`
+				Callee         string `json:"callee"`
+				Mode           string `json:"mode"`
+				State          string `json:"state"`
+				Reason         string `json:"reason"`
+				Started        int64  `json:"started"`
+				Expires        int64  `json:"expires"`
+				CanRespond     bool   `json:"canRespond"`
+				Peer           struct {
+					Name string `json:"name"`
+				} `json:"peer"`
+			}
+			if err := get("/api/calls/"+ref.ID, &call); err != nil {
+				return err
+			}
+			notice = Notification{Type: "call", ID: call.ID, ConversationID: call.ConversationID, From: call.Caller, Recipient: call.Callee, Mode: call.Mode, State: call.State, Reason: call.Reason, Started: call.Started, CanRespond: call.CanRespond, Expires: call.Expires, Title: call.Peer.Name, UserID: me.ID}
+		case "meeting-invite":
+			if json.Unmarshal(data, &notice) != nil {
+				return nil
+			}
+			notice.Type = "meeting"
+			notice.State = "pending"
+			notice.UserID = me.ID
+		case "meeting-ended":
+			if json.Unmarshal(data, &notice) != nil {
+				return nil
+			}
+			notice.Type = "meeting"
+			notice.State = "ended"
+			notice.UserID = me.ID
+		case "remote":
+			if json.Unmarshal(data, &notice) != nil {
+				return nil
+			}
+			notice.Type = "remote"
+			notice.UserID = me.ID
+			notice.From = notice.Requester
+			if notice.From != "" {
+				var profile struct {
+					Name string `json:"name"`
+				}
+				if get("/api/users/"+notice.From, &profile) == nil {
+					notice.Title = profile.Name
+				}
+			}
+		default:
+			return nil
+		}
+		if notice.Title == "" {
+			if notice.Type == "meeting" {
+				notice.Title = "会议邀请"
+			} else if notice.Type == "remote" {
+				notice.Title = "远程协助邀请"
+			}
+		}
+		c.emitNotification(revision, notice)
+		return nil
+	}
 	refreshUnread := func() error {
 		var rows []struct {
 			Unread, MentionCount int
@@ -180,30 +264,46 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 					return conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(5*time.Second))
 				})
 				// Reading independently keeps ping/pong responsive during HTTP lookups.
-				events := make(chan string, 128)
+				type incomingEvent struct {
+					kind, id string
+					data     json.RawMessage
+				}
+				events := make(chan incomingEvent, 128)
 				closed := make(chan struct{})
 				userID := me.ID
 				go func() {
 					defer close(closed)
 					for {
 						var event struct {
-							Type string
-							Data struct{ ID, Sender string }
+							Type string          `json:"type"`
+							Data json.RawMessage `json:"data"`
 						}
 						if conn.ReadJSON(&event) != nil {
 							return
 						}
 						if event.Type == "read" || event.Type == "conversation" || event.Type == "message-deleted" || event.Type == "recall" {
 							select {
-							case events <- "":
+							case events <- incomingEvent{kind: "refresh"}:
 							default:
 								conn.Close()
 								return
 							}
 						}
-						if event.Type == "message" && event.Data.Sender != userID {
+						if event.Type == "message" {
+							var message struct{ ID, Sender string }
+							if json.Unmarshal(event.Data, &message) != nil || message.Sender == userID {
+								continue
+							}
 							select {
-							case events <- event.Data.ID:
+							case events <- incomingEvent{kind: "message", id: message.ID}:
+							default:
+								conn.Close()
+								return
+							}
+						}
+						if event.Type == "call" || event.Type == "meeting-invite" || event.Type == "meeting-ended" || event.Type == "remote" {
+							select {
+							case events <- incomingEvent{kind: event.Type, data: event.Data}:
 							default:
 								conn.Close()
 								return
@@ -235,8 +335,15 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 						break loop
 					case <-closed:
 						break loop
-					case id := <-events:
-						err := deliver(id)
+					case event := <-events:
+						var err error
+						switch event.kind {
+						case "message":
+							err = deliver(event.id)
+						case "refresh":
+						case "call", "meeting-invite", "meeting-ended", "remote":
+							err = deliverEvent(event.kind, event.data)
+						}
 						if err == nil {
 							err = refreshUnread()
 						}

@@ -59,6 +59,7 @@ type meetingRoom struct {
 	HostID         string                         `json:"host"`
 	Peers          map[string]*meetingParticipant `json:"-"`
 	Banned         map[string]bool                `json:"-"`
+	Invitees       map[string]bool                `json:"-"`
 }
 type meetingDirectory struct {
 	sync.Mutex
@@ -123,7 +124,11 @@ func (s *Server) createMeeting(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	room := &meetingRoom{Code: code, Title: p.Title, Owner: uid(r), ConversationID: p.ConversationID, Created: now(), Expires: now() + int64(s.settings.Meetings.DurationMinutes)*60000, HostID: uid(r), Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}}
+	invitees := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		invitees[id] = true
+	}
+	room := &meetingRoom{Code: code, Title: p.Title, Owner: uid(r), ConversationID: p.ConversationID, Created: now(), Expires: now() + int64(s.settings.Meetings.DurationMinutes)*60000, HostID: uid(r), Peers: map[string]*meetingParticipant{}, Banned: map[string]bool{}, Invitees: invitees}
 	s.meetings.rooms[code] = room
 	s.meetings.Unlock()
 	if p.ConversationID != "" {
@@ -178,6 +183,12 @@ func (s *Server) inviteMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := map[string]any{"code": room.Code, "title": room.Title, "from": uid(r), "conversationId": p.ConversationID, "expires": room.Expires}
+	if room.Invitees == nil {
+		room.Invitees = make(map[string]bool)
+	}
+	for _, id := range ids {
+		room.Invitees[id] = true
+	}
 	s.meetings.Unlock()
 	s.push(ids, "meeting-invite", data)
 	ok(w, map[string]bool{"ok": true})
@@ -211,6 +222,13 @@ func (s *Server) finishMeetingLocked(code, reason string) {
 		return
 	}
 	delete(s.meetings.rooms, code)
+	invitees := make([]string, 0, len(room.Invitees))
+	for id := range room.Invitees {
+		invitees = append(invitees, id)
+	}
+	if len(invitees) > 0 {
+		s.push(invitees, "meeting-ended", map[string]any{"code": code, "title": room.Title, "message": reason})
+	}
 	for _, p := range room.Peers {
 		meetingQueue(p, meetingSignal{Type: "ended", Message: reason})
 		time.AfterFunc(300*time.Millisecond, p.socket.close)

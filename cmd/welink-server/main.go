@@ -107,7 +107,7 @@ func main() {
 			_ = downloadServer.Shutdown(c)
 		}
 	}()
-	log.Printf("LinkMe 0.1.15 listening on %s", *addr)
+	log.Printf("LinkMe 0.1.16 listening on %s", *addr)
 	if *cert != "" && *key != "" {
 		e = srv.ListenAndServeTLS(*cert, *key)
 	} else {

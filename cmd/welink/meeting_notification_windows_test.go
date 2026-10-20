@@ -93,8 +93,21 @@ func TestNativeMeetingNotificationWhileHidden(t *testing.T) {
 				}
 				return true
 			})
-			if count != 3 {
+			if count != 4 {
 				failure = fmt.Errorf("notification stack count %d", count)
+			}
+			visibleCount := 0
+			meetingNotices.Range(func(key, value any) bool {
+				if value.(*meetingNotice).host == h {
+					visible, _, _ := user32.NewProc("IsWindowVisible").Call(key.(uintptr))
+					if visible != 0 {
+						visibleCount++
+					}
+				}
+				return true
+			})
+			if visibleCount == 0 || visibleCount > count {
+				failure = fmt.Errorf("unexpected visible popup count %d of %d", visibleCount, count)
 			}
 			h.closeMeetingNotices()
 			meetingNotices.Range(func(_, v any) bool {

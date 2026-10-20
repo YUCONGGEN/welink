@@ -289,7 +289,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.15-preview";
+  var CLIENT_VERSION = "0.1.16-preview";
   function authShowcase() {
     return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> LINKME · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
   }
@@ -448,6 +448,16 @@
         toast2("该聊天暂时无法打开，请在消息列表中查看");
       }
     }
+    async function drainInvites() {
+      var _a2, _b;
+      if (!S2.user) return;
+      try {
+        let raw, takeEvent = (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.takeNativeInviteEvent, takeAction = ((_b = window.WeLinkAndroid) == null ? void 0 : _b.takeNativeInviteAction) || window.welinkTakeNativeInviteAction;
+        if (takeEvent) while (raw = await takeEvent.call(window.WeLinkAndroid)) window.dispatchEvent(new CustomEvent("welink-native-invite-event", { detail: JSON.parse(raw) }));
+        if (takeAction) while (raw = await takeAction.call(window.WeLinkAndroid || window)) window.dispatchEvent(new CustomEvent("welink-native-invite-action", { detail: JSON.parse(raw) }));
+      } catch (e) {
+      }
+    }
     async function start() {
       var _a2;
       if (!supported) return;
@@ -464,12 +474,18 @@
       await action2("/local/notifications", { token: "" });
     }
     window.addEventListener("welink-open-message", open);
+    window.addEventListener("welink-native-invite", drainInvites);
+    window.addEventListener("welink-native-invite-action", (event) => {
+      if (!event.detail) drainInvites();
+    });
     window.addEventListener("focus", () => {
-      if (active) open();
-      else if (S2.user) start().catch(() => {
+      if (active) {
+        open();
+        drainInvites();
+      } else if (S2.user) start().catch(() => {
       });
     });
-    return { start, stop, active: () => active };
+    return { start, stop, drainInvites, active: () => active };
   }
 
   // internal/ui/src/meeting-window.js
@@ -1460,7 +1476,7 @@
   }
 
   // internal/ui/src/calls.js
-  function createCalls({ S: S2, api: api2, action: action2, esc: esc2, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
+  function createCalls({ S: S2, api: api2, action: action2, esc: esc2, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, Desktop: Desktop2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
     const $2 = (s) => document.querySelector(s);
     let active = null, scope = "", generation = 0, refreshTimer2, clock, ringTimer, audio, joining = "", dialing = false, history = null, closingTask = null;
     const permitted = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), dismissed = /* @__PURE__ */ new Set();
@@ -1511,6 +1527,11 @@
     function startRing(incoming) {
       var _a;
       if (ringTimer) return;
+      if (S2.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") {
+        ringTimer = setInterval(() => {
+        }, 6e4);
+        return;
+      }
       if ((_a = window.WeLinkAndroid) == null ? void 0 : _a.callRinging) {
         window.WeLinkAndroid.callRinging(incoming);
         ringTimer = setInterval(() => {
@@ -1549,13 +1570,17 @@
       return n;
     }
     function render() {
-      var _a, _b;
+      var _a, _b, _c;
       if (!active) {
         (_a = $2("#call-layer")) == null ? void 0 : _a.remove();
         return;
       }
-      if (active.state === "ended" || joining === active.id || dismissed.has(active.id)) {
+      if (S2.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") {
         (_b = $2("#call-layer")) == null ? void 0 : _b.remove();
+        return;
+      }
+      if (active.state === "ended" || joining === active.id || dismissed.has(active.id)) {
+        (_c = $2("#call-layer")) == null ? void 0 : _c.remove();
         return;
       }
       const c = active, incoming = c.canRespond, other = !incoming && !c.canEnd;
@@ -1570,8 +1595,11 @@
       }
     }
     async function apply(c, g = generation) {
+      var _a;
       if (!live(g) || c.state !== "ended" && seen.has(c.id)) return;
       if ((active == null ? void 0 : active.id) === c.id && active.revision > c.revision) return;
+      const missed = c.state === "ended" && c.started === 0 && c.callee === ((_a = S2.user) == null ? void 0 : _a.id) && ["no_answer", "offline", "interrupted"].includes(c.reason);
+      Desktop2 == null ? void 0 : Desktop2.activity("call/" + c.id, c.state === "ringing" && c.canRespond || missed);
       if (c.state === "ended") {
         if ((active == null ? void 0 : active.id) === c.id) {
           active = null;
@@ -1778,6 +1806,7 @@
       if (items.length === 50) $2("#call-history-list").insertAdjacentHTML("beforeend", '<button class="secondary" data-call-more>加载更多</button>');
     }
     function openHistory() {
+      Desktop2 == null ? void 0 : Desktop2.clearActivities("call/");
       history = { missed: false, items: [] };
       modal2("通话记录", '<div class="call-history-tabs"><button class="active" data-call-filter="all">全部</button><button data-call-filter="missed">未接来电</button></div><div id="call-history-list"></div>', "", true);
       loadHistory().catch((e) => toast2(e.message));
@@ -1824,7 +1853,13 @@
       }
     });
     window.WeLinkCallNativeClosed = (id) => mediaClosed(id);
-    return { dial, start, stop, changed, sync, card, summary, mediaClosed, isCurrent: (id) => (active == null ? void 0 : active.id) === id && active.canJoin, historyChanged: () => {
+    async function nativeAction(id, accept) {
+      await changed({ id });
+      if ((active == null ? void 0 : active.id) !== id) return;
+      if (accept) await answer(false);
+      else await end(true);
+    }
+    return { dial, start, stop, changed, sync, card, summary, mediaClosed, nativeAction, isCurrent: (id) => (active == null ? void 0 : active.id) === id && active.canJoin, historyChanged: () => {
       if (history) loadHistory().catch(() => {
       });
     }, historyEntry: () => '<button class="call-history-entry" data-call-history>' + icon2("phone") + "<span>通话记录</span>" + icon2("chevron") + "</button>" };
@@ -1843,13 +1878,23 @@
         lastCount = -1;
       });
     }
+    function activity(key, active) {
+      if (!native) return;
+      window.welinkDesktopActivity(key, !!active).catch(() => {
+      });
+    }
+    function clearActivities(prefix = "") {
+      if (!native) return;
+      window.welinkDesktopClearActivities(prefix).catch(() => {
+      });
+    }
     async function settings2() {
       var _a, _b, _c, _d, _e, _f;
       try {
         const p = await window.welinkDesktopSettings();
         const toggle = (id, label, checked) => '<label class="prefs-row" for="'.concat(id, '"><span>').concat(label, '</span><input id="').concat(id, '" type="checkbox" ').concat(checked ? "checked" : "", "></label>");
         const shortcut = (id, label, value, error) => '<label class="prefs-row desktop-shortcut" for="'.concat(id, '"><span>').concat(label, '</span><span class="shortcut-control"><input id="').concat(id, '" class="shortcut-input" readonly value="').concat(esc2(value || ""), '" placeholder="点击后按下快捷键" aria-label="').concat(label, '快捷键"><button class="secondary" type="button" data-clear-shortcut="').concat(id, '">清除</button></span></label>').concat(error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc2(error) + "</p>" : "");
-        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 LinkMe", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", (_a = p.startMinimized) != null ? _a : true) + '<p class="hint">仅对当前 Windows 用户生效，默认关闭。'.concat(p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : "", "</p>") + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p>' + toggle("desktop-message-alerts", "右下角新消息提醒", p.messageAlerts) + '<p class="hint">提醒显示姓名和消息内容，点击即可进入聊天；遵守会话免打扰，群 @提醒仍会提示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", (_b = p.hotkeysEnabled) != null ? _b : true) + shortcut("desktop-show-hotkey", "显示主界面", (_c = p.showHotkey) != null ? _c : "Ctrl+Alt+W", (_d = p.hotkeyErrors) == null ? void 0 : _d.show) + shortcut("desktop-capture-hotkey", "截图", (_e = p.captureHotkey) != null ? _e : "Ctrl+Alt+A", (_f = p.hotkeyErrors) == null ? void 0 : _f.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 LinkMe”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
+        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 LinkMe", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", (_a = p.startMinimized) != null ? _a : true) + '<p class="hint">仅对当前 Windows 用户生效，默认关闭。'.concat(p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : "", "</p>") + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><p class="hint">普通聊天只通过任务栏图标提示未读；来电、远程和会议邀请会在右下角显示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", (_b = p.hotkeysEnabled) != null ? _b : true) + shortcut("desktop-show-hotkey", "显示主界面", (_c = p.showHotkey) != null ? _c : "Ctrl+Alt+W", (_d = p.hotkeyErrors) == null ? void 0 : _d.show) + shortcut("desktop-capture-hotkey", "截图", (_e = p.captureHotkey) != null ? _e : "Ctrl+Alt+A", (_f = p.hotkeyErrors) == null ? void 0 : _f.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 LinkMe”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
         document.querySelector(".modal").classList.add("desktop-settings");
         const $2 = (id) => document.getElementById(id), availability = () => {
           $2("desktop-start-minimized").disabled = !$2("desktop-auto-start").checked;
@@ -1891,7 +1936,7 @@
         button.onclick = async () => {
           button.disabled = true;
           try {
-            await window.welinkDesktopSave({ closeToTray: $2("desktop-close-tray").checked, messageAlerts: $2("desktop-message-alerts").checked, messageSound: p.messageSound !== false, autoStart: $2("desktop-auto-start").checked, startMinimized: $2("desktop-start-minimized").checked, hotkeysEnabled: $2("desktop-hotkeys-enabled").checked, showHotkey: $2("desktop-show-hotkey").value, captureHotkey: $2("desktop-capture-hotkey").value });
+            await window.welinkDesktopSave({ closeToTray: $2("desktop-close-tray").checked, messageAlerts: false, messageSound: p.messageSound !== false, autoStart: $2("desktop-auto-start").checked, startMinimized: $2("desktop-start-minimized").checked, hotkeysEnabled: $2("desktop-hotkeys-enabled").checked, showHotkey: $2("desktop-show-hotkey").value, captureHotkey: $2("desktop-capture-hotkey").value });
             closeModal2();
             toast2("桌面设置已保存");
           } catch (error) {
@@ -1923,7 +1968,7 @@
       if (action2 === "settings") settings2();
       if (action2 === "quit") quit();
     });
-    return { native, hidden, unread, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 LinkMe</button>' : "" };
+    return { native, hidden, unread, activity, clearActivities, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 LinkMe</button>' : "" };
   }
 
   // internal/ui/src/screenshots.js
@@ -5256,7 +5301,7 @@
   }
 
   // internal/ui/src/meetings.js
-  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, onCallClosed, callCurrent, historyEntry }) {
+  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, Desktop: Desktop2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
     const el = (id) => document.getElementById(id);
     const display = meetingWindow({ active: () => !!room, toast: toast2, changed: (full) => {
@@ -5362,6 +5407,7 @@
       updateButtons();
     }
     function renderHome() {
+      Desktop2 == null ? void 0 : Desktop2.clearActivities("meeting/");
       const n = document.querySelector("#main-content");
       n.innerHTML = '<section class="utility meeting-home"><h2>会议</h2><p class="hint">和好友一起面对面交流，也可以分享屏幕。</p><div class="meeting-cards"><button data-action="meeting-create">'.concat(icon2("video"), '<b>发起会议</b><span>邀请好友或群成员</span></button><button data-action="meeting-join">').concat(icon2("plus"), "<b>加入会议</b><span>输入 9 位会议号</span></button></div>").concat(historyEntry(), '<h3>正在进行</h3><div id="meeting-list">正在读取…</div></section>');
       api2("/api/meetings").then((items) => {
@@ -5555,7 +5601,7 @@
         });
       }
       ;
-      n.querySelector(".meeting-person").textContent = (name || "W").slice(0, 1);
+      n.querySelector(".meeting-person").textContent = (name || "M").slice(0, 1);
       n.querySelector(".meeting-tile-label").textContent = (self ? "我 · " : "") + name;
       return n;
     }
@@ -6002,6 +6048,7 @@
       };
     }
     function invitationSound() {
+      if (window.WeLinkAndroid) return;
       try {
         const audio = new (window.AudioContext || window.webkitAudioContext)();
         audio.resume().catch(() => {
@@ -6009,7 +6056,7 @@
         for (let i = 0; i < 3; i++) {
           const tone = audio.createOscillator(), gain = audio.createGain(), at = audio.currentTime + i * 0.18;
           tone.frequency.value = [523, 659, 784][i];
-          gain.gain.setValueAtTime(0.08, at);
+          gain.gain.setValueAtTime(0.025, at);
           gain.gain.exponentialRampToValueAtTime(1e-3, at + 0.26);
           tone.connect(gain);
           gain.connect(audio.destination);
@@ -6020,10 +6067,11 @@
       } catch (e) {
       }
     }
-    function dismissInvitation(code) {
-      var _a;
+    function dismissInvitation(code, clearNative = true) {
+      var _a, _b, _c;
       pending.delete(code);
       (_a = document.querySelector('[data-meeting-notice="' + code + '"]')) == null ? void 0 : _a.remove();
+      if (clearNative) (_c = (_b = window.WeLinkAndroid) == null ? void 0 : _b.dismissNativeInvite) == null ? void 0 : _c.call(_b, "meeting:" + code);
     }
     async function invited(m) {
       var _a;
@@ -6062,11 +6110,17 @@
       box.innerHTML = '<header><b>LinkMe · 会议邀请</b><button data-meeting-notice-close title="关闭">'.concat(icon2("close"), "</button></header><h3>").concat(esc2(m.title), "</h3><p>会议号 ").concat(grouped(m.code), '</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>');
       area.append(box);
       box.querySelectorAll("[data-meeting-notice-close]").forEach((b) => b.onclick = () => dismissInvitation(m.code));
-      box.querySelector("[data-meeting-notice-enter]").onclick = () => {
-        dismissInvitation(m.code);
-        openJoin(m.code);
-      };
-      setTimeout(() => dismissInvitation(m.code), Math.max(0, Math.min(72e5, (m.expires || Date.now() + 72e5) - Date.now())));
+      box.querySelector("[data-meeting-notice-enter]").onclick = () => nativeAction(m.code, true);
+    }
+    function ended(m) {
+      var _a;
+      if (!(m == null ? void 0 : m.code)) return;
+      pending.delete(m.code);
+      (_a = document.querySelector('[data-meeting-notice="' + m.code + '"]')) == null ? void 0 : _a.remove();
+    }
+    function nativeAction(code, accept) {
+      dismissInvitation(code);
+      if (accept) openJoin(code);
     }
     function clearInvitations() {
       var _a, _b;
@@ -6161,7 +6215,7 @@
       const n = Math.max(0, Math.floor(value));
       return String(Math.floor(n / 60)).padStart(2, "0") + ":" + String(n % 60).padStart(2, "0");
     }
-    return { renderHome, openCreate, openJoin, invited, show, busy: () => !!room || !!nativeCall, joinCall: (c) => join(c.code, true, c.mode === "video", c.caller === S2.user.id, c), closedNativeCall: (id) => {
+    return { renderHome, openCreate, openJoin, invited, ended, nativeAction, show, busy: () => !!room || !!nativeCall, joinCall: (c) => join(c.code, true, c.mode === "video", c.caller === S2.user.id, c), closedNativeCall: (id) => {
       if (nativeCall === id) nativeCall = null;
     }, closeCall: (id) => {
       var _a, _b, _c;
@@ -6193,7 +6247,7 @@
   var av = (u = {}, size = "", online = false) => {
     if (u.ai || u.avatar === "bot:me") return '<span class="avatar me-avatar ' + size + '" data-avatar-user="' + esc(u.id) + '">M</span>';
     const cartoon = cartoonURL(u.avatar), photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
-    return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "W").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
+    return '<span class="avatar '.concat(photo || cartoon ? "has-photo" : esc(u.avatar || "blue"), " ").concat(size, '" ').concat(u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : "", ">").concat(u.kind === "group" ? icon("contacts") : esc((u.name || "M").slice(0, 1))).concat(photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : "").concat(online && u.online ? '<i class="dot"></i>' : "", "</span>");
   };
   var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>LinkMe</b></div>';
   var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], myGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
@@ -6754,6 +6808,7 @@
     await NativeNotifications.start().catch(() => toast("消息通知连接暂不可用，正在重试"));
     connectEvents(true);
     Calls.start();
+    NativeNotifications.drainInvites();
   }
   function connectEvents(initial = false) {
     var _a;
@@ -6847,6 +6902,8 @@
         }
       } else if (event.type === "meeting-invite") {
         Meetings.invited(d);
+      } else if (event.type === "meeting-ended") {
+        Meetings.ended(d);
       } else if (event.type === "remote") {
         remoteEvent(d);
       } else {
@@ -7244,17 +7301,24 @@
     }, 6e4);
   }
   async function remoteEvent(v) {
-    var _a;
+    var _a, _b;
     if (!S.user) return;
+    const key = "remote/" + v.id;
     if (v.state === "pending") {
       if (v.requester === S.user.id) return;
+      Desktop.activity(key, v.recipient === S.user.id);
+      if (v.recipient !== S.user.id) return;
+      if (((_a = S.remote) == null ? void 0 : _a.id) === v.id) return;
       S.remote = v;
+      if (S.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") return;
       const from = S.friends.find((u) => u.id === v.requester) || { name: "好友" };
       modal("远程协助邀请", '<div class="remote-invite">'.concat(av(from, "large"), "<h3>").concat(esc(from.name), "</h3><p>").concat(v.host === S.user.id ? v.mode === "control" ? "请求观看并控制你的设备" : "请求观看你的屏幕" : "邀请你远程协助", "<br>同意后开始，随时可以结束</p></div>"), '<button class="secondary" data-action="reject-remote">拒绝</button><button class="primary" data-action="accept-remote">同意</button>');
       return;
     }
     ;
-    if (((_a = S.remote) == null ? void 0 : _a.id) !== v.id) return;
+    if (v.state === "accepted") Desktop.activity(key, false);
+    else if (v.state === "rejected") Desktop.activity(key, false);
+    if (((_b = S.remote) == null ? void 0 : _b.id) !== v.id) return;
     S.remote = v;
     if (v.state === "accepted") {
       clearTimeout(toastTimer);
@@ -7810,8 +7874,34 @@
   var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
-  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc, icon, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
-  var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, renderMessages, queueRefresh, fullTime });
+  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc, icon, Desktop, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
+  var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, Desktop, renderMessages, queueRefresh, fullTime });
+  async function nativeInviteEvent(event) {
+    const n = event.detail;
+    if (!S.user || !n) return;
+    if (n.type === "call") await Calls.changed(n);
+    else if (n.type === "meeting") await Meetings.invited(n);
+    else if (n.type === "remote") await remoteEvent(n);
+  }
+  async function nativeInviteAction(event) {
+    var _a, _b;
+    const { action: choice, notification: n } = event.detail || {};
+    if (!S.user || !n || !["accept", "reject"].includes(choice)) return;
+    if (n.type === "call") {
+      await Calls.nativeAction(n.id, choice === "accept");
+      return;
+    }
+    if (n.type === "meeting") {
+      await Meetings.nativeAction(n.code, choice === "accept");
+      return;
+    }
+    if (n.type === "remote") {
+      if (((_a = S.remote) == null ? void 0 : _a.id) !== n.id) await remoteEvent(n);
+      if (((_b = S.remote) == null ? void 0 : _b.id) === n.id) await acceptRemote(choice === "accept");
+    }
+  }
+  window.addEventListener("welink-native-invite-event", (event) => nativeInviteEvent(event).catch((e) => toast(e.message)));
+  window.addEventListener("welink-native-invite-action", (event) => nativeInviteAction(event).catch((e) => toast(e.message)));
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
   var EmailAuth = createEmailAuth({ S, action, enter, QR, Desktop, windows, logo });

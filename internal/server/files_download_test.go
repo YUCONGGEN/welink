@@ -56,7 +56,7 @@ func TestHealthReportsCurrentRelease(t *testing.T) {
 		Version string `json:"version"`
 	}
 	f.request("GET", "/health", "", nil, http.StatusOK, &result)
-	if !result.OK || result.Version != "0.1.15" {
+	if !result.OK || result.Version != "0.1.16" {
 		t.Fatalf("unexpected health response: %+v", result)
 	}
 }
