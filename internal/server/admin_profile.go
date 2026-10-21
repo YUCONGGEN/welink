@@ -44,7 +44,7 @@ func (s *Server) adminUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if p.Name != nil {
 		*p.Name = strings.TrimSpace(*p.Name)
 		if *p.Name == "" || !validText(*p.Name, 32) {
-			fail(w, 400, "请填写姓名（昵称），1–32 字")
+			fail(w, 400, "请填写姓名，1–32 字")
 			return
 		}
 	}

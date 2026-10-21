@@ -58,7 +58,7 @@ func createAccountInDB(db *sql.DB, name, alias, password string, requireEmpty bo
 		alias = "wl_" + newID()[:20]
 	}
 	if name == "" || !validText(name, 32) {
-		return User{}, errors.New("请填写姓名（昵称），1–32 字，请勿包含控制字符")
+		return User{}, errors.New("请填写姓名，1–32 字，请勿包含控制字符")
 	}
 	if !accountPattern.MatchString(alias) || numericAccount.MatchString(alias) {
 		return User{}, errors.New("内部账号标识无效")

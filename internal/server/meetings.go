@@ -479,7 +479,7 @@ func (s *Server) leaveMeeting(code string, p *meetingParticipant) {
 	p.socket.close()
 	meetingBroadcast(room, meetingSignal{Type: "peer-left", ID: p.ID}, "")
 	if len(room.Peers) == 0 {
-		delete(s.meetings.rooms, code)
+		s.finishMeetingLocked(code, "所有成员已离开会议")
 		return
 	}
 	if room.HostID == p.ID {

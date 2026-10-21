@@ -88,7 +88,7 @@ final class MessageNotifications {
         }else if("meeting".equals(type)&&"pending".equals(state)){
             keepInvite(key,event,json,"LinkMe 会议邀请","会议号 "+event.optString("code"),false);
         }else{
-            synchronized(this){activeInvites.remove(key);pendingInviteEvents.remove(key);pendingInviteActions.remove(key);}
+            synchronized(this){activeInvites.remove(key);pendingInviteActions.remove(key);enqueueEventLocked(key,json);}
             manager.cancel("invite:"+key,INVITE_ID);
             stopInviteRingIfIdle();
             if("call".equals(type)&&"ended".equals(state)&&event.optLong("started")==0&&event.optString("recipient").equals(event.optString("userId"))&&("no_answer".equals(event.optString("reason"))||"cancelled".equals(event.optString("reason"))||"offline".equals(event.optString("reason"))||"interrupted".equals(event.optString("reason"))))postMissedCall(event);
@@ -164,7 +164,7 @@ final class MessageNotifications {
     synchronized void acceptMessage(Intent intent){String value=intent==null?null:intent.getStringExtra("welink_message");if(value!=null&&value.length()<8192){pending=value;intent.removeExtra("welink_message");}}
     synchronized void acceptInviteIntent(Intent intent){
         if(intent==null)return;String value=intent.getStringExtra("welink_invite"),key=intent.getStringExtra("welink_invite_key"),action=intent.getStringExtra("welink_invite_action");
-        if(value!=null&&value.length()<8192&&key!=null&&!key.isEmpty()){
+        if(value!=null&&value.length()<8192&&key!=null&&!key.isEmpty()&&activeInvites.containsKey(key)){
             if("accept".equals(action)||"reject".equals(action)){
                 pendingInviteActions.put(key,"{\"action\":"+org.json.JSONObject.quote(action)+",\"notification\":"+value+"}");
                 activeInvites.remove(key);pendingInviteEvents.remove(key);manager.cancel("invite:"+key,INVITE_ID);stopInviteRingIfIdle();

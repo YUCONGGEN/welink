@@ -128,7 +128,7 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,Des
   if(S.config.platform==='windows'||innerWidth>700&&!window.WeLinkAndroid){pending.delete(m.code);return}
   invitationSound();let area=el('meeting-invitations');if(!area){area=document.createElement('div');area.id='meeting-invitations';document.body.append(area)}const box=document.createElement('section');box.className='meeting-invitation-notice';box.dataset.meetingNotice=m.code;box.setAttribute('role','alert');box.innerHTML=`<header><b>LinkMe · 会议邀请</b><button data-meeting-notice-close title="关闭">${icon('close')}</button></header><h3>${esc(m.title)}</h3><p>会议号 ${grouped(m.code)}</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>`;area.append(box);box.querySelectorAll('[data-meeting-notice-close]').forEach(b=>b.onclick=()=>dismissInvitation(m.code));box.querySelector('[data-meeting-notice-enter]').onclick=()=>nativeAction(m.code,true);
  }
- function ended(m){if(!m?.code)return;pending.delete(m.code);document.querySelector('[data-meeting-notice="'+m.code+'"]')?.remove()}
+ function ended(m){if(!m?.code)return;dismissInvitation(m.code);Desktop?.activity('meeting/'+m.code,false)}
  function nativeAction(code,accept){dismissInvitation(code);if(accept)openJoin(code)}
  function clearInvitations(){pending.clear();el('meeting-invitations')?.remove();window.welinkMeetingClear?.()}
  function leave(end){const active=room;if(!active)return;if(active.call){send({type:'call-end'});active.intentional=true;cleanup(active);action('/api/calls/'+active.call.id+'/end').catch(()=>{});return}

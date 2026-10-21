@@ -2,7 +2,7 @@ import {spawn} from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const exe=path.resolve('dist/WeLink-Windows.exe'),data=await fs.mkdtemp(path.resolve('.local/windows-smoke-')),report=path.join(data,'native-diagnostic.json');
+const exe=path.resolve(process.env.LINKME_WINDOWS_EXE||'dist/LinkMe-Windows.exe'),data=await fs.mkdtemp(path.resolve('.local/windows-smoke-')),report=path.join(data,'native-diagnostic.json');
 await fs.mkdir(data,{recursive:true});await fs.unlink(report).catch(()=>{});
 const p=spawn(exe,['-data',data,'-listen','127.0.0.1:0'],{windowsHide:true,stdio:'ignore',env:{...process.env,WELINK_DEBUG:'1'}});
 try{

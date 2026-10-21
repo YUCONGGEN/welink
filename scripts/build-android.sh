@@ -29,4 +29,4 @@ python3 scripts/verify-android-assets.py "$APK"
 sh scripts/android-assets-test.sh "$APK"
 sh scripts/android-microphone-test.sh
 mkdir -p dist
-cp "$APK" dist/WeLink-Android.apk
+cp "$APK" dist/LinkMe-Android.apk

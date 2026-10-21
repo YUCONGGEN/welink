@@ -433,7 +433,7 @@
   function createNativeNotifications({ S: S2, action: action2, selectConversation: selectConversation2, refresh: refresh2, toast: toast2 }) {
     var _a;
     const supported = typeof window.welinkMessageNotifications === "function" || !!((_a = window.WeLinkAndroid) == null ? void 0 : _a.messageNotifications);
-    let active = false;
+    let active = false, draining = null;
     async function open() {
       var _a2, _b;
       if (!S2.user) return;
@@ -448,15 +448,21 @@
         toast2("该聊天暂时无法打开，请在消息列表中查看");
       }
     }
-    async function drainInvites() {
-      var _a2, _b;
-      if (!S2.user) return;
-      try {
-        let raw, takeEvent = (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.takeNativeInviteEvent, takeAction = ((_b = window.WeLinkAndroid) == null ? void 0 : _b.takeNativeInviteAction) || window.welinkTakeNativeInviteAction;
-        if (takeEvent) while (raw = await takeEvent.call(window.WeLinkAndroid)) window.dispatchEvent(new CustomEvent("welink-native-invite-event", { detail: JSON.parse(raw) }));
-        if (takeAction) while (raw = await takeAction.call(window.WeLinkAndroid || window)) window.dispatchEvent(new CustomEvent("welink-native-invite-action", { detail: JSON.parse(raw) }));
-      } catch (e) {
-      }
+    function drainInvites() {
+      if (!S2.user) return Promise.resolve();
+      if (draining) return draining;
+      draining = (async () => {
+        var _a2, _b;
+        try {
+          let raw, takeEvent = (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.takeNativeInviteEvent, takeAction = ((_b = window.WeLinkAndroid) == null ? void 0 : _b.takeNativeInviteAction) || window.welinkTakeNativeInviteAction;
+          if (takeEvent) while (raw = await takeEvent.call(window.WeLinkAndroid)) window.dispatchEvent(new CustomEvent("welink-native-invite-event", { detail: JSON.parse(raw) }));
+          if (takeAction) while (raw = await takeAction.call(window.WeLinkAndroid || window)) window.dispatchEvent(new CustomEvent("welink-native-invite-action", { detail: JSON.parse(raw) }));
+        } catch (e) {
+        } finally {
+          draining = null;
+        }
+      })();
+      return draining;
     }
     async function start() {
       var _a2;
@@ -6113,10 +6119,9 @@
       box.querySelector("[data-meeting-notice-enter]").onclick = () => nativeAction(m.code, true);
     }
     function ended(m) {
-      var _a;
       if (!(m == null ? void 0 : m.code)) return;
-      pending.delete(m.code);
-      (_a = document.querySelector('[data-meeting-notice="' + m.code + '"]')) == null ? void 0 : _a.remove();
+      dismissInvitation(m.code);
+      Desktop2 == null ? void 0 : Desktop2.activity("meeting/" + m.code, false);
     }
     function nativeAction(code, accept) {
       dismissInvitation(code);
@@ -6411,52 +6416,7 @@
     return S.config.platform === "windows" ? '<div class="window-controls">'.concat(btn("minus", "最小化", "window-min")).concat(btn("maximize", "最大化", "window-max")).concat(btn("close", "关闭", "window-close"), "</div>") : "";
   }
   function renderAuth(register = false) {
-    if (S.emailAuthEnabled) return EmailAuth.render(register ? "register" : "login");
-    if (register && !S.registrationEnabled) {
-      toast("暂未开放自助注册，请联系管理员");
-      register = false;
-    }
-    const choices = register ? cartoonChoices(8) : [];
-    QR.stop();
-    S.user = null;
-    Desktop.unread();
-    $("#app").innerHTML = '<main class="auth-shell '.concat(register ? "registering" : "", '">').concat(windows()).concat(authShowcase(), '<form class="auth-card" id="auth-form">').concat(logo(), "<h2>").concat(register ? "创建 LinkMe 账号" : "欢迎回来", '</h2><p class="subtitle">').concat(register ? "新的相遇，从这里开始" : "和在意的人，随时保持联系", "</p>").concat(register ? '<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="' + choices[0].id + '"><div class="cartoon-grid compact" id="register-avatar-options">' + cartoonOptions(choices, choices[0].id) + "</div></div>" : "", '<div class="auth-fields">').concat(register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : "").concat(register ? "" : '<input name="account" autocomplete="username" inputmode="numeric" pattern="[1-9][0-9]{5}" placeholder="6 位 LinkMe 账号" title="请输入 6 位数字账号" aria-label="账号" minlength="6" maxlength="6" required>', '<input name="password" type="password" autocomplete="').concat(register ? "new-password" : "current-password", '" placeholder="').concat(register ? "设置密码（至少 8 位）" : "密码", '" aria-label="密码" minlength="8" maxlength="72" required></div><div class="auth-error" id="auth-error"></div><button type="submit" class="primary">').concat(register ? "注册并登录" : "登录", "</button>").concat(!register && S.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : "", '<div class="auth-links">').concat(register || S.registrationEnabled ? '<button type="button" data-action="'.concat(register ? "login" : "register", '">').concat(register ? "已有账号，去登录" : "注册账号", "</button>") : "", '<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ').concat(CLIENT_VERSION, " · 让沟通更近一步</small></main>");
-    if (register) {
-      $("#register-avatar-shuffle").onclick = () => {
-        const next = cartoonChoices(8);
-        $("#register-avatar").value = next[0].id;
-        $("#register-avatar-options").innerHTML = cartoonOptions(next, next[0].id);
-      };
-      $("#register-avatar-options").onclick = (e) => {
-        const b = e.target.closest("[data-cartoon]");
-        if (b) {
-          $("#register-avatar").value = b.dataset.cartoon;
-          $("#register-avatar-options").querySelectorAll("[data-cartoon]").forEach((n) => {
-            n.classList.toggle("selected", n === b);
-            n.setAttribute("aria-checked", String(n === b));
-          });
-        }
-      };
-    }
-    ;
-    $("#auth-form").onsubmit = async (e) => {
-      e.preventDefault();
-      const submit = $("button[type=submit]", e.target);
-      submit.disabled = true;
-      $("#auth-error").textContent = "";
-      try {
-        const p = [...new FormData(e.target)].reduce((p2, [k, v]) => (p2[k] = v, p2), {});
-        const result = await action("/api/auth/" + (register ? "register" : "login"), p);
-        S.token = result.token;
-        localStorage.setItem("welink_token", S.token);
-        S.user = result.user;
-        await enter();
-        if (register) modal("注册成功", '<p class="hint">请记住你的 LinkMe 号码，可用于登录和搜索用户。</p><div class="welink-number">'.concat(esc(S.user.number), "</div>"), '<button class="primary" data-action="close-modal">开始使用</button>');
-      } catch (err) {
-        $("#auth-error").textContent = err.message;
-        submit.disabled = false;
-      }
-    };
+    return EmailAuth.render(register ? "register" : "login");
   }
   function nav() {
     const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
@@ -6802,9 +6762,10 @@
     await Promise.all([api("/api/config").then((policy) => {
       S.policy = policy;
     }), refresh()]);
-    await Me.start();
     await Outbox.start();
     renderShell();
+    Me.start().catch(() => {
+    });
     await NativeNotifications.start().catch(() => toast("消息通知连接暂不可用，正在重试"));
     connectEvents(true);
     Calls.start();
@@ -7265,7 +7226,7 @@
       toast("请在好友单聊中使用远程协助");
       return;
     }
-    modal("远程协助", '<button class="remote-choice" data-invite-remote="control" data-direction="request">'.concat(icon("monitor"), '<span><b>请求控制对方设备</b><p>对方同意后，帮助对方操作</p></span></button><button class="remote-choice" data-invite-remote="view" data-direction="request">').concat(icon("video"), '<span><b>请求观看对方屏幕</b><p>只看画面，不操作对方设备</p></span></button><button class="remote-choice" data-invite-remote="control" data-direction="share">').concat(icon("contacts"), '<span><b>邀请对方协助我</b><p>共享我的屏幕，允许对方操作</p></span></button><p class="hint">邀请在 60 秒后失效。安卓共享需要系统屏幕录制授权，触控需要无障碍权限。</p>'));
+    modal("远程协助", '<button class="remote-choice" data-invite-remote="control" data-direction="request">'.concat(icon("monitor"), '<span><b>请求控制对方设备</b><p>对方同意后，帮助对方操作</p></span></button><button class="remote-choice" data-invite-remote="view" data-direction="request">').concat(icon("video"), '<span><b>请求观看对方屏幕</b><p>只看画面，不操作对方设备</p></span></button><button class="remote-choice" data-invite-remote="control" data-direction="share">').concat(icon("contacts"), '<span><b>邀请对方协助我</b><p>共享我的屏幕，允许对方操作</p></span></button><p class="hint">邀请会持续到接听、拒绝或取消。安卓共享需要系统屏幕录制授权，触控需要无障碍权限。</p>'));
   }
   async function ensureSharing() {
     if (S.config.platform === "android") {
@@ -7290,18 +7251,11 @@
   }
   function renderRemoteWait(v) {
     var _a;
-    modal("远程协助", '<div class="remote-invite">'.concat(av(((_a = activeConversation()) == null ? void 0 : _a.peer) || {}, "large"), "<h3>等待对方接受邀请…</h3><p>邀请将在 60 秒后自动失效<br>你可以随时取消</p></div>"), '<button class="secondary" data-action="stop-remote">取消邀请</button>');
+    modal("远程协助", '<div class="remote-invite">'.concat(av(((_a = activeConversation()) == null ? void 0 : _a.peer) || {}, "large"), "<h3>等待对方接受邀请…</h3><p>邀请正在等待响应<br>你可以随时取消</p></div>"), '<button class="secondary" data-action="stop-remote">取消邀请</button>');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(async () => {
-      var _a2;
-      if (((_a2 = S.remote) == null ? void 0 : _a2.id) === v.id && S.remote.state === "pending") {
-        await stopRemote();
-        toast("对方未响应，邀请已过期");
-      }
-    }, 6e4);
   }
   async function remoteEvent(v) {
-    var _a, _b;
+    var _a, _b, _c, _d;
     if (!S.user) return;
     const key = "remote/" + v.id;
     if (v.state === "pending") {
@@ -7316,9 +7270,9 @@
       return;
     }
     ;
-    if (v.state === "accepted") Desktop.activity(key, false);
-    else if (v.state === "rejected") Desktop.activity(key, false);
-    if (((_b = S.remote) == null ? void 0 : _b.id) !== v.id) return;
+    Desktop.activity(key, false);
+    (_c = (_b = window.WeLinkAndroid) == null ? void 0 : _b.dismissNativeInvite) == null ? void 0 : _c.call(_b, "remote:" + v.id);
+    if (((_d = S.remote) == null ? void 0 : _d.id) !== v.id) return;
     S.remote = v;
     if (v.state === "accepted") {
       clearTimeout(toastTimer);
@@ -7878,15 +7832,17 @@
   var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, Desktop, renderMessages, queueRefresh, fullTime });
   async function nativeInviteEvent(event) {
     const n = event.detail;
-    if (!S.user || !n) return;
+    if (!S.user || !n || n.userId && n.userId !== S.user.id) return;
     if (n.type === "call") await Calls.changed(n);
-    else if (n.type === "meeting") await Meetings.invited(n);
-    else if (n.type === "remote") await remoteEvent(n);
+    else if (n.type === "meeting") {
+      if (n.state === "ended") Meetings.ended(n);
+      else await Meetings.invited(n);
+    } else if (n.type === "remote") await remoteEvent(n);
   }
   async function nativeInviteAction(event) {
     var _a, _b;
     const { action: choice, notification: n } = event.detail || {};
-    if (!S.user || !n || !["accept", "reject"].includes(choice)) return;
+    if (!S.user || !n || n.userId && n.userId !== S.user.id || !["accept", "reject"].includes(choice)) return;
     if (n.type === "call") {
       await Calls.nativeAction(n.id, choice === "accept");
       return;
@@ -7896,33 +7852,54 @@
       return;
     }
     if (n.type === "remote") {
-      if (((_a = S.remote) == null ? void 0 : _a.id) !== n.id) await remoteEvent(n);
-      if (((_b = S.remote) == null ? void 0 : _b.id) === n.id) await acceptRemote(choice === "accept");
+      const current = await api("/api/remotes/" + n.id);
+      if (current.state !== "pending") {
+        await remoteEvent(current);
+        return;
+      }
+      if (((_a = S.remote) == null ? void 0 : _a.id) !== current.id) await remoteEvent(current);
+      if (((_b = S.remote) == null ? void 0 : _b.id) === current.id) await acceptRemote(choice === "accept");
     }
   }
-  window.addEventListener("welink-native-invite-event", (event) => nativeInviteEvent(event).catch((e) => toast(e.message)));
-  window.addEventListener("welink-native-invite-action", (event) => nativeInviteAction(event).catch((e) => toast(e.message)));
+  var nativeInviteQueue = Promise.resolve();
+  window.addEventListener("welink-native-invite-event", (event) => {
+    nativeInviteQueue = nativeInviteQueue.then(() => nativeInviteEvent(event)).catch((e) => toast(e.message));
+  });
+  window.addEventListener("welink-native-invite-action", (event) => {
+    nativeInviteQueue = nativeInviteQueue.then(() => nativeInviteAction(event)).catch((e) => toast(e.message));
+  });
   var Security = createSecurity({ api, action, S, modal, toast, esc, icon, logout });
   var QR = createQRLogin({ action, S, modal, toast, esc, enter, renderAuth, windows, logo, icon });
   var EmailAuth = createEmailAuth({ S, action, enter, QR, Desktop, windows, logo });
   async function loadRegistration() {
     try {
-      const value = await api("/api/public-config");
+      const response = await Promise.race([fetch("/api/public-config"), new Promise((_, reject) => setTimeout(() => reject(Error("config timeout")), 4e3))]);
+      if (!response.ok) return;
+      const value = await response.json();
       S.registrationEnabled = !!value.registrationEnabled;
-      S.emailAuthEnabled = !!value.emailAuthEnabled;
+      S.emailAuthEnabled = true;
       const links = document.querySelector("#auth-form .auth-links");
       if (links && !S.user) {
-        const button = links.querySelector("[data-action=register]");
-        if (S.registrationEnabled && !button && !links.querySelector("[data-action=login]")) links.insertAdjacentHTML("afterbegin", '<button type="button" data-action="register">注册账号</button>');
+        const button = links.querySelector("[data-action=register],[data-email-mode=register]");
+        if (S.registrationEnabled && !button && !links.querySelector("[data-email-mode=login]")) {
+          links.insertAdjacentHTML("afterbegin", '<button type="button" data-email-mode="register">注册账号</button>');
+          links.querySelector("[data-email-mode=register]").onclick = () => {
+            var _a;
+            return EmailAuth.render("register", ((_a = document.querySelector("#auth-form [name=email]")) == null ? void 0 : _a.value) || "");
+          };
+        }
         if (!S.registrationEnabled) button == null ? void 0 : button.remove();
       }
     } catch (e) {
     }
   }
+  var bootstrapping = false;
   async function bootstrap() {
+    if (bootstrapping) return;
+    bootstrapping = true;
     try {
       S.config = await api("/local/config");
-      await loadRegistration();
+      loadRegistration();
       if (S.token) {
         try {
           S.user = await api("/api/me");
@@ -7943,6 +7920,8 @@
       setTimeout(() => {
         if ($("#retry-connect")) bootstrap();
       }, 1e4);
+    } finally {
+      bootstrapping = false;
     }
   }
   bootstrap();
