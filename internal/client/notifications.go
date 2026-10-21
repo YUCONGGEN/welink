@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -50,6 +52,8 @@ var sessionTokenPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var notificationIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 var errNotificationSession = errors.New("notification session expired")
 
+const notificationSessionFile = "notification-session"
+
 func (c *Client) SetNotificationHandler(handler func(Notification)) {
 	c.notifications.mu.Lock()
 	c.notifications.handler = handler
@@ -58,7 +62,83 @@ func (c *Client) SetNotificationHandler(handler func(Notification)) {
 
 // The receiver belongs to the process, not a WebView or Activity. A repeated
 // login-page load with the same session cannot create another connection.
+func (c *Client) notificationSessionPath() string {
+	return filepath.Join(c.dir, notificationSessionFile)
+}
+
+func (c *Client) persistNotificationSession(token string) error {
+	path := c.notificationSessionPath()
+	if token == "" {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if err := os.WriteFile(path+".next", []byte(token), 0600); err != nil {
+		return err
+	}
+	if err := os.Chmod(path+".next", 0600); err != nil {
+		return err
+	}
+	return os.Rename(path+".next", path)
+}
+
+// Shutting down a process is different from signing out. Preserve its session
+// so a recreated Android service can resume without starting an Activity.
+func (c *Client) stopNotificationReceiver() {
+	n := &c.notifications
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.cancel != nil {
+		n.cancel()
+		n.cancel = nil
+	}
+	n.token = ""
+	n.revision++
+}
+
+func (c *Client) expireNotificationSession(revision uint64) {
+	n := &c.notifications
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.revision != revision {
+		return
+	}
+	_ = c.persistNotificationSession("")
+	if n.handler != nil {
+		n.handler(Notification{Type: "signed-out"})
+	}
+	if n.cancel != nil {
+		n.cancel()
+		n.cancel = nil
+	}
+	n.token = ""
+	n.revision++
+}
+
+// RestoreNotificationSession resumes the process-owned receiver after Android
+// recreates the application process behind its sticky foreground service.
+func (c *Client) RestoreNotificationSession() error {
+	raw, err := os.ReadFile(c.notificationSessionPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	token := strings.TrimSpace(string(raw))
+	if !sessionTokenPattern.MatchString(token) {
+		_ = os.Remove(c.notificationSessionPath())
+		return nil
+	}
+	return c.setNotificationSession(token, true)
+}
+
 func (c *Client) SetNotificationSession(token string) error {
+	return c.setNotificationSession(token, false)
+}
+
+func (c *Client) setNotificationSession(token string, replayUnread bool) error {
 	if token != "" && !sessionTokenPattern.MatchString(token) {
 		return errors.New("invalid notification session")
 	}
@@ -66,7 +146,13 @@ func (c *Client) SetNotificationSession(token string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if token == n.token {
+		if token == "" {
+			return c.persistNotificationSession("")
+		}
 		return nil
+	}
+	if err := c.persistNotificationSession(token); err != nil {
+		return err
 	}
 	c.stopAI()
 	if n.cancel != nil {
@@ -83,7 +169,7 @@ func (c *Client) SetNotificationSession(token string) error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	n.cancel = cancel
-	go c.receiveNotifications(ctx, n.revision, token, c.Config())
+	go c.receiveNotifications(ctx, n.revision, token, c.Config(), replayUnread)
 	return nil
 }
 
@@ -96,7 +182,7 @@ func (c *Client) emitNotification(revision uint64, notice Notification) {
 	}
 }
 
-func (c *Client) receiveNotifications(ctx context.Context, revision uint64, token string, cfg Config) {
+func (c *Client) receiveNotifications(ctx context.Context, revision uint64, token string, cfg Config, replayUnread bool) {
 	u, _ := validateConfig(cfg)
 	transport := &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint)}
 	defer transport.CloseIdleConnections()
@@ -129,6 +215,9 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 	seen := make(map[string]bool)
 	var order []string
 	started := time.Now().UnixMilli()
+	if replayUnread {
+		started = 0 // A recreated service must also surface unread messages from its downtime.
+	}
 	deliver := func(id string) error {
 		if !notificationIDPattern.MatchString(id) || seen[id] {
 			return nil
@@ -246,7 +335,7 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 	for ctx.Err() == nil {
 		err := get("/api/me", &me)
 		if errors.Is(err, errNotificationSession) {
-			c.emitNotification(revision, Notification{Type: "signed-out"})
+			c.expireNotificationSession(revision)
 			return
 		}
 		if err == nil {
@@ -263,6 +352,29 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 					_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
 					return conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(5*time.Second))
 				})
+				conn.SetPongHandler(func(string) error {
+					return conn.SetReadDeadline(time.Now().Add(70 * time.Second))
+				})
+				// Mobile NAT mappings expire quickly. Keep both directions alive even
+				// when the WebView and Activity have been suspended or destroyed.
+				heartbeatDone := make(chan struct{})
+				go func() {
+					ticker := time.NewTicker(20 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-heartbeatDone:
+							return
+						case <-ticker.C:
+							if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
+								_ = conn.Close()
+								return
+							}
+						}
+					}
+				}()
 				// Reading independently keeps ping/pong responsive during HTTP lookups.
 				type incomingEvent struct {
 					kind, id string
@@ -348,8 +460,9 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 							err = refreshUnread()
 						}
 						if errors.Is(err, errNotificationSession) {
-							c.emitNotification(revision, Notification{Type: "signed-out"})
+							c.expireNotificationSession(revision)
 							stop()
+							close(heartbeatDone)
 							conn.Close()
 							return
 						}
@@ -359,6 +472,7 @@ func (c *Client) receiveNotifications(ctx context.Context, revision uint64, toke
 					}
 				}
 				stop()
+				close(heartbeatDone)
 				conn.Close()
 			}
 		}

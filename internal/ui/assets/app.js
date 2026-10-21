@@ -289,7 +289,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.16-preview";
+  var CLIENT_VERSION = "0.1.17-preview";
   function authShowcase() {
     return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> LINKME · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
   }
@@ -467,8 +467,8 @@
     async function start() {
       var _a2;
       if (!supported) return;
-      (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.messageNotifications(true);
       await action2("/local/notifications", { token: S2.token });
+      (_a2 = window.WeLinkAndroid) == null ? void 0 : _a2.messageNotifications(true);
       active = true;
       await open();
     }
@@ -772,18 +772,22 @@
       unlock();
       if (!context) return;
       try {
-        const oscillator = context.createOscillator(), gain = context.createGain(), at = context.currentTime;
-        oscillator.frequency.value = 660;
-        gain.gain.setValueAtTime(0.035, at);
-        gain.gain.exponentialRampToValueAtTime(1e-3, at + 0.18);
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-        oscillator.start(at);
-        oscillator.stop(at + 0.2);
-        oscillator.onended = () => {
-          oscillator.disconnect();
-          gain.disconnect();
-        };
+        [{ frequency: 1046.5, delay: 0, length: 0.13 }, { frequency: 880, delay: 0.19, length: 0.16 }].forEach((pulse) => {
+          const oscillator = context.createOscillator(), gain = context.createGain(), at = context.currentTime + pulse.delay, end = at + pulse.length;
+          oscillator.type = "sine";
+          oscillator.frequency.value = pulse.frequency;
+          gain.gain.setValueAtTime(1e-4, at);
+          gain.gain.exponentialRampToValueAtTime(0.045, at + 8e-3);
+          gain.gain.exponentialRampToValueAtTime(1e-3, end);
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+          oscillator.start(at);
+          oscillator.stop(end);
+          oscillator.onended = () => {
+            oscillator.disconnect();
+            gain.disconnect();
+          };
+        });
       } catch (e) {
       }
     }
@@ -7076,7 +7080,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>').concat(CLIENT_VERSION.replace("-preview", ""), ' 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
+    modal("设置", '<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" '.concat(document.body.classList.contains("dark") ? "checked" : "", "></label>").concat(Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>').concat(Sounds.row()).concat(window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 LinkMe 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>' : "").concat(Desktop.settingsRow()).concat(Outbox.settingsRow()).concat(Received.settingsRow()).concat(Admin.settingsRow(), '<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>').concat(CLIENT_VERSION.replace("-preview", ""), ' 预览版</span></div><div class="prefs-row"><span>服务器</span><span>').concat(esc(S.config.server || "本地"), '</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>'), '<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>');
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -7457,7 +7461,7 @@
     a.remove();
   }
   document.addEventListener("click", async (e) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
     const avatar = e.target.closest(".message .avatar[data-avatar-user],.detail-member .avatar[data-avatar-user]");
     if (avatar) {
       openUserProfile(avatar.dataset.avatarUser);
@@ -7721,6 +7725,10 @@
           area.scrollTop = area.scrollHeight - h;
           break;
         }
+        case "background":
+          if ((_k = window.WeLinkAndroid) == null ? void 0 : _k.requestBackgroundReliability) window.WeLinkAndroid.requestBackgroundReliability();
+          else toast("当前版本无需设置");
+          break;
         case "notifications":
           if (window.WeLinkAndroid) {
             window.WeLinkAndroid.requestNotifications();

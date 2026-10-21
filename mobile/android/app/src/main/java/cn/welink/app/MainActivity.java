@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.*;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.provider.MediaStore;
 import android.view.*;
@@ -84,6 +85,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){
         super.onRequestPermissionsResult(request,permissions,grants);
+        if(request==60)requestBackgroundReliability(false);
         if(request==61){PermissionRequest pending=pendingWebPermission;pendingWebPermission=null;if(pending==null)return;boolean allowed=web!=null&&isLocalOrigin(pending.getOrigin());for(String resource:pending.getResources()){String permission=PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)?Manifest.permission.RECORD_AUDIO:Manifest.permission.CAMERA;allowed&=checkSelfPermission(permission)==PackageManager.PERMISSION_GRANTED;}if(allowed)pending.grant(pending.getResources());else pending.deny();}
         if(request==62&&pendingVideoCapture){if(checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)captureVideo();else{finishChooser(null);Toast.makeText(this,"拍摄视频需要相机权限",Toast.LENGTH_SHORT).show();}}
     }
@@ -100,7 +102,9 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public String takeNativeInviteEvent(){return app().messages().takeInviteEvent();}
         @JavascriptInterface public String takeNativeInviteAction(){return app().messages().takeInviteAction();}
         @JavascriptInterface public void dismissNativeInvite(String key){app().messages().dismissInvite(key);}
-        @JavascriptInterface public void messageNotifications(boolean enabled){main.post(()->{if(enabled){app().messages().start();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED&&!getSharedPreferences("message-notifications",MODE_PRIVATE).getBoolean("permissionAsked",false)){getSharedPreferences("message-notifications",MODE_PRIVATE).edit().putBoolean("permissionAsked",true).apply();requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},60);}}else app().messages().stop();});}
+        @JavascriptInterface public boolean backgroundUnrestricted(){return MainActivity.this.backgroundUnrestricted();}
+        @JavascriptInterface public void requestBackgroundReliability(){main.post(()->MainActivity.this.requestBackgroundReliability(true));}
+        @JavascriptInterface public void messageNotifications(boolean enabled){main.post(()->{if(enabled){app().messages().start();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED&&!getSharedPreferences("message-notifications",MODE_PRIVATE).getBoolean("permissionAsked",false)){getSharedPreferences("message-notifications",MODE_PRIVATE).edit().putBoolean("permissionAsked",true).apply();requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},60);}else MainActivity.this.requestBackgroundReliability(false);}else app().messages().stop();});}
 
         @JavascriptInterface public void setRemoteFullscreen(boolean enabled){main.post(()->applyRemoteFullscreen(enabled));}
         @JavascriptInterface public void setDarkTheme(boolean dark){main.post(()->{getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("dark",dark).apply();ScreenInsets.theme(MainActivity.this,dark);if(web!=null)web.setBackgroundColor(dark?0xff22252b:Color.WHITE);});}
@@ -128,6 +132,19 @@ public final class MainActivity extends Activity {
     }
     private void exitRemoteFullscreen(){if(!remoteFullscreen)return;applyRemoteFullscreen(false);if(web!=null)web.evaluateJavascript("window.WeLinkRemoteFullscreenExited&&window.WeLinkRemoteFullscreenExited()",null);}
     @Override public void onBackPressed(){if(remoteFullscreen){exitRemoteFullscreen();return;}if(web!=null){web.evaluateJavascript("Boolean(window.WeLinkGoBack&&window.WeLinkGoBack())",value->{if(!"true".equals(value))moveTaskToBack(true);});}else super.onBackPressed();}
+    private boolean backgroundUnrestricted(){
+        if(Build.VERSION.SDK_INT<23)return true;
+        PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+        return power!=null&&power.isIgnoringBatteryOptimizations(getPackageName());
+    }
+    private void requestBackgroundReliability(boolean userRequest){
+        if(Build.VERSION.SDK_INT<23||backgroundUnrestricted())return;
+        android.content.SharedPreferences prefs=getSharedPreferences("message-notifications",MODE_PRIVATE);
+        if(!userRequest&&prefs.getBoolean("batteryAsked",false))return;
+        prefs.edit().putBoolean("batteryAsked",true).apply();
+        try{startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName())));}
+        catch(ActivityNotFoundException unavailable){startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}
+    }
     private void messageVisibility(){if(web!=null)web.evaluateJavascript("window.welinkNativeHidden="+(!resumed)+";window.dispatchEvent(new CustomEvent('welink-native-visibility',{detail:{hidden:"+(!resumed)+"}}));",null);}
     @Override protected void onResume(){super.onResume();resumed=true;messageVisibility();}
     @Override protected void onPause(){resumed=false;messageVisibility();exitRemoteFullscreen();clearInvitePresentation();if(web!=null)web.evaluateJavascript("window.WeLinkMediaBackground&&window.WeLinkMediaBackground()",null);super.onPause();}

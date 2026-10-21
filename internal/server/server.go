@@ -180,7 +180,7 @@ func (s *Server) routes() {
 			fail(w, 503, "数据库不可用")
 			return
 		}
-		ok(w, map[string]any{"ok": true, "version": "0.1.16", "time": now()})
+		ok(w, map[string]any{"ok": true, "version": "0.1.17", "time": now()})
 	})
 	s.mux.HandleFunc("POST /api/auth/register", s.register)
 	s.mux.HandleFunc("POST /api/auth/login", s.login)

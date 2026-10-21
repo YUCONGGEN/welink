@@ -121,7 +121,7 @@ func New(o Options) (*Client, error) {
 func (c *Client) URL() string { return "http://" + c.host + "/?access_token=" + c.key }
 func (c *Client) Close() {
 	c.stopAI()
-	_ = c.SetNotificationSession("")
+	c.stopNotificationReceiver()
 	c.Remote.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

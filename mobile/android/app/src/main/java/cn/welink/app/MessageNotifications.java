@@ -16,7 +16,7 @@ import java.util.Map;
 
 // Application scoped: Activity destruction and WebView suspension do not stop it.
 final class MessageNotifications {
-    static final String SOUND="welink-messages-v1", SILENT="welink-messages-silent-v1", CONNECTION="welink-connection-v1", INVITES="welink-invites-v1";
+    static final String SOUND="welink-messages-v2", SILENT="welink-messages-silent-v1", CONNECTION="welink-connection-v1", INVITES="welink-invites-v1";
     private static final int MESSAGE_ID=34, INVITE_ID=35, MISSED_ID=36;
     private final WeLinkApp app;
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -31,10 +31,10 @@ final class MessageNotifications {
     volatile boolean connected;
 
     MessageNotifications(WeLinkApp app){
-        this.app=app;manager=app.getSystemService(NotificationManager.class);
-        NotificationChannel audible=new NotificationChannel(SOUND,"聊天消息（有声音）",NotificationManager.IMPORTANCE_HIGH);
+        this.app=app;manager=app.getSystemService(NotificationManager.class);enabled=app.getSharedPreferences("message-notifications",Context.MODE_PRIVATE).getBoolean("enabled",false);
+        NotificationChannel audible=new NotificationChannel(SOUND,"聊天消息（QQ 双短音）",NotificationManager.IMPORTANCE_HIGH);
         audible.setDescription("显示发送人的姓名和消息内容");
-        audible.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
+        audible.setSound(Uri.parse("android.resource://"+app.getPackageName()+"/"+R.raw.linkme_message),new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
         NotificationChannel silent=new NotificationChannel(SILENT,"聊天消息（无声音）",NotificationManager.IMPORTANCE_HIGH);
         silent.setSound(null,null);silent.enableVibration(false);
         NotificationChannel invites=new NotificationChannel(INVITES,"来电、远程和会议邀请",NotificationManager.IMPORTANCE_HIGH);
@@ -46,11 +46,11 @@ final class MessageNotifications {
     boolean sound(){return app.getSharedPreferences("message-notifications",Context.MODE_PRIVATE).getBoolean("sound",true);}
     void sound(boolean value){app.getSharedPreferences("message-notifications",Context.MODE_PRIVATE).edit().putBoolean("sound",value).apply();}
     void start(){
-        enabled=true;
+        enabled=true;app.getSharedPreferences("message-notifications",Context.MODE_PRIVATE).edit().putBoolean("enabled",true).apply();
         try{app.startForegroundService(new Intent(app,MessageConnectionService.class));}
         catch(RuntimeException unavailable){android.widget.Toast.makeText(app,"后台连接暂未启动，请重新打开 LinkMe",android.widget.Toast.LENGTH_LONG).show();}
     }
-    void stop(){enabled=false;connected=false;clear();app.stopService(new Intent(app,MessageConnectionService.class));}
+    void stop(){enabled=false;connected=false;app.getSharedPreferences("message-notifications",Context.MODE_PRIVATE).edit().putBoolean("enabled",false).apply();clear();app.stopService(new Intent(app,MessageConnectionService.class));}
 
     void receive(String json){main.post(()->{
         try{

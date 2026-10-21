@@ -391,7 +391,7 @@ func (h *windowsHost) Notify(n client.Notification) {
 		switch n.Type {
 		case "message":
 			if h.desktop.preferences.MessageSound && time.Since(h.desktop.lastAlert) > 1500*time.Millisecond {
-				user32.NewProc("MessageBeep").Call(0x40)
+				playMessageBeep()
 				h.desktop.lastAlert = time.Now()
 			}
 		case "call":

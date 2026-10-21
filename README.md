@@ -2,7 +2,7 @@
 
 面向企业员工的即时通讯应用，服务端和客户端内核使用 Go，提供 Windows、Apple Silicon macOS 与 Android 客户端。支持单聊、群聊、文件传输、音视频通话、多人会议、远程协助、5 GB 个人网盘和 AI 助手 Me。
 
-Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。目前为 **0.1.16-preview** 预览版本。
+Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。目前为 **0.1.17-preview** 预览版本。
 
 ## 下载
 
@@ -12,7 +12,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon
 | macOS | [Apple Silicon 应用](http://www.yucg.cn:8251/downloads/LinkMe-macOS-arm64.zip) | M1 或更新机型，macOS 12+ |
 | Android | [APK](http://www.yucg.cn:8251/downloads/LinkMe-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
 
-[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LINKME_RELEASE_0.1.16.md)
+[下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LINKME_RELEASE_0.1.17.md)
 
 macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 LinkMe 界面；首次打开未签名预览版时，在 Finder 里按住 Control 点击应用并选“打开”。
 
@@ -56,7 +56,7 @@ macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 
 
 ## 使用
 
-最新客户端：[0.1.16 · 来电通知与 LinkMe 图标修复](docs/LINKME_RELEASE_0.1.16.md)。此前更新：[0.1.15 · LinkMe 邮箱登录与 Apple Silicon macOS](docs/LINKME_RELEASE_0.1.15.md)。[0.1.14 · 浅色界面与服务器飘雪页面](docs/LIGHT_THEME_20260914.md)。[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
+最新客户端：[0.1.17 · M/Link 图标与后台消息](docs/LINKME_RELEASE_0.1.17.md)。此前更新：[0.1.15 · LinkMe 邮箱登录与 Apple Silicon macOS](docs/LINKME_RELEASE_0.1.15.md)。[0.1.14 · 浅色界面与服务器飘雪页面](docs/LIGHT_THEME_20260914.md)。[0.1.13 · 注册页面整理、姓名与 5 GB 网盘](docs/REGISTRATION_RELEASE_20260913.md)。[0.1.12 · 截图绘制、图片对齐与加载优化](docs/LOADING_SCREENSHOTS_20260912.md)。[0.1.11 · 员工资料管理与远程全屏](docs/EMPLOYEE_PROFILES_REMOTE_20260912.md)。[0.1.10 · 管理员注册、统一搜索与群聊恢复](docs/GROUP_WORKFLOWS_20260912.md)。[0.1.9 · 会议全屏、共享与设置返回修复](docs/MEETING_CONTROLS_20260912.md)。[0.1.8 · 返回、会话移除与触摸操作修整](docs/USABILITY_20260911.md)。[0.1.7 · 桌面快捷键、开机启动与截图标注](docs/DESKTOP_EXTRAS_20260911.md) 的功能继续保留。[0.1.6 · 离线聊天记录与重连核对](docs/RECEIVED_CACHE_20260911.md) 和 Android [0.1.5 · 麦克风采集与会议资源释放](docs/ANDROID_CAPTURE_20260911.md) 的功能继续保留。
 
 双端客户端功能：[0.1.4 · 特别关心、分组和跨设备同步](docs/SPECIAL_CARE_20260911.md)。
 
