@@ -7,13 +7,16 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -31,6 +34,10 @@ type yudeskSupportRequest struct {
 	Action       string   `json:"action"`
 	Peer         string   `json:"peer"`
 	Text         string   `json:"text"`
+	Kind         string   `json:"kind"`
+	ImageData    string   `json:"imageData"`
+	ImageName    string   `json:"imageName"`
+	ImageMime    string   `json:"imageMime"`
 	ClientID     string   `json:"clientId"`
 	AttachmentID string   `json:"attachmentId"`
 	MessageID    string   `json:"messageId"`
@@ -47,7 +54,12 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p yudeskSupportRequest
-	if !decode(w, r, &p) {
+	// Support image messages are JSON with bounded base64 payloads. The normal
+	// API decoder is intentionally 1 MiB, so this bridge uses a larger explicit
+	// cap while still rejecting unbounded request bodies.
+	r.Body = http.MaxBytesReader(w, r.Body, 18<<20)
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		fail(w, 400, "请求格式错误")
 		return
 	}
 	validIdentity := yudeskPhone.MatchString(p.Phone)
@@ -67,6 +79,10 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 	}
 	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send" && p.Action != "account-sync" && p.Action != "image" && p.Action != "read") {
 		fail(w, 400, "客服请求无效")
+		return
+	}
+	if p.Action == "send" && p.Kind != "" && p.Kind != "text" && p.Kind != "image" {
+		fail(w, 400, "客服消息类型无效")
 		return
 	}
 	if p.Action == "account-sync" {
@@ -187,6 +203,10 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 	child := r.Clone(context.WithValue(r.Context(), userKey{}, id))
 	child.SetPathValue("id", cid)
 	if p.Action == "send" {
+		if p.Kind == "image" {
+			s.yudeskSupportImageSend(w, child, p)
+			return
+		}
 		raw, _ := json.Marshal(map[string]string{"kind": "text", "text": p.Text, "clientId": p.ClientID})
 		child.Body = io.NopCloser(bytes.NewReader(raw))
 		s.sendMessage(w, child)
@@ -207,6 +227,74 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]any{"ok": true, "userId": id, "messages": messages})
+}
+
+// yudeskSupportImageSend turns the bridge's bounded base64 image into the
+// normal attachment + message flow. This keeps the same permissions, storage
+// limits, deduplication and message push behavior as native clients.
+func (s *Server) yudeskSupportImageSend(w http.ResponseWriter, child *http.Request, p yudeskSupportRequest) {
+	raw, err := base64.StdEncoding.DecodeString(p.ImageData)
+	if err != nil || len(raw) == 0 || len(raw) > 12<<20 {
+		fail(w, 400, "图片数据无效或过大")
+		return
+	}
+	probe := len(raw)
+	if probe > 512 {
+		probe = 512
+	}
+	contentType := http.DetectContentType(raw[:probe])
+	if !strings.HasPrefix(contentType, "image/") || (p.ImageMime != "" && !strings.HasPrefix(p.ImageMime, "image/")) {
+		fail(w, 400, "客服图片格式无效")
+		return
+	}
+	name := filepath.Base(strings.ReplaceAll(p.ImageName, "\\", "/"))
+	if name == "." || name == "" || name == string(filepath.Separator) {
+		name = "image.png"
+	}
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	if err = form.WriteField("conversationId", child.PathValue("id")); err != nil {
+		fail(w, 400, "图片请求无效")
+		return
+	}
+	// The upload is idempotent independently from the message. A retry with the
+	// same YuDesk client ID therefore reuses the stored attachment.
+	if err = form.WriteField("clientId", "yudesk-image-"+p.ClientID); err != nil {
+		fail(w, 400, "图片请求无效")
+		return
+	}
+	part, err := form.CreateFormFile("file", name)
+	if err != nil {
+		fail(w, 400, "图片请求无效")
+		return
+	}
+	if _, err = part.Write(raw); err != nil || form.Close() != nil {
+		fail(w, 400, "图片上传失败")
+		return
+	}
+	uploadRequest := child.Clone(child.Context())
+	uploadRequest.Method = http.MethodPost
+	uploadRequest.Body = io.NopCloser(bytes.NewReader(body.Bytes()))
+	uploadRequest.ContentLength = int64(body.Len())
+	uploadRequest.Header = child.Header.Clone()
+	uploadRequest.Header.Set("Content-Type", form.FormDataContentType())
+	capture := &yudeskResponse{header: http.Header{}}
+	s.upload(capture, uploadRequest)
+	if capture.status >= 400 {
+		w.WriteHeader(capture.status)
+		_, _ = w.Write(capture.body.Bytes())
+		return
+	}
+	var attachment struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(capture.body.Bytes(), &attachment) != nil || attachment.ID == "" {
+		fail(w, 503, "图片上传响应无效")
+		return
+	}
+	message, _ := json.Marshal(map[string]string{"kind": "image", "text": p.Text, "attachmentId": attachment.ID, "clientId": p.ClientID})
+	child.Body = io.NopCloser(bytes.NewReader(message))
+	s.sendMessage(w, child)
 }
 
 type yudeskResponse struct {
