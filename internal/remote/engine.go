@@ -317,43 +317,6 @@ func (e *Engine) ping(ctx context.Context, pc *protocol.Conn) {
 		}
 	}
 }
-func (e *Engine) capture(ctx context.Context, pc *protocol.Conn) {
-	controller := e.performance.controller()
-	budget := e.performance.interval()
-	t := time.NewTicker(budget)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			started := time.Now()
-			shot, err := desktop.CaptureWithOptions(desktop.CaptureOptions{Quality: controller.Quality, MaxWidth: controller.Width})
-			if err != nil {
-				e.mu.Lock()
-				e.state.Error = err.Error()
-				e.mu.Unlock()
-				continue
-			}
-			e.mu.Lock()
-			e.sourceWidth = shot.SourceWidth
-			e.sourceHeight = shot.SourceHeight
-			e.mu.Unlock()
-			p, _ := json.Marshal(map[string]int{"width": shot.Width, "height": shot.Height})
-			if pc.WriteMessageContext(ctx, protocol.Message{Kind: "event", Method: "frame", Params: p, Data: shot.JPEG}) != nil {
-				return
-			}
-			e.mu.Lock()
-			e.state.Width = shot.Width
-			e.state.Height = shot.Height
-			e.state.Frame++
-			rtt := e.state.RTT
-			e.mu.Unlock()
-			controller.Ack(time.Duration(rtt) * time.Millisecond)
-			controller.Update(time.Now(), time.Since(started), budget, shot.SourceWidth)
-		}
-	}
-}
 func (e *Engine) SendInput(events []desktop.InputEvent) error {
 	e.mu.Lock()
 	c := e.conn

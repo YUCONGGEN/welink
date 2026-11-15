@@ -9,7 +9,7 @@ import "time"
 type LatencyController struct {
 	baseline, rtt        time.Duration
 	lastChange           time.Time
-	bad, good            int
+	bad, good, congested int
 	Quality, Width       int
 	maxQuality, maxWidth int
 }
@@ -32,18 +32,36 @@ func (c *LatencyController) Ack(rtt time.Duration) {
 }
 func (c *LatencyController) QueueDelay() time.Duration { return max(0, c.rtt-c.baseline) }
 func (c *LatencyController) Update(now time.Time, cost, budget time.Duration, sourceWidth int) {
-	if c.QueueDelay() > 40*time.Millisecond || cost > budget*3/2 {
+	network := c.QueueDelay() > 40*time.Millisecond
+	if network || cost > budget*3/2 {
 		c.bad++
 		c.good = 0
 	} else {
 		c.good++
 		c.bad = 0
 	}
+	if network {
+		c.congested++
+	} else {
+		c.congested = 0
+	}
 	if !c.lastChange.IsZero() && now.Sub(c.lastChange) < time.Second {
 		return
 	}
 	if c.bad >= 3 {
-		c.Quality = max(min(45, c.maxQuality), c.Quality-8)
+		limit := c.maxWidth
+		if limit == 0 || limit > sourceWidth {
+			limit = sourceWidth
+		}
+		// A growing network queue is the only reason to give up legibility.
+		// Slow capture/encode on its own is a CPU limit: the capture ticker
+		// already drops frames, so keep text readable (>= 60 quality and up to
+		// 1280 px wide) instead of sliding all the way down to 640 px.
+		qualityFloor, widthFloor := min(45, c.maxQuality), min(640, sourceWidth)
+		if c.congested < 3 {
+			qualityFloor, widthFloor = min(60, c.maxQuality), min(1280, limit)
+		}
+		c.Quality = max(qualityFloor, c.Quality-8)
 		// Reducing the captured image also improves PNG/text traffic, which
 		// does not respond to JPEG quality changes.
 		if c.Quality <= 61 || c.QueueDelay() > 100*time.Millisecond || cost > budget*3 {
@@ -51,7 +69,7 @@ func (c *LatencyController) Update(now time.Time, cost, budget time.Duration, so
 			if width == 0 || width > sourceWidth {
 				width = sourceWidth
 			}
-			c.Width = max(min(640, sourceWidth), width*4/5)
+			c.Width = max(widthFloor, width*4/5)
 		}
 		c.lastChange = now
 		c.bad = 0

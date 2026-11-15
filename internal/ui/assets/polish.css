@@ -1,0 +1,37 @@
+/* LinkMe UI polish — loaded last so it can settle theme conflicts left by the
+   older per-feature stylesheets. Keep rules here scoped and theme-aware. */
+
+/* Unread attention: the 消息 rail icon turns red while messages are unread. */
+.rail nav button.has-unread:not(.active){color:#f04d4d}
+.rail nav button.has-unread:not(.active) svg{animation:rail-unread 2.4s ease-in-out infinite}
+@keyframes rail-unread{0%,100%{transform:none}8%{transform:scale(1.12)}16%{transform:none}}
+@media (prefers-reduced-motion:reduce){.rail nav button.has-unread svg{animation:none}}
+
+/* Dark theme: disabled send button no longer glows pale blue. */
+body.dark .send-btn:disabled{background:#2f3742;color:#6f7d8f}
+
+/* Drive: the search box relied on an undefined --bg token and the quota
+   track was near-white in dark mode, so an empty drive looked 100% full. */
+.cloud-search{background:var(--panel,#f5f6f7);border:1px solid var(--line);max-width:420px}
+.cloud-search:focus-within{border-color:var(--blue)}
+.cloud-search input{color:var(--ink)}
+.cloud-search button{flex-shrink:0;padding:5px 12px;border-radius:6px;font-size:12px;color:var(--blue);white-space:nowrap}
+.cloud-search button:hover{background:var(--hover)}
+.cloud-search #drive-search-clear{padding:5px;color:var(--muted)}
+.cloud-search #drive-search-clear svg{width:14px;height:14px}
+body.dark .cloud-search{background:#2a3038;border-color:#363d48}
+body.dark .drive-capacity progress{background:#2f3946}
+body.dark .drive-capacity progress::-webkit-progress-bar{background:#2f3946}
+body.dark .drive-capacity progress::-webkit-progress-value{background:#3d9bff}
+
+/* Dark settings: rows align label-left / control-right and checkboxes become
+   switches, matching the light theme. */
+body.dark .modal .prefs-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;margin:6px 0;padding:6px 0;color:var(--ink)}
+body.dark .modal .prefs-row input[type=checkbox]{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:36px;height:22px;margin:0;border:0;border-radius:999px;background:#454d59;cursor:pointer;transition:background .15s}
+body.dark .modal .prefs-row input[type=checkbox]:after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .15s}
+body.dark .modal .prefs-row input[type=checkbox]:checked{background:#2b8fff}
+body.dark .modal .prefs-row input[type=checkbox]:checked:after{transform:translateX(14px)}
+body.dark .modal .prefs-row input[type=checkbox]:focus-visible{outline:2px solid #3d9bff;outline-offset:3px}
+body.dark .modal .secondary{border-color:#3b424d;background:#2f353e;color:var(--ink)}
+body.dark .modal .secondary:hover{background:#373e48}
+body.dark .modal .secondary.danger{color:#ff6b72}

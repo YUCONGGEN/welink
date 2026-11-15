@@ -183,10 +183,11 @@ func (h *windowsHost) openScreenshotSelection(frame *screenshotFrame, wasHidden 
 
 func (s *screenshotSelection) invalidate() { user32.NewProc("InvalidateRect").Call(s.window, 0, 0) }
 func (s *screenshotSelection) buttons() []image.Rectangle {
-	x := max(0, min(s.frame.bounds.Dx()-s.px(258), s.selected.Max.X-s.px(258)))
-	y := s.selected.Max.Y + s.px(10)
-	if y+s.px(38) > s.frame.bounds.Dy() {
-		y = max(0, s.selected.Max.Y-s.px(48))
+	// Leave room for the 5px toolbar frame drawn around the buttons.
+	x := max(s.px(6), min(s.frame.bounds.Dx()-s.px(264), s.selected.Max.X-s.px(258)))
+	y := s.selected.Max.Y + s.px(12)
+	if y+s.px(42) > s.frame.bounds.Dy() {
+		y = max(s.px(6), s.selected.Max.Y-s.px(48))
 	}
 	return []image.Rectangle{image.Rect(x, y, x+s.px(78), y+s.px(36)), image.Rect(x+s.px(86), y, x+s.px(164), y+s.px(36)), image.Rect(x+s.px(172), y, x+s.px(258), y+s.px(36))}
 }
@@ -242,10 +243,25 @@ func (s *screenshotSelection) paint() {
 		rr := noticeRect{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
 		user32.NewProc("DrawTextW").Call(dc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&rr)), 0x825)
 	}
+	// Overlay chrome uses a dark, outlined surface so it stays readable on top
+	// of any captured content: white pages, dark themes or busy wallpapers.
+	// Colors are GDI COLORREF values (0x00BBGGRR).
+	const (
+		chromeFill   = uintptr(0x2e2a26) // #262a2e
+		chromeBorder = uintptr(0x5a524a) // #4a525a
+		chromeInk    = uintptr(0xf5f0eb) // #ebf0f5
+		buttonFill   = uintptr(0x433d38) // #383d43
+		primaryFill  = uintptr(0xff9900) // #0099ff
+	)
+	panel := func(rect image.Rectangle, color uintptr) {
+		border := min(s.px(1), max(1, rect.Dx()/2), max(1, rect.Dy()/2))
+		fill(rect, chromeBorder)
+		fill(image.Rect(rect.Min.X+border, rect.Min.Y+border, rect.Max.X-border, rect.Max.Y-border), color)
+	}
 	if r.Empty() {
 		box := image.Rect(max(0, w/2-s.px(225)), s.px(24), min(w, w/2+s.px(225)), s.px(68))
-		fill(box, 0xffffff)
-		text("拖动框选 · 双击或 Enter 完成 · Esc 取消", box, 0x443326)
+		panel(box, chromeFill)
+		text("拖动框选 · 双击或 Enter 完成 · Esc 取消", box, chromeInk)
 		return
 	}
 	edge := min(s.px(2), r.Dx(), r.Dy())
@@ -253,15 +269,16 @@ func (s *screenshotSelection) paint() {
 		fill(line, 0xff9900)
 	}
 	label := image.Rect(r.Min.X, max(0, r.Min.Y-s.px(28)), min(w, r.Min.X+s.px(180)), max(0, r.Min.Y-s.px(28))+s.px(24))
-	fill(label, 0xffffff)
-	text(fmt.Sprintf("%d × %d", r.Dx(), r.Dy()), label, 0x443326)
+	panel(label, chromeFill)
+	text(fmt.Sprintf("%d × %d", r.Dx(), r.Dy()), label, chromeInk)
 	if !s.dragging {
-		for i, button := range s.buttons() {
-			color := uintptr(0xffffff)
-			ink := uintptr(0x443326)
+		buttons := s.buttons()
+		bar := image.Rect(buttons[0].Min.X-s.px(5), buttons[0].Min.Y-s.px(5), buttons[2].Max.X+s.px(5), buttons[2].Max.Y+s.px(5))
+		panel(bar, chromeFill)
+		for i, button := range buttons {
+			color, ink := buttonFill, chromeInk
 			if i == 2 {
-				color = 0xff9900
-				ink = 0xffffff
+				color, ink = primaryFill, 0xffffff
 			}
 			fill(button, color)
 			text([]string{"重选", "取消", "完成"}[i], button, ink)

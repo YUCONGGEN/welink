@@ -289,7 +289,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.17-preview";
+  var CLIENT_VERSION = "0.1.18-preview";
   function authShowcase() {
     return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> LINKME · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
   }
@@ -724,6 +724,21 @@
     (_c = (_b = window.WeLinkAndroid) == null ? void 0 : _b.setDarkTheme) == null ? void 0 : _c.call(_b, dark);
     (_d = window.welinkTheme) == null ? void 0 : _d.call(window, dark).catch(() => {
     });
+  }
+
+  // internal/ui/src/unread-mark.js
+  var ICON = "/assets/icon.svg";
+  var UNREAD_ICON = "/assets/icon-unread.svg";
+  var iconShown = null;
+  function markUnread(count) {
+    count = Math.max(0, Number(count) || 0);
+    const href = count ? UNREAD_ICON : ICON, link = document.querySelector("link[rel~=icon]");
+    if (link && iconShown !== href) {
+      link.href = href;
+      iconShown = href;
+    }
+    const base = document.title.replace(/^\(\d+\+?\)\s*/, ""), title = count ? "(".concat(count > 99 ? "99+" : count, ") ").concat(base) : base;
+    if (document.title !== title) document.title = title;
   }
 
   // internal/ui/src/message-sounds.js
@@ -1594,7 +1609,7 @@
         return;
       }
       const c = active, incoming = c.canRespond, other = !incoming && !c.canEnd;
-      layer().innerHTML = '<section class="call-dialog" role="dialog" aria-label="'.concat(incoming ? "来电" : "通话", '"><header><b>LinkMe · ').concat(c.mode === "video" ? "视频" : "语音", '通话</b><button data-call-minimize title="收起">').concat(icon2("minus"), '</button></header><div class="call-person">').concat(av2(c.peer, "large"), "<h2>").concat(esc2(c.peer.name), '</h2><p class="call-status" role="status">').concat(other ? "已在其他设备接听" : esc2(description(c)), '</p></div><div class="call-buttons">').concat(incoming ? '<button class="call-decline" data-call-reject>'.concat(icon2("phone"), "<span>拒绝</span></button>").concat(c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : "", '<button class="call-answer" data-call-answer="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>接听</span></button>") : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : "").concat(c.canEnd ? '<button class="call-decline" data-call-end>' + icon2("phone") + "<span>" + (c.state === "ringing" ? "取消" : "挂断") + "</span></button>" : "").concat(other ? '<button class="secondary" data-call-dismiss>知道了</button>' : "", '</div></section><button class="call-mini" data-call-expand>').concat(icon2("phone"), "<span>").concat(esc2(c.peer.name), " · ").concat(esc2(description(c)), "</span></button>");
+      layer().innerHTML = '<section class="call-dialog '.concat(c.mode === "video" ? "call-video" : "call-audio", " ").concat(incoming ? "is-incoming" : "is-outgoing", '" role="dialog" aria-label="').concat(incoming ? "来电" : "通话", '"><header><b>LinkMe · ').concat(c.mode === "video" ? "视频" : "语音", '通话</b><button data-call-minimize title="收起">').concat(icon2("minus"), '</button></header><div class="call-person">').concat(av2(c.peer, "large"), "<h2>").concat(esc2(c.peer.remark || c.peer.name), '</h2><p class="call-kind">').concat(c.mode === "video" ? "视频通话" : "语音通话", '</p><p class="call-status" role="status">').concat(other ? "已在其他设备接听" : esc2(description(c)), '</p></div><div class="call-buttons">').concat(incoming ? '<button class="call-decline" data-call-reject>'.concat(icon2("phone"), "<span>拒绝</span></button>").concat(c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : "", '<button class="call-answer" data-call-answer="').concat(c.mode, '">').concat(icon2(c.mode === "video" ? "video" : "phone"), "<span>接听</span></button>") : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : "").concat(c.canEnd ? '<button class="call-decline" data-call-end>' + icon2("phone") + "<span>" + (c.state === "ringing" ? "取消" : "挂断") + "</span></button>" : "").concat(other ? '<button class="secondary" data-call-dismiss>知道了</button>' : "", '</div></section><button class="call-mini" data-call-expand>').concat(icon2("phone"), "<span>").concat(esc2(c.peer.name), " · ").concat(esc2(description(c)), "</span></button>");
     }
     async function refreshConversation(c, g) {
       if (S2.active !== c.conversationId || S2.historyMode) return;
@@ -5159,7 +5174,7 @@
   // internal/ui/src/rtc-path.js
   function directFirstICE(pc, policy, { alive, changed, negotiate }) {
     const servers = policy.iceServers || [], hasRelay = servers.some((s) => (Array.isArray(s.urls) ? s.urls : [s.urls]).some((u) => /^turns?:/.test(u)));
-    let relay = false, closed = false, deadline, recovery, statsTimer, restarts = 0, path = "正在直连", rtt = -1, available = 0;
+    let relay = false, closed = false, deadline, recovery, statsTimer, restarts = 0, path = "正在直连", rtt = -1, available = 0, gathered = 0, blocked = false;
     const connected = () => ["connected", "completed"].includes(pc.iceConnectionState) || pc.connectionState === "connected";
     const valid = () => !closed && alive() && pc.connectionState !== "closed";
     const setPath = (value) => {
@@ -5194,7 +5209,7 @@
     function fallback() {
       if (!valid() || connected()) return;
       if (!hasRelay) {
-        setPath("直连未成功");
+        setPath(blocked ? "直连被本机网络策略阻止" : "直连未成功");
         return;
       }
       clearTimeout(deadline);
@@ -5233,10 +5248,25 @@
         }, 5e3);
       }
     }
+    pc.addEventListener("icecandidate", (event) => {
+      var _a;
+      if (relay || !valid()) return;
+      if ((_a = event.candidate) == null ? void 0 : _a.candidate) {
+        gathered++;
+        return;
+      }
+      if (!event.candidate && !gathered) {
+        blocked = true;
+        clearTimeout(deadline);
+        fallback();
+      }
+    });
     deadline = setTimeout(fallback, policy.directTimeoutMs || 15e3);
     statsTimer = setInterval(stats, 2500);
     return { update, get path() {
       return path;
+    }, get blocked() {
+      return blocked;
     }, get rtt() {
       return rtt;
     }, get available() {
@@ -5311,8 +5341,22 @@
   }
 
   // internal/ui/src/meetings.js
-  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, Desktop: Desktop2, onCallClosed, callCurrent, historyEntry }) {
+  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc2, icon: icon2, av: av2, Desktop: Desktop2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
+    function personUser(id) {
+      var _a, _b, _c, _d;
+      if (!room) return null;
+      if (id === ((_a = S2.user) == null ? void 0 : _a.id)) return S2.user;
+      if (((_c = (_b = room.call) == null ? void 0 : _b.peer) == null ? void 0 : _c.id) === id) return room.call.peer;
+      return (S2.friends || []).find((u) => u.id === id) || ((_d = (S2.conversations || []).find((c) => {
+        var _a2;
+        return ((_a2 = c.peer) == null ? void 0 : _a2.id) === id;
+      })) == null ? void 0 : _d.peer) || null;
+    }
+    function personHTML(id, name) {
+      const u = personUser(id);
+      return u && av2 ? av2(u, "large") : '<span class="meeting-initial">' + esc2((name || "M").slice(0, 1)) + "</span>";
+    }
     const el = (id) => document.getElementById(id);
     const display = meetingWindow({ active: () => !!room, toast: toast2, changed: (full) => {
       const b = el("meeting-fullscreen");
@@ -5504,15 +5548,18 @@
         stream.getTracks().forEach((t) => t.stop());
         throw Error("未获得麦克风权限，请检查权限后重试");
       }
-      const ws = new WebSocket("ws://".concat(location.host, "/api/meetings/").concat(code, "/ws"));
+      const signalProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket("".concat(signalProtocol, "//").concat(location.host, "/api/meetings/").concat(code, "/ws"));
       room = { code, ws, stream, call, rtc, id: "", host: "", states: /* @__PURE__ */ new Map(), peers: /* @__PURE__ */ new Map(), tiles: /* @__PURE__ */ new Map(), screen: null, recording: null, ping: null, started: Date.now(), intentional: false };
       const active = room;
       renderRoom();
       if (call) {
         root().classList.add("call-mode");
         root().classList.toggle("call-audio", call.mode === "audio");
-        root().querySelector(".meeting-top b").textContent = call.peer.name;
-        el("meeting-leave").textContent = "挂断";
+        root().querySelector(".meeting-top b").textContent = (call.mode === "video" ? "视频通话 · " : "语音通话 · ") + call.peer.name;
+        el("meeting-leave").querySelector("span").textContent = "挂断";
+        el("meeting-leave").title = "挂断";
+        el("meeting-network").textContent = "正在接通…";
         tile(call.peer.id, call.peer.name, null);
         active.callClock = setInterval(() => {
           if (room === active && call.started) renderConnection(active);
@@ -5541,17 +5588,23 @@
       };
     }
     function renderConnection(active) {
-      var _a;
+      var _a, _b;
       if (room !== active || !el("meeting-network")) return;
       for (const p of active.peers.values()) tuneMeetingPeer(p, !!active.screen, active.peers.size);
       const paths2 = [...active.peers.values()].map((p) => p.route.path);
       let label = paths2.includes("中转连接") ? "中转连接" : paths2.length && paths2.every((p) => p === "P2P 直连") ? "P2P 直连" : paths2.find((p) => p !== "P2P 直连") || "等待其他成员";
       if ((_a = active.call) == null ? void 0 : _a.started) label = formatDuration((Date.now() - active.call.started) / 1e3) + " · " + label;
       const rtt = Math.max(-1, ...[...active.peers.values()].map((p) => p.route.rtt));
-      el("meeting-network").textContent = label + (rtt >= 0 ? " · " + rtt + " ms" : "");
+      const node = el("meeting-network");
+      node.textContent = label + (rtt >= 0 ? " · " + rtt + " ms" : "");
+      node.dataset.state = paths2.some((p) => /未成功|阻止|不稳定/.test(p)) ? "bad" : paths2.length && paths2.every((p) => p === "P2P 直连" || p === "中转连接") ? "good" : "wait";
+      if (!active.blockedNotice && [...active.peers.values()].some((p) => p.route.blocked)) {
+        active.blockedNotice = true;
+        toast2(((_b = active.rtc) == null ? void 0 : _b.relayEnabled) === false ? "本机网络策略禁止 WebRTC 直连，且服务器未开启中转，无法建立音视频连接。请联系管理员开启中转服务。" : "本机网络策略禁止直连，已自动切换到加密中转。");
+      }
     }
     function renderRoom() {
-      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>LinkMe 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">').concat(icon2("minus"), '</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><button id="meeting-audio">').concat(icon2("phone"), '<span>麦克风</span></button><button id="meeting-video">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record">').concat(icon2("file"), '<span>录制</span></button><button id="meeting-fullscreen">').concat(icon2("maximize"), '<span>全屏</span></button><button id="meeting-leave" class="meeting-leave">离开会议</button><button id="meeting-end" class="meeting-end">结束会议</button></footer></section>');
+      root().innerHTML = '<section class="meeting-room"><header class="meeting-top"><b>LinkMe 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">'.concat(grouped(room.code), " ").concat(icon2("copy"), '</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">').concat(icon2("minus"), '</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><div class="meeting-tool-group"><button id="meeting-audio" title="麦克风">').concat(icon2("mic"), '<span>麦克风</span></button><button id="meeting-video" title="摄像头">').concat(icon2("video"), '<span>摄像头</span></button><button id="meeting-share" title="共享屏幕">').concat(icon2("monitor"), '<span>共享屏幕</span></button><button id="meeting-record" title="录制">').concat(icon2("record"), '<span>录制</span></button><button id="meeting-fullscreen" title="全屏">').concat(icon2("maximize"), '<span>全屏</span></button></div><button id="meeting-leave" class="meeting-leave" title="离开会议">').concat(icon2("phone"), '<span>离开会议</span></button><button id="meeting-end" class="meeting-end" title="结束会议"><span>结束会议</span></button></footer></section>');
       el("meeting-copy").onclick = () => {
         if (root().classList.contains("meeting-minimized")) {
           show();
@@ -5611,7 +5664,11 @@
         });
       }
       ;
-      n.querySelector(".meeting-person").textContent = (name || "M").slice(0, 1);
+      const person = n.querySelector(".meeting-person"), key = id + "|" + (name || "");
+      if (person.dataset.key !== key) {
+        person.dataset.key = key;
+        person.innerHTML = personHTML(id, name);
+      }
       n.querySelector(".meeting-tile-label").textContent = (self ? "我 · " : "") + name;
       return n;
     }
@@ -5638,11 +5695,26 @@
         }
       };
     }
+    function setToolIcon(button, name) {
+      const svg = button.querySelector("svg");
+      if (svg && button.dataset.icon !== name) {
+        button.dataset.icon = name;
+        svg.outerHTML = icon2(name);
+      }
+    }
     function updateButtons() {
       if (!room) return;
       const local = room.states.get(room.id), host = room.id && room.id === room.host;
       el("meeting-audio").classList.toggle("on", !!(local == null ? void 0 : local.microphone));
       el("meeting-video").classList.toggle("on", !!(local == null ? void 0 : local.camera));
+      el("meeting-audio").classList.toggle("off", !(local == null ? void 0 : local.microphone));
+      el("meeting-video").classList.toggle("off", !(local == null ? void 0 : local.camera));
+      setToolIcon(el("meeting-audio"), (local == null ? void 0 : local.microphone) ? "mic" : "mic-off");
+      setToolIcon(el("meeting-video"), (local == null ? void 0 : local.camera) ? "video" : "video-off");
+      el("meeting-audio").querySelector("span").textContent = (local == null ? void 0 : local.microphone) ? "静音" : "解除静音";
+      el("meeting-video").querySelector("span").textContent = (local == null ? void 0 : local.camera) ? "关闭视频" : "开启视频";
+      el("meeting-share").title = host ? "共享屏幕" : "仅主持人可共享屏幕";
+      el("meeting-record").title = host ? "录制" : "仅主持人可录制";
       el("meeting-share").disabled = !host;
       el("meeting-record").disabled = !host;
       el("meeting-share").classList.toggle("on", !!room.screen);
@@ -5783,7 +5855,8 @@
           await offer(peer(p.id));
           if (room !== active) return;
         }
-        el("meeting-network").textContent = "会议进行中";
+        if (!room.peers.size) el("meeting-network").textContent = room.call ? "正在接通…" : "等待其他成员加入";
+        else renderConnection(active);
         state();
         return;
       }
@@ -5802,6 +5875,8 @@
         room.tiles.delete(m.id);
         room.states.delete(m.id);
         renderMembers();
+        if (!room.peers.size && !room.call) el("meeting-network").textContent = "等待其他成员加入";
+        else renderConnection(room);
         return;
       }
       if (m.type === "state") {
@@ -6250,7 +6325,7 @@
   var $ = (s, r = document) => r.querySelector(s);
   var $$ = (s, r = document) => [...r.querySelectorAll(s)];
   var esc = (v) => String(v != null ? v : "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  var paths = { cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
+  var paths = { cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8", "mic-off": "M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.5V6a3 3 0 0 0-5.9-.8M17 16.9A7 7 0 0 1 5 11M19 11a7 7 0 0 1-.4 2.3M12 18v3M8 21h8", "video-off": "M3 3l18 18M10 5h5v5M15 15v4H3V5h2M15 9l6-3v12l-4-2", record: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
   var icon = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'.concat(paths[n] || paths.chat, '"/></svg>');
   var btn = (name, title, action2, extra = "") => '<button class="icon-btn" title="'.concat(title, '" aria-label="').concat(title, '" data-action="').concat(action2, '" ').concat(extra, ">").concat(icon(name), "</button>");
   var av = (u = {}, size = "", online = false) => {
@@ -6424,7 +6499,8 @@
   }
   function nav() {
     const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
-    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["drive", "cloud", "网盘", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "", '" title="').concat(t, '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
+    markUnread(unread);
+    return '<aside class="rail"><button class="self" title="个人资料" data-action="profile">'.concat(av(S.user, "", true), "</button><nav>").concat([["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["drive", "cloud", "网盘", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => '<button data-nav="'.concat(tab, '" class="').concat(S.tab === tab ? "active" : "").concat(n ? " has-unread" : "", '" title="').concat(t).concat(n ? " · ".concat(n, " 条未读") : "", '" aria-label="').concat(t, '">').concat(icon(i), '<span class="rail-label">').concat(t, "</span>").concat(n ? '<span class="badge">'.concat(n > 99 ? "99+" : n, "</span>") : "", "</button>")).join(""), '</nav><div class="rail-bottom">').concat(btn("settings", "设置", "settings")).concat(btn("more", "更多", "more-menu"), "</div></aside>");
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
@@ -7313,11 +7389,49 @@
     S.remoteTimer = setInterval(remoteTick, 33);
     await remoteTick();
   }
+  var remoteFailures = 0;
   var frameVersion = 0;
   var frameURL = "";
   var remoteTickBusy = false;
+  var remoteFrameBusy = false;
+  var remoteFrameSeen = 0;
+  var remoteFrameShown = 0;
   var remoteInput = null;
+  async function fetchRemoteFrame(version, state) {
+    var _a;
+    if (remoteFrameBusy || !S.remote || ((_a = S.remoteLocal) == null ? void 0 : _a.role) !== "viewer") return;
+    remoteFrameBusy = true;
+    try {
+      const r = await fetch("/local/remote/frame", { cache: "no-store" });
+      if (!r.ok) throw Error("远程画面暂时不可用");
+      const blob = await r.blob();
+      const img = $("#remote-image");
+      if (!img || !S.remote || version < remoteFrameShown) return;
+      const old = frameURL;
+      frameURL = URL.createObjectURL(blob);
+      img.src = frameURL;
+      img.onload = () => {
+        var _a2;
+        if (old) URL.revokeObjectURL(old);
+        (_a2 = $("#remote-loading")) == null ? void 0 : _a2.classList.add("hidden");
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(frameURL);
+        frameURL = old || "";
+      };
+      img.dataset.width = String(state.width || 0);
+      img.dataset.height = String(state.height || 0);
+      remoteFrameShown = version;
+    } catch (e) {
+      remoteFrameShown = Math.max(remoteFrameShown, version);
+      if (S.remote && remoteFrameSeen === version) toast(e.message);
+    } finally {
+      remoteFrameBusy = false;
+      if (S.remote && remoteFrameSeen > remoteFrameShown) fetchRemoteFrame(remoteFrameSeen, S.remoteLocal);
+    }
+  }
   async function remoteTick() {
+    var _a;
     if (remoteTickBusy || !S.remote) return;
     remoteTickBusy = true;
     try {
@@ -7331,44 +7445,49 @@
         if (error) toast(error);
         return;
       }
-      if (state.role === "viewer" && state.frame !== frameVersion && state.frame) {
-        frameVersion = state.frame;
-        const r = await fetch("/local/remote/frame");
-        if (r.ok) {
-          const blob = await r.blob();
-          const img = $("#remote-image");
-          if (img) {
-            const old = frameURL;
-            frameURL = URL.createObjectURL(blob);
-            img.src = frameURL;
-            img.onload = () => {
-              var _a;
-              URL.revokeObjectURL(old);
-              (_a = $("#remote-loading")) == null ? void 0 : _a.classList.add("hidden");
-            };
-            img.dataset.width = state.width;
-            img.dataset.height = state.height;
-          }
-        }
+      remoteFailures = 0;
+      (_a = $(".remote-screen")) == null ? void 0 : _a.classList.toggle("is-connected", state.status === "connected");
+      if (state.role === "viewer" && state.frame) {
+        remoteFrameSeen = Math.max(remoteFrameSeen, state.frame);
+        if (remoteFrameSeen > remoteFrameShown && !remoteFrameBusy) fetchRemoteFrame(remoteFrameSeen, state);
       }
     } catch (e) {
-      toast(e.message);
-      await stopRemote(false);
+      if (++remoteFailures >= 90) {
+        toast(e.message);
+        await stopRemote(false);
+      }
     } finally {
       remoteTickBusy = false;
     }
   }
   function renderSharing() {
     var _a;
-    const el = $("#sharing-banner");
-    if (!el) return;
-    el.innerHTML = ((_a = S.remote) == null ? void 0 : _a.state) === "accepted" && S.remote.host === S.user.id ? '<div class="sharing-banner">'.concat(icon("monitor"), "<span>正在共享屏幕").concat(S.remote.mode === "control" ? "，对方可以操作" : "", '</span><button data-action="stop-remote">结束共享</button></div>') : "";
+    const sharing = ((_a = S.remote) == null ? void 0 : _a.state) === "accepted" && S.user && S.remote.host === S.user.id;
+    let pill = $("#remote-sharing-pill");
+    if (!sharing) {
+      pill == null ? void 0 : pill.remove();
+      return;
+    }
+    const peer = S.friends.find((u) => u.id === (S.remote.requester === S.user.id ? S.remote.recipient : S.remote.requester));
+    if (!pill) {
+      pill = document.createElement("div");
+      pill.id = "remote-sharing-pill";
+      pill.setAttribute("role", "status");
+      document.body.append(pill);
+    }
+    pill.innerHTML = '<i class="live-dot"></i>'.concat(icon("monitor"), "<span>").concat(esc((peer == null ? void 0 : peer.name) || "对方")).concat(S.remote.mode === "control" ? " 正在远程控制你的设备" : " 正在观看你的屏幕", '</span><button data-action="stop-remote">结束共享</button>');
   }
   function showRemoteScreen() {
+    var _a, _b;
     if ($(".remote-screen")) return;
+    remoteFrameSeen = remoteFrameShown = 0;
     const node = document.createElement("section");
     node.className = "remote-screen";
-    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), '<b>远程协助</b><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>').concat(S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : "", '<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading">正在等待对方画面…</p><img id="remote-image" tabindex="0" alt="远程设备屏幕"></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
+    const remotePeer = S.friends.find((u) => {
+      var _a2;
+      return u.id === ((_a2 = S.remote) == null ? void 0 : _a2.host);
+    }) || ((_a = activeConversation()) == null ? void 0 : _a.peer);
+    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), "<b>远程协助").concat(remotePeer ? " · " + esc(remotePeer.remark || remotePeer.name) : "", '</b><span class="remote-mode">').concat(((_b = S.remote) == null ? void 0 : _b.mode) === "control" ? "可控制" : "仅观看", '</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>').concat(S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : "", '<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><img id="remote-image" tabindex="0" alt="远程设备屏幕"></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
     document.body.append(node);
     const img = $("#remote-image");
     let held = false;
@@ -7377,8 +7496,8 @@
     const point = (e) => remotePoint(e, img);
     let moveAt = 0;
     img.onpointerdown = (e) => {
-      var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control") return;
+      var _a2;
+      if (((_a2 = S.remote) == null ? void 0 : _a2.mode) !== "control") return;
       e.preventDefault();
       img.focus();
       img.setPointerCapture(e.pointerId);
@@ -7386,8 +7505,8 @@
       send([point(e), { type: "down", button: e.button === 2 ? 3 : 1 }]);
     };
     img.onpointermove = (e) => {
-      var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control" || Date.now() - moveAt < 8) return;
+      var _a2;
+      if (((_a2 = S.remote) == null ? void 0 : _a2.mode) !== "control" || Date.now() - moveAt < 8) return;
       moveAt = Date.now();
       send([point(e)]);
     };
@@ -7402,20 +7521,20 @@
     };
     img.oncontextmenu = (e) => e.preventDefault();
     img.onwheel = (e) => {
-      var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control") return;
+      var _a2;
+      if (((_a2 = S.remote) == null ? void 0 : _a2.mode) !== "control") return;
       e.preventDefault();
       send([{ type: "wheel", deltaY: Math.round(e.deltaY), deltaX: Math.round(e.deltaX) }]);
     };
     img.onkeydown = (e) => {
-      var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control") return;
+      var _a2;
+      if (((_a2 = S.remote) == null ? void 0 : _a2.mode) !== "control") return;
       e.preventDefault();
       send([{ type: "key_down", key: e.key, code: e.code }]);
     };
     img.onkeyup = (e) => {
-      var _a;
-      if (((_a = S.remote) == null ? void 0 : _a.mode) !== "control") return;
+      var _a2;
+      if (((_a2 = S.remote) == null ? void 0 : _a2.mode) !== "control") return;
       e.preventDefault();
       send([{ type: "key_up", key: e.key, code: e.code }]);
     };
@@ -7836,7 +7955,7 @@
   var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
   var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
   var History = createHistory({ S, api, modal, toast, esc, preview, fullTime, jump: jumpMessage });
-  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc, icon, Desktop, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
+  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc, icon, av, Desktop, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
   var Calls = createCalls({ S, api, action, esc, av, icon, toast, modal, closeModal, randomID, Meetings, Desktop, renderMessages, queueRefresh, fullTime });
   async function nativeInviteEvent(event) {
     const n = event.detail;

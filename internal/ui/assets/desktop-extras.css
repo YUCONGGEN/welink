@@ -22,3 +22,25 @@
 #screenshot-canvas{display:block;max-width:100%;max-height:calc(100dvh - 330px);width:auto;height:auto;background:#fff;cursor:crosshair;touch-action:none;box-shadow:0 2px 9px #18335418}
 .screenshot-text-row{margin-top:10px}.screenshot-text-row input{width:100%;padding:9px;border:1px solid #d8dfe8;border-radius:5px;color:#263344;background:#fff}
 @media(max-width:700px){.desktop-settings .desktop-shortcut{align-items:flex-start;flex-direction:column;gap:6px}.screenshot-editor .modal-footer{flex-wrap:wrap;gap:7px}.screenshot-editor .modal-footer button{margin:0}.screenshot-tools{gap:5px}.screenshot-tools button{padding:7px}}
+/* Screenshot editor follows the app theme. The editor used to force a white
+   surface while dark-mode footer buttons inherited dark backgrounds, which
+   left 取消 / 保存图片 / 复制 nearly invisible. */
+.screenshot-editor .modal-footer .secondary{background:#fff;border:1px solid #d5dce6;color:#3a4756}
+.screenshot-editor .modal-footer .secondary:hover:not(:disabled){background:#f2f6fb;border-color:#b9c6d6}
+.screenshot-editor .modal-footer .primary{background:#0099ff;color:#fff;border:0}
+.screenshot-editor .modal-footer .primary:hover:not(:disabled){background:#0088e6}
+.screenshot-editor .modal-footer button:disabled{opacity:.55;cursor:default}
+.screenshot-tools button:hover:not(:disabled):not(.selected){background:#f3f7fb;border-color:#cdd8e4}
+body.dark .screenshot-editor{background:#262a31!important;color:#e0e4eb!important;border:1px solid #3a404a}
+body.dark .screenshot-editor .modal-head,body.dark .screenshot-editor .modal-footer,body.dark .screenshot-editor .modal-body{background:#262a31;color:#e0e4eb;border-color:#383e48}
+body.dark .screenshot-editor .modal-head h3,body.dark .screenshot-editor .modal-head button{color:#e0e4eb}
+body.dark .screenshot-editor .hint{color:#9aa5b3}
+body.dark .screenshot-tools{color:#c3cbd6}
+body.dark .screenshot-tools button{background:#30353e;border-color:#474e59;color:#dfe5ec}
+body.dark .screenshot-tools button:hover:not(:disabled):not(.selected){background:#3a414c;border-color:#5a6370}
+body.dark .screenshot-tools button.selected{background:#123f60;border-color:#2b8ad0;color:#8fd0ff}
+body.dark .screenshot-tools button:disabled{opacity:.45}
+body.dark .screenshot-tools select,body.dark .screenshot-tools input[type=color],body.dark .screenshot-text-row input{background:#30353e;border-color:#474e59;color:#e0e4eb}
+body.dark .screenshot-canvas-wrap{background:#1c1f25;border-color:#363c46}
+body.dark .screenshot-editor .modal-footer .secondary{background:#343a44;border-color:#535b67;color:#eef2f6}
+body.dark .screenshot-editor .modal-footer .secondary:hover:not(:disabled){background:#3e4551;border-color:#68717e}

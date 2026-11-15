@@ -1,0 +1,201 @@
+/* LinkMe real-time surfaces: call dialog, in-call card, meeting room, remote
+   assistance and the screen-sharing indicator. One set of theme tokens keeps
+   them consistent and readable in both the light and the dark theme. Loaded
+   after the older per-feature sheets, so selectors here are id-scoped. */
+
+#call-layer,#meeting-layer,.remote-screen,#remote-sharing-pill{
+ --rtc-bg:#f1f0f6;--rtc-surface:#fff;--rtc-surface-2:#f6f5fa;--rtc-line:#e4e1ec;
+ --rtc-ink:#1e2430;--rtc-muted:#6d7584;--rtc-faint:#9aa1ae;
+ --rtc-accent:#1677ff;--rtc-accent-soft:#e8f1ff;--rtc-danger:#f04f5b;--rtc-danger-soft:#fde9eb;
+ --rtc-ok:#1fb67a;--rtc-warn:#f0a020;--rtc-tile:#e6e3ee;--rtc-tool:#efedf4;--rtc-tool-hover:#e4e1ec;
+ --rtc-card:linear-gradient(165deg,#ffffff 0%,#f6f4fb 55%,#eef2fc 100%);--rtc-glow:#dfe9ff;
+ --rtc-shadow:0 28px 80px rgba(28,24,48,.24);--rtc-scrim:rgba(24,20,40,.32)}
+body.dark #call-layer,body.dark #meeting-layer,body.dark .remote-screen,body.dark #remote-sharing-pill{
+ --rtc-bg:#15181d;--rtc-surface:#1d2128;--rtc-surface-2:#242931;--rtc-line:#30363f;
+ --rtc-ink:#e8ecf1;--rtc-muted:#9aa4b2;--rtc-faint:#727c8a;
+ --rtc-accent:#3d9bff;--rtc-accent-soft:#183150;--rtc-danger:#f25c67;--rtc-danger-soft:#43242a;
+ --rtc-tile:#232831;--rtc-tool:#2a3039;--rtc-tool-hover:#353c47;
+ --rtc-card:linear-gradient(165deg,#262b35 0%,#1d2129 60%,#181c23 100%);--rtc-glow:#1d3a5e;
+ --rtc-shadow:0 28px 80px rgba(0,0,0,.55);--rtc-scrim:rgba(4,6,10,.55)}
+
+/* ---------- Incoming / outgoing call dialog ---------- */
+#call-layer{background:var(--rtc-scrim);backdrop-filter:blur(6px)}
+#call-layer.call-minimized{background:transparent;backdrop-filter:none}
+#call-layer .call-dialog{width:380px;height:520px;border-radius:26px;border:1px solid var(--rtc-line);background:var(--rtc-card);color:var(--rtc-ink);box-shadow:var(--rtc-shadow);overflow:hidden;display:flex;flex-direction:column}
+#call-layer .call-dialog::before{inset:0 0 auto 0;width:auto;height:300px;transform:none;border-radius:0;background:radial-gradient(circle at 50% 18%,var(--rtc-glow),transparent 68%);opacity:.9}
+#call-layer .call-dialog header{padding:18px 18px 0 22px;color:var(--rtc-muted);font-size:13px}
+#call-layer .call-dialog header b{font-weight:600;letter-spacing:.02em}
+#call-layer .call-dialog header button{width:32px;height:32px;border:0;border-radius:10px;background:var(--rtc-tool);color:var(--rtc-muted);display:grid;place-items:center}
+#call-layer .call-dialog header button:hover{background:var(--rtc-tool-hover);color:var(--rtc-ink)}
+#call-layer .call-dialog header svg{width:18px;height:18px}
+#call-layer .call-person{padding-top:56px}
+#call-layer .call-person .avatar.large{width:104px;height:104px;border-radius:32px;border:4px solid var(--rtc-surface);box-shadow:0 14px 34px rgba(30,60,120,.22);animation:rtc-ring 2.2s ease-out infinite}
+#call-layer .call-person h2{margin:22px 0 6px;font-size:24px;font-weight:650;color:var(--rtc-ink)}
+#call-layer .call-audio .call-person h2::after{content:none}
+#call-layer .call-kind{font-size:12px;color:var(--rtc-faint);margin-bottom:10px}
+#call-layer .call-status{font-size:14px;color:var(--rtc-muted)}
+#call-layer .call-buttons{gap:40px;padding:24px 20px 62px}
+#call-layer .call-buttons>button{width:64px;height:64px;box-shadow:0 10px 24px rgba(20,30,50,.22)}
+#call-layer .call-buttons>button span{top:74px;color:var(--rtc-muted)}
+#call-layer .call-buttons>button svg{width:26px;height:26px}
+#call-layer .call-decline{background:var(--rtc-danger)}
+#call-layer .call-answer{background:var(--rtc-ok)}
+#call-layer .call-audio-answer{background:var(--rtc-accent)}
+#call-layer .call-buttons .secondary{width:auto;height:40px;border-radius:999px;padding:0 22px;background:var(--rtc-tool);color:var(--rtc-ink);border:0;box-shadow:none}
+#call-layer .call-mini{background:var(--rtc-surface);color:var(--rtc-ink);border:1px solid var(--rtc-line);border-radius:999px;padding:12px 20px 12px 14px;box-shadow:var(--rtc-shadow)}
+#call-layer .call-mini svg{color:var(--rtc-ok)}
+@keyframes rtc-ring{0%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 0 rgba(22,119,255,.35)}70%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 18px rgba(22,119,255,0)}100%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 0 rgba(22,119,255,0)}}
+@media(prefers-reduced-motion:reduce){#call-layer .call-person .avatar.large,#meeting-layer .meeting-person::before,.live-dot{animation:none!important}}
+
+/* ---------- Meeting room ---------- */
+#meeting-layer .meeting-room{background:var(--rtc-bg);color:var(--rtc-ink);border:2px solid var(--rtc-accent);box-shadow:none;color-scheme:light}
+body.dark #meeting-layer .meeting-room{color-scheme:dark}
+#meeting-layer .meeting-top{height:56px;min-height:56px;padding:0 14px 0 20px;gap:12px;background:var(--rtc-surface);border-bottom:1px solid var(--rtc-line)}
+#meeting-layer .meeting-top b{font-size:15px;font-weight:650;color:var(--rtc-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#meeting-layer .meeting-top button{color:var(--rtc-muted)}
+#meeting-layer #meeting-copy{min-height:32px;height:32px;padding:0 10px;border-radius:8px;background:var(--rtc-surface-2);font-variant-numeric:tabular-nums;font-size:13px}
+#meeting-layer #meeting-copy:hover{color:var(--rtc-accent)}
+#meeting-layer #meeting-copy svg{width:15px;height:15px}
+#meeting-layer #meeting-network{flex:0 1 auto;margin-right:auto;display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--rtc-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#meeting-layer #meeting-network::before{content:"";width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--rtc-warn)}
+#meeting-layer #meeting-network[data-state=good]::before{background:var(--rtc-ok)}
+#meeting-layer #meeting-network[data-state=bad]{color:var(--rtc-danger)}
+#meeting-layer #meeting-network[data-state=bad]::before{background:var(--rtc-danger)}
+#meeting-layer #meeting-minimize{width:36px;height:36px;min-height:36px;justify-content:center;border-radius:10px}
+#meeting-layer #meeting-minimize:hover{background:var(--rtc-tool-hover);color:var(--rtc-ink)}
+#meeting-layer .meeting-grid{padding:16px;gap:12px}
+#meeting-layer .meeting-tile{background:var(--rtc-tile);border:1px solid var(--rtc-line);border-radius:16px;box-shadow:none}
+#meeting-layer .meeting-tile.has-video{background:#0c0f14}
+#meeting-layer .meeting-person{width:auto;height:auto;background:none;border-radius:0;font-size:0}
+#meeting-layer .meeting-person .avatar.large{width:96px;height:96px;border-radius:30px;font-size:40px;box-shadow:0 10px 26px rgba(0,0,0,.14)}
+#meeting-layer .meeting-initial{display:grid;place-items:center;width:96px;height:96px;border-radius:30px;background:linear-gradient(145deg,#5aa8ff,#1677ff);color:#fff;font-size:40px;font-weight:600}
+#meeting-layer .meeting-tile-label{left:10px;bottom:10px;max-width:calc(100% - 20px);padding:4px 10px;border-radius:8px;background:rgba(10,14,20,.55);color:#fff;font-size:12px;backdrop-filter:blur(6px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#meeting-layer .sharing-local .meeting-sharing-status{color:var(--rtc-accent)}
+#meeting-layer .sharing-local .meeting-sharing-status small{color:var(--rtc-muted)}
+#meeting-layer .meeting-members{width:248px;background:var(--rtc-surface);border-left:1px solid var(--rtc-line);color:var(--rtc-ink)}
+#meeting-layer .meeting-members h3{font-size:14px;font-weight:650}
+#meeting-layer .meeting-members h3 span{color:var(--rtc-muted);font-weight:400}
+#meeting-layer .meeting-member{border-bottom:1px solid var(--rtc-line)}
+#meeting-layer .meeting-member small{color:var(--rtc-muted)}
+#meeting-layer .meeting-member button{padding:3px 8px;margin:10px 6px 0 0;border-radius:6px;background:var(--rtc-accent-soft);color:var(--rtc-accent);font-size:11px}
+#meeting-layer .meeting-members>.secondary{width:100%;margin-top:18px;border:0;border-radius:10px;background:var(--rtc-accent-soft);color:var(--rtc-accent);font-weight:600}
+#meeting-layer .meeting-record-indicator{color:var(--rtc-danger)}
+#meeting-layer .meeting-tools{min-height:76px;height:auto;padding:9px 16px;gap:10px;background:var(--rtc-surface);border-top:1px solid var(--rtc-line);flex-wrap:nowrap}
+#meeting-layer .meeting-tool-group{flex:1;display:flex;justify-content:center;gap:4px;flex-wrap:wrap;min-width:0}
+#meeting-layer .meeting-tool-group>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:76px;min-height:58px;padding:6px 8px;border-radius:12px;background:transparent;color:var(--rtc-muted);font-size:12px}
+#meeting-layer .meeting-tool-group>button:hover:not(:disabled){background:var(--rtc-tool-hover);color:var(--rtc-ink)}
+#meeting-layer .meeting-tool-group>button svg{width:23px;height:23px;color:var(--rtc-ink)}
+#meeting-layer .meeting-tool-group>button.off svg{color:var(--rtc-danger)}
+#meeting-layer .meeting-tool-group>button.on:not(#meeting-audio):not(#meeting-video){color:var(--rtc-accent)}
+#meeting-layer .meeting-tool-group>button.on:not(#meeting-audio):not(#meeting-video) svg{color:var(--rtc-accent)}
+#meeting-layer #meeting-record.on svg{color:var(--rtc-danger)}
+#meeting-layer .microphone-level i{background:var(--rtc-line)}
+#meeting-layer .microphone-level i.active{background:var(--rtc-ok)}
+#meeting-layer .meeting-tools .meeting-leave,#meeting-layer .meeting-tools .meeting-end{flex-direction:row;justify-content:center;align-items:center;gap:6px;flex-shrink:0;margin:0;min-width:96px;min-height:38px;height:38px;padding:0 18px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:none}
+#meeting-layer .meeting-tools .meeting-leave{border:1px solid var(--rtc-danger);background:transparent;color:var(--rtc-danger)}
+#meeting-layer .meeting-tools .meeting-leave:hover{background:var(--rtc-danger-soft)}
+#meeting-layer .meeting-tools .meeting-leave svg{display:none}
+#meeting-layer .meeting-tools .meeting-end{border:0;background:var(--rtc-danger);color:#fff}
+#meeting-layer .meeting-tools .meeting-end.hidden{display:none}
+#meeting-layer .meeting-room button:disabled{opacity:.4}
+/* Minimized meeting: a compact floating card. */
+#meeting-layer.meeting-minimized .meeting-room{inset:auto 20px 20px auto;transform:none;width:300px;height:auto;border-radius:16px;border:1px solid var(--rtc-line);box-shadow:var(--rtc-shadow);overflow:hidden;display:grid;grid-template-columns:1fr auto;background:var(--rtc-surface)}
+#meeting-layer.meeting-minimized .meeting-top{grid-column:1/-1;height:48px;min-height:48px;padding:0 14px;gap:10px;border:0}
+#meeting-layer.meeting-minimized .meeting-content,#meeting-layer.meeting-minimized .meeting-tools,#meeting-layer.meeting-minimized #meeting-network,#meeting-layer.meeting-minimized #meeting-minimize{display:none}
+#meeting-layer.meeting-minimized #meeting-restore,#meeting-layer.meeting-minimized #meeting-mini-leave{display:block;min-height:44px;border-top:1px solid var(--rtc-line);background:var(--rtc-surface);color:var(--rtc-accent);font-weight:600}
+#meeting-layer.meeting-minimized #meeting-mini-leave{color:var(--rtc-danger);padding:0 18px;border-left:1px solid var(--rtc-line)}
+
+/* ---------- 1:1 call after it connects (meeting room in call mode) ---------- */
+#meeting-layer.call-mode{background:var(--rtc-scrim);backdrop-filter:blur(6px)}
+#meeting-layer.call-mode.meeting-minimized{background:transparent;backdrop-filter:none;pointer-events:none}
+#meeting-layer.call-mode.meeting-minimized .meeting-room{pointer-events:auto}
+#meeting-layer.call-mode .meeting-room{inset:50% auto auto 50%;transform:translate(-50%,-50%);border:1px solid var(--rtc-line);border-radius:26px;box-shadow:var(--rtc-shadow);overflow:hidden}
+#meeting-layer.call-mode .meeting-top{background:transparent;border:0}
+#meeting-layer.call-mode .meeting-top b{font-size:13px;font-weight:600;color:var(--rtc-muted)}
+#meeting-layer.call-mode .microphone-level{display:none}
+#meeting-layer.call-mode .meeting-tools{background:transparent;border:0;justify-content:center;gap:30px}
+#meeting-layer.call-mode .meeting-tool-group{flex:0 0 auto;gap:30px}
+#meeting-layer.call-mode .meeting-tool-group>button,#meeting-layer.call-mode .meeting-tools .meeting-leave{position:relative;width:60px;height:60px;min-width:60px;min-height:60px;padding:0;border-radius:50%;border:0;display:grid;place-items:center;background:var(--rtc-tool);color:var(--rtc-ink);overflow:visible}
+#meeting-layer.call-mode .meeting-tool-group>button:hover:not(:disabled){background:var(--rtc-tool-hover)}
+#meeting-layer.call-mode .meeting-tool-group>button.off{background:var(--rtc-danger-soft)}
+#meeting-layer.call-mode .meeting-tool-group>button svg,#meeting-layer.call-mode .meeting-tools .meeting-leave svg{display:block;width:24px;height:24px}
+#meeting-layer.call-mode .meeting-tool-group>button span,#meeting-layer.call-mode .meeting-tools .meeting-leave span{position:absolute;top:68px;left:-24px;right:-24px;text-align:center;font-size:12px;font-weight:400;color:var(--rtc-muted);white-space:nowrap}
+#meeting-layer.call-mode .meeting-tools .meeting-leave{background:var(--rtc-danger);color:#fff;box-shadow:0 10px 24px rgba(240,79,91,.32)}
+#meeting-layer.call-mode .meeting-tools .meeting-leave:hover{filter:brightness(1.06)}
+#meeting-layer.call-mode .meeting-tools .meeting-leave svg{transform:rotate(135deg)}
+#meeting-layer.call-mode.meeting-minimized .meeting-room{inset:auto 20px 20px auto;transform:none;width:300px;height:auto;border-radius:16px}
+
+/* Voice call: same card language as the ringing dialog. */
+#meeting-layer.call-mode.call-audio .meeting-room{width:380px;height:520px;max-width:96vw;max-height:94vh;background:var(--rtc-card)}
+#meeting-layer.call-mode.call-audio .meeting-room::before{content:"";position:absolute;inset:0 0 auto 0;height:300px;background:radial-gradient(circle at 50% 30%,var(--rtc-glow),transparent 68%);pointer-events:none}
+#meeting-layer.call-mode.call-audio .meeting-top{position:absolute;inset:0 0 auto 0;height:58px;padding:16px 18px 0 22px;z-index:2}
+#meeting-layer.call-mode.call-audio #meeting-network{position:absolute;top:322px;left:0;right:0;justify-content:center;margin:0;font-size:14px}
+#meeting-layer.call-mode.call-audio .meeting-content,#meeting-layer.call-mode.call-audio .meeting-grid,#meeting-layer.call-mode.call-audio .meeting-tile{position:static}
+#meeting-layer.call-mode.call-audio .meeting-grid{padding:0}
+#meeting-layer.call-mode.call-audio .meeting-tile{background:transparent;border:0}
+#meeting-layer.call-mode.call-audio .meeting-tile video{display:none}
+#meeting-layer.call-mode.call-audio .meeting-person{position:absolute;top:112px;left:50%;transform:translateX(-50%);display:block!important;width:auto;height:auto;line-height:0}
+#meeting-layer.call-mode.call-audio .meeting-person::before{content:"";position:absolute;inset:-10px;border-radius:50%;background:var(--rtc-accent);opacity:.12;z-index:-1;animation:rtc-breathe 2.6s ease-in-out infinite}
+#meeting-layer.call-mode.call-audio #meeting-minimize,#meeting-layer.call-mode:not(.call-audio) #meeting-minimize{margin-left:auto;color:var(--rtc-muted)}
+#meeting-layer.call-mode.call-audio .meeting-person .avatar.large,#meeting-layer.call-mode.call-audio .meeting-initial{width:104px;height:104px;border-radius:32px;border:4px solid var(--rtc-surface)}
+#meeting-layer.call-mode.call-audio .meeting-tile-label{position:absolute;top:252px;bottom:auto;left:24px;right:24px;max-width:none;transform:none;text-align:center;background:none;backdrop-filter:none;padding:0;color:var(--rtc-ink);font-size:24px;font-weight:650}
+#meeting-layer.call-mode.call-audio .meeting-tools{position:absolute;inset:auto 0 0 0;height:150px;min-height:0;padding:0 0 46px;align-items:center}
+@keyframes rtc-breathe{0%,100%{transform:scale(.94);opacity:.10}50%{transform:scale(1.06);opacity:.2}}
+
+/* Video call: dark stage, remote video full-bleed, self view picture-in-picture. */
+#meeting-layer.call-mode:not(.call-audio) .meeting-room{width:min(760px,96vw);height:min(560px,92vh);background:#0d1117;color:#fff;--rtc-tool:rgba(255,255,255,.14);--rtc-tool-hover:rgba(255,255,255,.24);--rtc-ink:#fff;--rtc-muted:rgba(255,255,255,.78);--rtc-tile:#171c24;--rtc-danger-soft:rgba(240,79,91,.28)}
+#meeting-layer.call-mode:not(.call-audio) .meeting-top{position:absolute;inset:0 0 auto 0;z-index:3;height:60px;background:linear-gradient(rgba(0,0,0,.55),transparent)}
+#meeting-layer.call-mode:not(.call-audio) .meeting-top b{color:#fff}
+#meeting-layer.call-mode:not(.call-audio) #meeting-network{color:rgba(255,255,255,.8)}
+#meeting-layer.call-mode:not(.call-audio) .meeting-grid{position:absolute;inset:0;padding:0;display:block}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tile{position:absolute;inset:0;height:auto;border:0;border-radius:0;background:var(--rtc-tile)}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tile.meeting-self{inset:72px 16px auto auto;width:176px;height:132px;border-radius:14px;border:2px solid rgba(255,255,255,.7);box-shadow:0 10px 30px rgba(0,0,0,.45);z-index:2}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tile.meeting-self .meeting-person .avatar.large,#meeting-layer.call-mode:not(.call-audio) .meeting-tile.meeting-self .meeting-initial{width:52px;height:52px;border-radius:16px;font-size:22px}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tile:not(.meeting-self) .meeting-tile-label{display:none}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tile.meeting-self .meeting-tile-label{left:6px;bottom:6px;font-size:11px;padding:2px 7px}
+#meeting-layer.call-mode:not(.call-audio) .meeting-tools{position:absolute;inset:auto 0 0 0;z-index:3;height:140px;padding:0 0 40px;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+
+/* ---------- Remote assistance (viewer) ---------- */
+.remote-screen{background:#0e131a}
+.remote-screen .remote-toolbar{min-height:52px;padding:8px 12px 8px 16px;gap:10px;background:#161c24;border-bottom:1px solid #252e3a;box-shadow:none;color:#e8edf3}
+.remote-screen .remote-toolbar>svg{width:20px;height:20px;color:#5aa8ff}
+.remote-screen .remote-toolbar>b{color:#f2f5f9;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.remote-screen .remote-mode{flex-shrink:0;padding:2px 8px;border-radius:6px;background:#1e3550;color:#8cc4ff;font-size:11px}
+.remote-screen .remote-toolbar .status{display:inline-flex;align-items:center;gap:7px;color:#93a1b3;font-size:12px}
+.remote-screen .remote-toolbar .status::before{content:"";width:7px;height:7px;border-radius:50%;background:#f0a020;flex-shrink:0}
+.remote-screen.is-connected .remote-toolbar .status::before{background:#1fb67a}
+body .remote-screen .remote-toolbar button{min-height:34px;padding:0 14px;border-radius:9px;border:1px solid #2f3a48;background:#1f2731;color:#e8edf3;font-size:13px;box-shadow:none}
+body .remote-screen .remote-toolbar button:hover{background:#28323e}
+body .remote-screen .remote-toolbar [data-action=stop-remote]{border-color:#f04f5b;background:#f04f5b;color:#fff;font-weight:600}
+body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#e03e4b}
+.remote-screen .remote-canvas{background:radial-gradient(circle at 50% 0%,#1a2533,#0e131a 70%)}
+.remote-screen .remote-canvas img{box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.remote-screen #remote-loading{display:flex;flex-direction:column;align-items:center;gap:14px;color:#93a1b3}
+.remote-screen #remote-loading.hidden{display:none}
+.remote-spinner{width:30px;height:30px;border-radius:50%;border:3px solid #2a3542;border-top-color:#5aa8ff;animation:rtc-spin .9s linear infinite}
+@keyframes rtc-spin{to{transform:rotate(360deg)}}
+.remote-screen .remote-touchbar{background:#161c24;border-top:1px solid #252e3a}
+.remote-screen .remote-touchbar button{border-color:#2f3a48;background:#1f2731;color:#e8edf3}
+
+/* ---------- "Your screen is being shared" indicator (host side) ---------- */
+#remote-sharing-pill{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:95;display:flex;align-items:center;gap:9px;max-width:calc(100vw - 32px);padding:6px 6px 6px 14px;border-radius:999px;background:#1b212a;color:#f2f5f9;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.3);border:1px solid #2c3541}
+#remote-sharing-pill svg{width:18px;height:18px;color:#5aa8ff}
+#remote-sharing-pill span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#remote-sharing-pill button{flex-shrink:0;height:30px;padding:0 14px;border-radius:999px;background:#f04f5b;color:#fff;font-size:12px;font-weight:600}
+#remote-sharing-pill button:hover{background:#e03e4b}
+.live-dot{width:8px;height:8px;border-radius:50%;background:#f04f5b;flex-shrink:0;animation:rtc-live 1.6s ease-in-out infinite}
+@keyframes rtc-live{0%,100%{opacity:1}50%{opacity:.35}}
+
+@media(max-width:700px){
+ #call-layer .call-dialog{width:100%;height:100%;border-radius:0;border:0}
+ #meeting-layer.call-mode .meeting-room,#meeting-layer.call-mode.call-audio .meeting-room,#meeting-layer.call-mode:not(.call-audio) .meeting-room{inset:0;transform:none;width:100%;height:100%;max-width:none;max-height:none;border-radius:0;border:0}
+ #meeting-layer.call-mode.call-audio .meeting-person{top:22vh}
+ #meeting-layer.call-mode.call-audio .meeting-tile-label{top:calc(22vh + 140px)}
+ #meeting-layer.call-mode.call-audio #meeting-network{top:calc(22vh + 178px)}
+ #meeting-layer.call-mode.call-audio .meeting-tools{padding-bottom:calc(46px + env(safe-area-inset-bottom))}
+ #meeting-layer .meeting-tools{flex-wrap:wrap;justify-content:center}
+ #meeting-layer .meeting-tool-group{flex-basis:100%}
+ #meeting-layer .meeting-tool-group>button{min-width:58px;font-size:10px}
+ #meeting-layer .meeting-members{width:120px;padding:14px 8px}
+ #remote-sharing-pill{top:auto;bottom:calc(76px + env(safe-area-inset-bottom))}
+}

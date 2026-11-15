@@ -31,10 +31,27 @@ func (h *windowsHost) setUnreadIcon(icon uintptr) {
 	if icon == 0 {
 		return
 	}
-	// Flash the actual application taskbar/window icon. Keep the system tray
-	// icon stable; it is a separate surface and is not the unread indicator.
+	// Flash both the taskbar/window icon and the notification-area icon. When
+	// the window is closed to the tray the taskbar button is gone, so the tray
+	// icon is the only place the user can notice unread messages.
 	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 0, icon)
 	user32.NewProc("SendMessageW").Call(h.hwnd, 0x80, 1, icon)
+	h.refreshTray(icon)
+}
+
+// refreshTray updates the tray icon and tooltip in place (NIM_MODIFY).
+func (h *windowsHost) refreshTray(icon uintptr) {
+	if !h.desktop.trayAvailable || h.desktop.closing {
+		return
+	}
+	d := &h.desktop.icon
+	if icon != 0 {
+		d.Icon = icon
+	}
+	h.trayTip()
+	d.Flags = 0x86 // NIF_ICON | NIF_TIP | NIF_SHOWTIP
+	shellNotify.Call(1, uintptr(unsafe.Pointer(d)))
+	d.Flags = 0x87
 }
 func (h *windowsHost) stopUnreadPulse() {
 	user32.NewProc("KillTimer").Call(h.hwnd, unreadTimer)

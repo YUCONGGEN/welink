@@ -46,7 +46,7 @@ func TestNativeMessageDoesNotPopupAndUnreadPulsesTaskbar(t *testing.T) {
 				failure = fmt.Errorf("ordinary message created %d desktop popup(s)", count)
 				return
 			}
-			if h.desktop.unread != 1 || !h.desktop.greenPhase || h.desktop.greenIcon == 0 {
+			if h.desktop.unread != 1 || !h.desktop.greenPhase || h.desktop.greenIcon == 0 || (h.desktop.trayAvailable && h.desktop.icon.Icon != h.desktop.greenIcon) {
 				failure = fmt.Errorf("unread message did not pulse the taskbar icon: %+v", h.desktop)
 			}
 		})

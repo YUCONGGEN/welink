@@ -367,6 +367,8 @@ func (h *windowsHost) updateUnread() {
 	} else if previous == 0 {
 		h.unreadPulse()
 		user32.NewProc("SetTimer").Call(h.hwnd, unreadTimer, 650, 0)
+	} else if previous != h.desktop.unread {
+		h.refreshTray(0) // keep the "N 条未读消息" tooltip current
 	}
 }
 
