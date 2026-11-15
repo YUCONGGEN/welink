@@ -23,6 +23,16 @@ const (
 	maxCandidates  = 32
 	chunkSize      = 16 << 10
 	bufferLimit    = 256 << 10
+	// Ported from YuDesk: sctpRetransmitCap bounds SCTP's retransmission
+	// timeout. It must exceed the path round trip plus Pion's 200 ms delayed
+	// acknowledgement, or an isolated message is resent although it arrived.
+	sctpRetransmitCap = 400 * time.Millisecond
+	// Keep the picture stream's sender queue below the 256 KiB SCTP receive
+	// budget so a constrained uplink cannot build half a second of stale
+	// pixels behind the newest frame.
+	pictureBufferLimit = 96 << 10
+	// sctpMinCwnd is the SCTP congestion window floor; see newAttempt.
+	sctpMinCwnd = 64 << 10
 )
 
 var (

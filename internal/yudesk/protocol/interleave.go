@@ -15,17 +15,24 @@ const (
 	fragmentHeaderSize        = 9 // flags, offset, total data length
 )
 
-// Limit one bulk scheduling unit to about 10 ms of the configured payload
+// Limit one bulk scheduling unit to about 5 ms of the configured payload
 // budget. A fixed 8 KiB fragment alone occupies 33 ms at 2 Mbps, before any
 // priority audio or control message can pass it. Keep the negotiated receive
-// maximum and unlimited/fast-path size unchanged for older peers and CPU cost.
+// maximum unchanged for older peers; the unlimited path uses half that legacy
+// scheduling unit and the paced path uses the measured budget.
+// The shorter unit lets pointer and keyboard packets preempt a large screen
+// update sooner on the direct TCP fallback while retaining the old peer's
+// 8 KiB receive limit.
 // The floor bounds per-record overhead; headers, encryption, kernel buffering
 // and actual link speed mean this is not an end-to-end latency guarantee.
 func bulkFragmentPayload(rate int64) int {
 	if rate <= 0 {
-		return fragmentSize
+		// Even without a user bandwidth cap, keep the scheduling unit below the
+		// legacy 8 KiB ceiling so a large screen update cannot monopolize the
+		// direct TCP writer while input is waiting.
+		return fragmentSize / 2
 	}
-	return int(min(int64(fragmentSize), max(int64(512), rate/100)))
+	return int(min(int64(fragmentSize), max(int64(512), rate/200)))
 }
 
 // Carry a slightly late wake into the next deadline instead of adding its

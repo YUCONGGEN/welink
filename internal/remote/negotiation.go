@@ -12,20 +12,25 @@ import (
 
 // Both endpoints explicitly agree inside the authenticated encrypted tunnel.
 // Never enable independent input lanes or trickle ICE unilaterally.
-func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, options peerpath.Options) (*protocol.Conn, peerpath.Info, error) {
+//
+// Tiles (YuDesk dirty-tile picture updates) are used only when both sides
+// advertise them; older LinkMe versions ignore the field and keep whole JPEG
+// frames, so mixed versions still interoperate.
+func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, options peerpath.Options) (*protocol.Conn, peerpath.Info, bool, error) {
 	type capabilities struct {
 		Version int    `json:"version"`
 		Timeout int    `json:"timeoutMs"`
 		Seed    []byte `json:"laneSeed"`
+		Tiles   bool   `json:"tiles,omitempty"`
 	}
 	deadline := time.Now().Add(20 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
 	if err := base.SetDeadline(deadline); err != nil {
-		return nil, peerpath.Info{}, err
+		return nil, peerpath.Info{}, false, err
 	}
-	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond)}
+	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond), Tiles: true}
 	write := func() error {
 		raw, _ := json.Marshal(local)
 		return base.WriteMessageContext(ctx, protocol.Message{Kind: "linkme-transport", Params: raw})
@@ -62,17 +67,21 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 		remote, err = read()
 		if err == nil {
 			local.Seed = remote.Seed
+			// The viewer only echoes tiles when the agent offered them.
+			local.Tiles = remote.Tiles
 			err = write()
 		}
 	}
 	if err != nil {
 		_ = base.Close()
-		return nil, peerpath.Info{}, err
+		return nil, peerpath.Info{}, false, err
 	}
 	if err = base.SetDeadline(time.Time{}); err != nil {
-		return nil, peerpath.Info{}, err
+		return nil, peerpath.Info{}, false, err
 	}
+	tiles := local.Tiles && remote.Tiles
 	options.Timeout = min(options.Timeout, time.Duration(remote.Timeout)*time.Millisecond)
 	options.TrickleICE = true
-	return peerpath.Negotiate(ctx, base, role, nil, options.WithSessionLanes(local.Seed))
+	pc, info, err := peerpath.Negotiate(ctx, base, role, nil, options.WithSessionLanes(local.Seed))
+	return pc, info, tiles, err
 }

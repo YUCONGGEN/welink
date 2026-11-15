@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -298,14 +299,46 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 			localJSON(w, c.Config())
 		case "/local/remote/state":
 			localJSON(w, c.Remote.State())
+		case "/local/remote/tiles":
+			// Long poll: tiles changed since ?after=N, binary framed (see
+			// remote.tileHub.Wait). 204 when nothing changed for a second.
+			after, err := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
+			if err != nil {
+				after = 0
+			}
+			body := c.Remote.WaitTiles(r.Context(), after, time.Second)
+			if body == nil {
+				w.WriteHeader(204)
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			_, _ = w.Write(body)
 		case "/local/remote/frame":
 			data, state := c.Remote.Frame()
+			// ?after=N long-polls for the next frame (up to 1 s), so the viewer
+			// paints as soon as a frame arrives instead of re-polling state.
+			if raw := r.URL.Query().Get("after"); raw != "" {
+				after, err := strconv.ParseUint(raw, 10, 64)
+				if err != nil {
+					http.Error(w, "invalid frame", 400)
+					return
+				}
+				data, state = c.Remote.WaitFrame(r.Context(), after, time.Second)
+				if state.Frame <= after {
+					data = nil
+				}
+			}
 			if len(data) == 0 {
 				w.WriteHeader(204)
 				return
 			}
 			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Frame", fmt.Sprint(state.Frame))
+			w.Header().Set("X-Width", fmt.Sprint(state.Width))
+			w.Header().Set("X-Height", fmt.Sprint(state.Height))
 			_, _ = w.Write(data)
 		default:
 			http.NotFound(w, r)

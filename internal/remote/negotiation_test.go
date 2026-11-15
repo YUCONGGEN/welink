@@ -32,6 +32,7 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 				options.STUNURLs = []string{"invalid:stun"}
 			}
 			var wg sync.WaitGroup
+			var tiles [2]bool
 			for i := 0; i < 2; i++ {
 				wg.Add(1)
 				go func(i int) {
@@ -40,13 +41,16 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 					if i == 1 {
 						role = "viewer"
 					}
-					pc[i], info[i], errs[i] = negotiateTransport(ctx, protocol.NewConn(raw[i]), role, options)
+					pc[i], info[i], tiles[i], errs[i] = negotiateTransport(ctx, protocol.NewConn(raw[i]), role, options)
 				}(i)
 			}
 			wg.Wait()
 			for i := range pc {
 				if errs[i] != nil {
 					t.Fatal(errs[i])
+				}
+				if !tiles[i] {
+					t.Fatal("both current endpoints must agree on tile updates")
 				}
 				defer pc[i].Close()
 				pc[i].EnableInterleaving()

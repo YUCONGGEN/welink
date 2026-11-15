@@ -2,10 +2,12 @@ package stream
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/jpeg"
+	"reflect"
 	"testing"
 )
 
@@ -65,6 +67,32 @@ func TestTilesIdleSmallChangeAndLosslessText(t *testing.T) {
 	}
 }
 
+func TestSolidTileHintsRequireEverySourcePixelToMatch(t *testing.T) {
+	im := testScreen(513, 257)
+	im.SetRGBA(256, 0, color.RGBA{24, 33, 48, 255}) // a single thin detail
+	f, data, err := new(TileEncoder).Encode(im, 90, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Validate(data); err != nil {
+		t.Fatal(err)
+	}
+	for _, tile := range f.Tiles {
+		if tile.X == 256 && tile.Y == 0 {
+			if tile.Solid != nil {
+				t.Fatal("single-pixel detail was classified as flat")
+			}
+		} else if tile.Solid == nil || *tile.Solid != 0x182030ff {
+			t.Fatalf("uniform interior missing exact color: %+v", tile)
+		}
+	}
+	bad := uint32(0x182030fe)
+	f.Tiles[0].Solid = &bad
+	if f.Validate(data) == nil {
+		t.Fatal("accepted nonopaque solid hint")
+	}
+}
+
 func TestTileValidationRejectsMalformedPayload(t *testing.T) {
 	f := TileFrame{Width: 256, Height: 256, Tiles: []Tile{{Width: 256, Height: 256, Size: 2, MIME: "image/png"}}}
 	if f.Validate([]byte{1}) == nil {
@@ -117,9 +145,65 @@ func BenchmarkDirtyTile1080p(b *testing.B) {
 }
 
 func TestTileWorkerCountReservesInteractiveCapacity(t *testing.T) {
-	for _, tc := range []struct{ tasks, cpus, want int }{{0, 4, 0}, {9, 1, 1}, {9, 2, 1}, {9, 4, 3}, {9, 16, 4}, {1, 16, 1}} {
+	for _, tc := range []struct{ tasks, cpus, want int }{{0, 4, 0}, {9, 1, 1}, {9, 2, 1}, {9, 4, 3}, {9, 16, 8}, {1, 16, 1}} {
 		if got := tileWorkerCount(tc.tasks, tc.cpus); got != tc.want {
 			t.Fatalf("%+v: got %d", tc, got)
 		}
+	}
+}
+
+func TestParallelTilesPreserveSequenceAndBytes(t *testing.T) {
+	for _, cpus := range []int{4, 16} {
+		serial, parallel := new(TileEncoder), new(TileEncoder)
+		for sequence := range 6 {
+			im := testScreen(1031, 779)
+			for y := range im.Rect.Dy() {
+				for x := range im.Rect.Dx() {
+					if (x/TileSize+y/TileSize+sequence)%3 == 0 {
+						v := byte((x*13 + y*7 + sequence*19) % 256)
+						im.SetRGBA(x, y, color.RGBA{v, v, v, 255})
+					}
+				}
+			}
+			want, data, err := serial.encode(im, 90, sequence == 5, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, output, err := parallel.encode(im, 90, sequence == 5, cpus)
+			if err != nil || !reflect.DeepEqual(got, want) || !bytes.Equal(output, data) {
+				t.Fatalf("cpus=%d sequence=%d: parallel result differs: %v", cpus, sequence, err)
+			}
+			if err := got.Validate(output); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+func BenchmarkParallelTiles1080p(b *testing.B) {
+	im := testScreen(1920, 1080)
+	for y := range im.Rect.Dy() {
+		for x := range im.Rect.Dx() {
+			if y%22 < 15 && x%13 < 7 {
+				v := byte((x*3 + y*11) % 208)
+				im.SetRGBA(x, y, color.RGBA{v, v, v, 255})
+			}
+		}
+	}
+	for _, cpus := range []int{1, 4, 9} {
+		b.Run(fmt.Sprintf("Workers%d", tileWorkerCount(40, cpus)), func(b *testing.B) {
+			e := new(TileEncoder)
+			b.ReportAllocs()
+			b.ResetTimer()
+			var size int
+			for range b.N {
+				_, data, err := e.encode(im, 90, true, cpus)
+				if err != nil {
+					b.Fatal(err)
+				}
+				size = len(data)
+			}
+			b.ReportMetric(float64(size), "bytes/frame")
+		})
 	}
 }

@@ -92,6 +92,14 @@ func newAttempt(ctx context.Context, o Options, gatherBudget time.Duration) (*at
 	settings.SetRelayAcceptanceMinWait(relayAcceptanceWait(o.Timeout))
 	disconnectedTimeout := min(4*time.Second, max(2*time.Second, o.Timeout))
 	failedTimeout := max(6*time.Second, o.Timeout+time.Second)
+	// Pion fixes SCTP's RFC minimum retransmission timeout at one second. A lost
+	// packet that no later packet follows (the last input event, the tail of a
+	// frame) then stalls its ordered lane for a second; the cap applies instead.
+	settings.SetSCTPRTOMax(sctpRetransmitCap)
+	// SCTP starts at 4,380 bytes, grows only while data is queued, and falls
+	// to one packet after a retransmission timeout. Desktop traffic is mostly
+	// single frames, so a page change (60-160 KB) took several round trips.
+	settings.SetSCTPMinCwnd(sctpMinCwnd)
 	settings.SetICETimeouts(disconnectedTimeout, failedTimeout, time.Second)
 	settings.SetSCTPMaxReceiveBufferSize(bufferLimit)
 	settings.SetSCTPMaxMessageSize(chunkSize)
@@ -222,7 +230,13 @@ func newAttempt(ctx context.Context, o Options, gatherBudget time.Duration) (*at
 				a.fail()
 				return
 			}
-			stream := newDataConn(raw, dc)
+			// The primary channel carries screen frames and must not build a
+			// half-second sender queue on a constrained uplink.
+			limit := uint64(bufferLimit)
+			if index == 0 {
+				limit = pictureBufferLimit
+			}
+			stream := newDataConnWithLimit(raw, dc, limit)
 			a.mu.Lock()
 			if a.closed {
 				a.mu.Unlock()

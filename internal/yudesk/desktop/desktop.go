@@ -3,6 +3,7 @@ package desktop
 import (
 	"errors"
 	"image"
+	"time"
 )
 
 var ErrUnsupported = errors.New("desktop operation is unavailable on this system or requires a desktop helper")
@@ -21,6 +22,12 @@ type Screenshot struct {
 	Width                     int
 	Height                    int
 	SourceWidth, SourceHeight int
+	Display                   Display
+	// EventDriven backends block in WaitChange until the desktop is presented
+	// again. Unchanged carries no pixels: nothing new was composed meanwhile.
+	EventDriven bool
+	Unchanged   bool
+	Waited      time.Duration
 }
 
 type CaptureOptions struct {
@@ -28,6 +35,9 @@ type CaptureOptions struct {
 	MaxWidth int
 	Raw      bool        // compare pixels before encoding; avoids JPEG work on idle desktops
 	Buffer   *image.RGBA // optional exclusively-owned reusable Raw destination
+	// WaitChange lets a change-notified backend wait this long for a new
+	// desktop image and report Unchanged instead. Polling backends ignore it.
+	WaitChange time.Duration
 }
 
 type InputEvent struct {

@@ -288,6 +288,147 @@
     return { type: "move", x: Math.max(0, Math.min(width - 1, Math.round((event.clientX - left) / scale))), y: Math.max(0, Math.min(height - 1, Math.round((event.clientY - top) / scale))) };
   }
 
+  // internal/ui/src/remote-frames.js
+  var ByteReader = class {
+    constructor(reader) {
+      this.reader = reader;
+      this.chunk = new Uint8Array(0);
+      this.offset = 0;
+    }
+    async read(size) {
+      const result = new Uint8Array(size);
+      let offset = 0;
+      while (offset < size) {
+        if (this.offset === this.chunk.length) {
+          const next = await this.reader.read();
+          if (next.done) throw Error("画面传输已断开");
+          this.chunk = next.value;
+          this.offset = 0;
+        }
+        const count = Math.min(size - offset, this.chunk.length - this.offset);
+        result.set(this.chunk.subarray(this.offset, this.offset + count), offset);
+        offset += count;
+        this.offset += count;
+      }
+      return result;
+    }
+    async header() {
+      const sizes = new DataView((await this.read(8)).buffer), header = sizes.getUint32(0), size = sizes.getUint32(4);
+      if (header < 1 || header > 1048576 || size > 33554432) throw Error("画面数据长度无效");
+      return { meta: JSON.parse(new TextDecoder().decode(await this.read(header))), size };
+    }
+    async finish() {
+      if (this.offset !== this.chunk.length) throw Error("画面包含多余数据");
+      const next = await this.reader.read();
+      if (!next.done) throw Error("画面包含多余数据");
+    }
+  };
+  function validate(meta, size) {
+    if (meta.tileSize !== void 0 && ![128, 256].includes(meta.tileSize)) throw Error("画面分块尺寸无效");
+    if (!Number.isInteger(meta.width) || !Number.isInteger(meta.height) || meta.width < 1 || meta.height < 1 || meta.width > 16384 || meta.height > 16384 || meta.width * meta.height > 33177600 || !Array.isArray(meta.tiles) || meta.tiles.length > 1024) throw Error("画面尺寸无效");
+    let total = 0;
+    for (const t of meta.tiles) {
+      if (![t.x, t.y, t.w, t.h, t.size].every(Number.isInteger) || t.x < 0 || t.y < 0 || t.w < 1 || t.h < 1 || t.x + t.w > meta.width || t.y + t.h > meta.height || t.size < 1 || !["image/png", "image/jpeg"].includes(t.mime)) throw Error("画面区域无效");
+      total += t.size;
+    }
+    if (total !== size) throw Error("画面数据不完整");
+  }
+  function decodeImage(part, mime) {
+    const blob = new Blob([part], { type: mime });
+    if (window.createImageBitmap) return createImageBitmap(blob);
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob), image = new Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(Error("无法解码远程画面"));
+      };
+      image.src = url;
+    });
+  }
+  async function paintStream(canvas, stream, meta, size, shouldPaint) {
+    var _a, _b;
+    validate(meta, size);
+    if (!meta.reset && (canvas.width !== meta.width || canvas.height !== meta.height)) throw Error("需要重新同步画面");
+    let readTail = Promise.resolve();
+    const readTile = (t) => {
+      const part = readTail.then(() => stream.read(t.size));
+      readTail = part;
+      return part;
+    };
+    const images = [];
+    let index = 0, failure;
+    try {
+      const decode = async () => {
+        while (index < meta.tiles.length && !failure) {
+          const i = index++, t = meta.tiles[i];
+          try {
+            const bitmap = await readTile(t).then((part) => decodeImage(part, t.mime));
+            images[i] = { t, bitmap };
+            if ((bitmap.width || bitmap.naturalWidth) !== t.w || (bitmap.height || bitmap.naturalHeight) !== t.h) throw Error("画面区域尺寸不匹配");
+          } catch (error) {
+            failure = error;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(8, meta.tiles.length) }, decode));
+      if (failure) throw failure;
+      await stream.finish();
+      if (!shouldPaint()) return false;
+      if (canvas.width !== meta.width) canvas.width = meta.width;
+      if (canvas.height !== meta.height) canvas.height = meta.height;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      for (const { t, bitmap } of images) ctx.drawImage(bitmap, t.x, t.y);
+      canvas.dataset.width = String(meta.width);
+      canvas.dataset.height = String(meta.height);
+      return true;
+    } finally {
+      for (const image of images) (_b = image == null ? void 0 : (_a = image.bitmap).close) == null ? void 0 : _b.call(_a);
+    }
+  }
+  async function runRemoteFrames(canvas, live, onFrame, onError) {
+    let revision = 0, failures = 0;
+    while (live()) {
+      let reader, failed = false;
+      try {
+        const response = await fetch("/local/remote/tiles?after=" + revision, { cache: "no-store" });
+        if (!live()) return;
+        if (response.status === 204) {
+          failures = 0;
+          continue;
+        }
+        if (!response.ok) throw Error("远程画面暂时不可用");
+        reader = response.body.getReader();
+        const stream = new ByteReader(reader);
+        const { meta, size } = await stream.header();
+        if (!Number.isSafeInteger(meta.revision) || meta.revision < 1) throw Error("画面版本无效");
+        const painted = await paintStream(canvas, stream, meta, size, live);
+        if (painted === false) return;
+        revision = meta.revision;
+        failures = 0;
+        onFrame == null ? void 0 : onFrame(meta);
+      } catch (error) {
+        failed = true;
+        revision = 0;
+        if (!live()) return;
+        if (++failures >= 20) {
+          onError == null ? void 0 : onError(error);
+          return;
+        }
+      } finally {
+        if (reader) {
+          if (failed) await reader.cancel().catch(() => {
+          });
+          reader.releaseLock();
+        }
+      }
+      if (failed) await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+
   // internal/ui/src/branding.js
   var CLIENT_VERSION = "0.1.18-preview";
   function authShowcase() {
@@ -1549,10 +1690,13 @@
         audio = null;
       }
     }
+    function nativeIncoming(c) {
+      return S2.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function" && !!(c == null ? void 0 : c.canRespond) && c.state === "ringing";
+    }
     function startRing(incoming) {
       var _a;
       if (ringTimer) return;
-      if (S2.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") {
+      if (incoming && nativeIncoming(active)) {
         ringTimer = setInterval(() => {
         }, 6e4);
         return;
@@ -1600,7 +1744,7 @@
         (_a = $2("#call-layer")) == null ? void 0 : _a.remove();
         return;
       }
-      if (S2.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") {
+      if (nativeIncoming(active)) {
         (_b = $2("#call-layer")) == null ? void 0 : _b.remove();
         return;
       }
@@ -7386,49 +7530,24 @@
     clearInterval(S.remoteTimer);
     if (v.host !== S.user.id) showRemoteScreen();
     else renderSharing();
-    S.remoteTimer = setInterval(remoteTick, 33);
+    S.remoteTimer = setInterval(remoteTick, 250);
     await remoteTick();
   }
   var remoteFailures = 0;
   var frameVersion = 0;
   var frameURL = "";
   var remoteTickBusy = false;
-  var remoteFrameBusy = false;
   var remoteFrameSeen = 0;
   var remoteFrameShown = 0;
   var remoteInput = null;
-  async function fetchRemoteFrame(version, state) {
-    var _a;
-    if (remoteFrameBusy || !S.remote || ((_a = S.remoteLocal) == null ? void 0 : _a.role) !== "viewer") return;
-    remoteFrameBusy = true;
-    try {
-      const r = await fetch("/local/remote/frame", { cache: "no-store" });
-      if (!r.ok) throw Error("远程画面暂时不可用");
-      const blob = await r.blob();
-      const img = $("#remote-image");
-      if (!img || !S.remote || version < remoteFrameShown) return;
-      const old = frameURL;
-      frameURL = URL.createObjectURL(blob);
-      img.src = frameURL;
-      img.onload = () => {
-        var _a2;
-        if (old) URL.revokeObjectURL(old);
-        (_a2 = $("#remote-loading")) == null ? void 0 : _a2.classList.add("hidden");
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(frameURL);
-        frameURL = old || "";
-      };
-      img.dataset.width = String(state.width || 0);
-      img.dataset.height = String(state.height || 0);
-      remoteFrameShown = version;
-    } catch (e) {
-      remoteFrameShown = Math.max(remoteFrameShown, version);
-      if (S.remote && remoteFrameSeen === version) toast(e.message);
-    } finally {
-      remoteFrameBusy = false;
-      if (S.remote && remoteFrameSeen > remoteFrameShown) fetchRemoteFrame(remoteFrameSeen, S.remoteLocal);
-    }
+  var remoteFrameLoopToken = 0;
+  function remoteFrameLoop() {
+    const token = ++remoteFrameLoopToken, canvas = $("#remote-image");
+    if (!canvas) return;
+    runRemoteFrames(canvas, () => token === remoteFrameLoopToken && !!S.remote && canvas.isConnected, () => {
+      var _a;
+      return (_a = $("#remote-loading")) == null ? void 0 : _a.classList.add("hidden");
+    }, (error) => toast(error.message));
   }
   async function remoteTick() {
     var _a;
@@ -7447,12 +7566,8 @@
       }
       remoteFailures = 0;
       (_a = $(".remote-screen")) == null ? void 0 : _a.classList.toggle("is-connected", state.status === "connected");
-      if (state.role === "viewer" && state.frame) {
-        remoteFrameSeen = Math.max(remoteFrameSeen, state.frame);
-        if (remoteFrameSeen > remoteFrameShown && !remoteFrameBusy) fetchRemoteFrame(remoteFrameSeen, state);
-      }
     } catch (e) {
-      if (++remoteFailures >= 90) {
+      if (++remoteFailures >= 12) {
         toast(e.message);
         await stopRemote(false);
       }
@@ -7487,8 +7602,9 @@
       var _a2;
       return u.id === ((_a2 = S.remote) == null ? void 0 : _a2.host);
     }) || ((_a = activeConversation()) == null ? void 0 : _a.peer);
-    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), "<b>远程协助").concat(remotePeer ? " · " + esc(remotePeer.remark || remotePeer.name) : "", '</b><span class="remote-mode">').concat(((_b = S.remote) == null ? void 0 : _b.mode) === "control" ? "可控制" : "仅观看", '</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>').concat(S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : "", '<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><img id="remote-image" tabindex="0" alt="远程设备屏幕"></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
+    node.innerHTML = '<header class="remote-toolbar">'.concat(icon("monitor"), "<b>远程协助").concat(remotePeer ? " · " + esc(remotePeer.remark || remotePeer.name) : "", '</b><span class="remote-mode">').concat(((_b = S.remote) == null ? void 0 : _b.mode) === "control" ? "可控制" : "仅观看", '</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>').concat(S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : "", '<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><canvas id="remote-image" tabindex="0" role="img" aria-label="远程设备屏幕"></canvas></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>');
     document.body.append(node);
+    remoteFrameLoop();
     const img = $("#remote-image");
     let held = false;
     remoteInput = createRemoteInput((events) => action("/local/remote/input", { events }), () => action("/local/remote/release"), (e) => toast(e.message));
@@ -7542,6 +7658,7 @@
   }
   async function stopRemote(notify = true) {
     var _a;
+    remoteFrameLoopToken++;
     remoteInput == null ? void 0 : remoteInput.close();
     remoteInput = null;
     const v = S.remote;

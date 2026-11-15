@@ -17,11 +17,13 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 	"welink/internal/yudesk/desktop"
 	"welink/internal/yudesk/peerpath"
 	"welink/internal/yudesk/protocol"
 	"welink/internal/yudesk/secureconn"
+	"welink/internal/yudesk/stream"
 )
 
 type Invitation struct {
@@ -60,6 +62,14 @@ type Engine struct {
 	sharing                   bool
 	sourceWidth, sourceHeight int
 	held                      map[string]desktop.InputEvent
+	// lastInput (UnixNano) raises the capture rate right after remote input,
+	// so the effect of a click or keystroke reaches the viewer sooner.
+	lastInput atomic.Int64
+	// frameSignal is closed and replaced whenever a new frame is stored, so
+	// the local viewer can long-poll instead of re-polling state every 33 ms.
+	frameSignal chan struct{}
+	// hub caches the received picture as tiles for the local browser.
+	hub *tileHub
 }
 
 func New(dir string, mobile bool) (*Engine, error) {
@@ -100,6 +110,58 @@ func (e *Engine) Frame() ([]byte, State) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return append([]byte(nil), e.frame...), e.state
+}
+
+// WaitTiles long-polls the viewer's tile hub; see tileHub.Wait.
+func (e *Engine) WaitTiles(ctx context.Context, after uint64, timeout time.Duration) []byte {
+	e.mu.Lock()
+	hub := e.hub
+	e.mu.Unlock()
+	if hub == nil {
+		t := time.NewTimer(min(timeout, 250*time.Millisecond))
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+		case <-t.C:
+		}
+		return nil
+	}
+	return hub.Wait(ctx, after, timeout)
+}
+
+// frameStoredLocked wakes long-polling viewers. Callers hold e.mu.
+func (e *Engine) frameStoredLocked() {
+	if e.frameSignal != nil {
+		close(e.frameSignal)
+	}
+	e.frameSignal = make(chan struct{})
+}
+
+// WaitFrame returns the newest frame once its number exceeds after, or the
+// current (possibly older or empty) frame when timeout or ctx ends first.
+func (e *Engine) WaitFrame(ctx context.Context, after uint64, timeout time.Duration) ([]byte, State) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		e.mu.Lock()
+		if (e.state.Frame > after && len(e.frame) > 0) || e.state.Status == "ended" || e.state.ID == "" {
+			data, state := append([]byte(nil), e.frame...), e.state
+			e.mu.Unlock()
+			return data, state
+		}
+		if e.frameSignal == nil {
+			e.frameSignal = make(chan struct{})
+		}
+		signal := e.frameSignal
+		e.mu.Unlock()
+		select {
+		case <-signal:
+		case <-ctx.Done():
+			return e.Frame()
+		case <-deadline.C:
+			return e.Frame()
+		}
+	}
 }
 func (e *Engine) SetSharing(enabled bool) {
 	e.mu.Lock()
@@ -155,6 +217,7 @@ func (e *Engine) Start(inv Invitation, user, token, baseURL string, config *tls.
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.state = State{ID: inv.ID, DeviceID: e.state.DeviceID, Role: role, Mode: inv.Mode, Status: "connecting"}
+	e.hub = newTileHub()
 	e.mu.Unlock()
 	go e.run(ctx, inv, user, token, baseURL, config)
 	return nil
@@ -216,21 +279,21 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 	if inv.Host == user {
 		role = "agent"
 	}
-	pc, info, err := negotiateTransport(ctx, base, role, peerpath.Options{STUNURLs: e.performance.STUNURLs, Timeout: time.Duration(e.performance.DirectTimeoutMS) * time.Millisecond, PortMapping: e.performance.PortMapping})
+	pc, info, tiles, err := negotiateTransport(ctx, base, role, peerpath.Options{STUNURLs: e.performance.STUNURLs, Timeout: time.Duration(e.performance.DirectTimeoutMS) * time.Millisecond, PortMapping: e.performance.PortMapping})
 	if err != nil {
 		finalErr = err
 		return
 	}
 	defer pc.Close()
 	pc.EnableInterleaving()
-	pc.SetBulkRate(e.performance.MaxMbps * 1000000 / 8)
+	pc.SetBulkRate(e.performance.bulkRate())
 	e.mu.Lock()
 	e.conn = pc
 	e.state.Status = "connected"
 	e.state.Path = info.Mode
 	e.mu.Unlock()
 	if role == "agent" && !e.mobile {
-		go e.capture(ctx, pc)
+		go e.capture(ctx, pc, tiles)
 	}
 	go e.ping(ctx, pc)
 	for {
@@ -255,6 +318,37 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 			e.state.Width = meta.Width
 			e.state.Height = meta.Height
 			e.state.Frame++
+			e.frameStoredLocked()
+			hub := e.hub
+			e.mu.Unlock()
+			if hub != nil {
+				_ = hub.publishJPEG(m.Data, meta.Width, meta.Height)
+			}
+		case "tiles":
+			if role != "viewer" || !tiles || len(m.Data) > protocol.MaxDataSize {
+				finalErr = errors.New("unexpected tiles")
+				return
+			}
+			var f stream.TileFrame
+			if json.Unmarshal(m.Params, &f) != nil {
+				finalErr = errors.New("invalid tiles")
+				return
+			}
+			e.mu.Lock()
+			hub := e.hub
+			e.mu.Unlock()
+			if hub == nil {
+				continue
+			}
+			if err := hub.publish(f, m.Data, false); err != nil {
+				e.SetError(err.Error())
+				continue
+			}
+			e.mu.Lock()
+			e.state.Width = f.Width
+			e.state.Height = f.Height
+			e.state.Frame++
+			e.frameStoredLocked()
 			e.mu.Unlock()
 		case "input":
 			if role != "agent" || inv.Mode != "control" {
@@ -343,6 +437,7 @@ func (e *Engine) ReleaseInput() {
 	}
 }
 func (e *Engine) apply(events []desktop.InputEvent) error {
+	e.lastInput.Store(time.Now().UnixNano())
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for i := range events {

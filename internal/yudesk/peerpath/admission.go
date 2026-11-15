@@ -43,6 +43,14 @@ type bulkAdmission struct {
 	drainAt       time.Time
 	drainAck      uint64
 	lastProbe     time.Time
+	// capacity is the highest delivery rate measured while this window held
+	// bulk back. Rates measured while the application had little to send
+	// (typing, a cursor) describe that demand, not the path: they used to
+	// replace the estimate within 0.2 s, so the next page change was
+	// admitted a few KB per round trip and a 150 KB frame needed 10x its
+	// transfer time. Only a drain measurement lowers it.
+	capacity float64
+	limited  bool
 }
 
 // recordWrite observes only completed protocol writes. Never hold probeMu
@@ -92,12 +100,16 @@ func (p *bulkAdmission) WaitBulk(ctx context.Context, size int) error {
 						peak = max(peak, rate)
 					}
 				}
+				if p.limited {
+					p.capacity = max(p.capacity, p.rates[at])
+				}
 				if peak > 0 {
-					p.rate = peak
+					p.rate = max(peak, p.capacity)
 				}
 			}
 			p.started = now
 			p.acked = ack
+			p.limited = false
 		}
 		if probeEnd != 0 {
 			if ack >= probeEnd {
@@ -121,6 +133,7 @@ func (p *bulkAdmission) WaitBulk(ctx context.Context, size int) error {
 				if dt := now.Sub(p.drainAt).Seconds(); dt > .02 {
 					if delivered := ack - min(ack, p.drainAck); delivered > 0 {
 						p.rate = float64(delivered) / dt
+						p.capacity = p.rate
 						for i := range p.rates {
 							p.rates[i] = p.rate
 							p.rateTimes[i] = now
@@ -145,6 +158,7 @@ func (p *bulkAdmission) WaitBulk(ctx context.Context, size int) error {
 		if pending+uint64(size) <= max(p.limit, uint64(size)) {
 			return ctx.Err()
 		}
+		p.limited = true
 	waitMore:
 		when, changed := p.deadline.snapshot()
 		if !when.IsZero() && !now.Before(when) {

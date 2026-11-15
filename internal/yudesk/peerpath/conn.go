@@ -87,6 +87,7 @@ func wait(event, done <-chan struct{}, deadline *connDeadline) error {
 type dataConn struct {
 	raw                 datachannel.ReadWriteCloserDeadliner
 	dc                  *webrtc.DataChannel
+	writeLimit          uint64
 	done                chan struct{}
 	written             atomic.Uint64
 	closeOnce           sync.Once
@@ -100,10 +101,17 @@ type dataConn struct {
 var _ net.Conn = (*dataConn)(nil)
 
 func newDataConn(raw datachannel.ReadWriteCloserDeadliner, dc *webrtc.DataChannel) *dataConn {
-	c := &dataConn{raw: raw, dc: dc, done: make(chan struct{}), readGate: make(chan struct{}, 1), writeGate: make(chan struct{}, 1), drained: make(chan struct{}, 1)}
+	return newDataConnWithLimit(raw, dc, bufferLimit)
+}
+
+func newDataConnWithLimit(raw datachannel.ReadWriteCloserDeadliner, dc *webrtc.DataChannel, limit uint64) *dataConn {
+	if limit < chunkSize {
+		limit = chunkSize
+	}
+	c := &dataConn{raw: raw, dc: dc, writeLimit: limit, done: make(chan struct{}), readGate: make(chan struct{}, 1), writeGate: make(chan struct{}, 1), drained: make(chan struct{}, 1)}
 	c.readGate <- struct{}{}
 	c.writeGate <- struct{}{}
-	dc.SetBufferedAmountLowThreshold(bufferLimit / 2)
+	dc.SetBufferedAmountLowThreshold(limit / 2)
 	dc.OnBufferedAmountLow(func() {
 		select {
 		case c.drained <- struct{}{}:
@@ -154,7 +162,7 @@ func (c *dataConn) Write(p []byte) (int, error) {
 	total := 0
 	for len(p) != 0 {
 		next := min(len(p), chunkSize)
-		for c.dc.BufferedAmount()+uint64(next) > bufferLimit {
+		for c.dc.BufferedAmount()+uint64(next) > c.writeLimit {
 			if err := wait(c.drained, c.done, &c.wd); err != nil {
 				return total, err
 			}
