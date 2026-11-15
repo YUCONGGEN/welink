@@ -12,7 +12,6 @@ func TestLandingServesLinkMeDownloadsAndLegacyAliases(t *testing.T) {
 	f := setup(t)
 	f.s.downloads = t.TempDir()
 	files := map[string]string{
-		"LinkMe-Windows.exe":     "windows",
 		"LinkMe-Setup.exe":       "setup",
 		"LinkMe-Android.apk":     "android",
 		"LinkMe-macOS-arm64.zip": "macos",
@@ -24,12 +23,12 @@ func TestLandingServesLinkMeDownloadsAndLegacyAliases(t *testing.T) {
 		}
 	}
 	paths := map[string]string{
-		"/downloads/LinkMe-Windows.exe":     "windows",
+		"/downloads/LinkMe-Windows.exe":     "setup",
 		"/downloads/LinkMe-Setup.exe":       "setup",
 		"/downloads/LinkMe-Android.apk":     "android",
 		"/downloads/LinkMe-macOS-arm64.zip": "macos",
 		"/downloads/SHA256SUMS.txt":         "checksums",
-		"/downloads/WeLink-Windows.exe":     "windows",
+		"/downloads/WeLink-Windows.exe":     "setup",
 		"/downloads/WeLink-Setup.exe":       "setup",
 		"/downloads/WeLink-Android.apk":     "android",
 	}

@@ -8,7 +8,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon
 
 | 平台 | 下载 | 要求 |
 | --- | --- | --- |
-| Windows | [安装版](http://www.yucg.cn:8251/downloads/LinkMe-Setup.exe) · [便携版](http://www.yucg.cn:8251/downloads/LinkMe-Windows.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
+| Windows | [安装版](http://www.yucg.cn:8251/downloads/LinkMe-Setup.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
 | macOS | [Apple Silicon 应用](http://www.yucg.cn:8251/downloads/LinkMe-macOS-arm64.zip) | M1 或更新机型，macOS 12+ |
 | Android | [APK](http://www.yucg.cn:8251/downloads/LinkMe-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
 
@@ -64,7 +64,7 @@ macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 
 
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`
-- Windows：运行 `LinkMe-Setup.exe` 安装，或直接运行 `LinkMe-Windows.exe`。需要 Microsoft Edge WebView2 Runtime。
+- Windows：运行 `LinkMe-Setup.exe` 安装。需要 Microsoft Edge WebView2 Runtime。
 - macOS：解压 `LinkMe-macOS-arm64.zip`，将 `LinkMe.app` 放入“应用程序”后打开。预览版尚未做 Apple 公证；首次打开时在 Finder 中按住 Control 点击应用并选择“打开”。界面使用系统默认浏览器，本机 Go 客户端在浏览器关闭前保持运行。
 - 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 LinkMe 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。

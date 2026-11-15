@@ -247,14 +247,17 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/downloads/")
 		// Keep legacy WeLink URLs working while LinkMe is the published name.
 		switch name {
-		case "WeLink-Windows.exe":
-			name = "LinkMe-Windows.exe"
+		case "LinkMe-Windows.exe", "WeLink-Windows.exe":
+			// The portable build is no longer published; links already
+			// shared for it lead to the Windows installer instead.
+			http.Redirect(w, r, "/downloads/LinkMe-Setup.exe", http.StatusFound)
+			return
 		case "WeLink-Setup.exe":
 			name = "LinkMe-Setup.exe"
 		case "WeLink-Android.apk":
 			name = "LinkMe-Android.apk"
 		}
-		if name != "LinkMe-Windows.exe" && name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" && name != "WeLink-Windows.exe" && name != "WeLink-Android.apk" && name != "WeLink-Setup.exe" {
+		if name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" {
 			http.NotFound(w, r)
 			return
 		}

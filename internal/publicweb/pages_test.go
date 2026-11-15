@@ -42,7 +42,7 @@ func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 			if page.Kind == "share" && (!strings.Contains(html, `href="?download=1"`) || !strings.Contains(html, "永久有效")) {
 				t.Fatal("shared-file download is broken")
 			}
-			if page.Kind == "download" && (!strings.Contains(html, "/downloads/LinkMe-Setup.exe") || !strings.Contains(html, "/downloads/LinkMe-Android.apk") || !strings.Contains(html, "/downloads/LinkMe-macOS-arm64.zip") || !strings.Contains(html, "Apple Silicon") || !strings.Contains(html, "每人 5 GB")) {
+			if page.Kind == "download" && (!strings.Contains(html, "/downloads/LinkMe-Setup.exe") || !strings.Contains(html, "/downloads/LinkMe-Android.apk") || !strings.Contains(html, "/downloads/LinkMe-macOS-arm64.zip") || !strings.Contains(html, "Apple Silicon") || !strings.Contains(html, "每人 5 GB") || strings.Contains(html, "LinkMe-Windows.exe") || strings.Contains(html, "便携版")) {
 				t.Fatal("missing client downloads or configured quota")
 			}
 		})
