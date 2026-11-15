@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
-// Keep every Windows, macOS and Android application icon on the M/Link mark.
+// Keep every Windows, macOS and Android application icon on the M mark.
 const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 try{
   const svg=await fs.readFile('internal/ui/assets/icon.svg','utf8'),sizes=[16,24,32,48,64,128,256],images=[],page=await browser.newPage();
@@ -15,9 +15,9 @@ try{
     const dir='mobile/android/app/src/main/res/mipmap-'+folder;await fs.mkdir(dir,{recursive:true});await page.screenshot({path:dir+'/ic_launcher.png',omitBackground:true});
     const smallDir='mobile/android/app/src/main/res/drawable-'+folder;await fs.mkdir(smallDir,{recursive:true});
     const smallSize=Math.round(size/2);await page.setViewportSize({width:smallSize,height:smallSize});
-    await page.setContent('<style>html,body{margin:0;background:transparent}svg{width:100%;height:100%;display:block}</style><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><text x="128" y="151" text-anchor="middle" fill="#fff" font-family="Arial Black,Segoe UI Black,Arial,sans-serif" font-weight="900" font-size="64" letter-spacing="-4">M/Link</text></svg>');
+    await page.setContent('<style>html,body{margin:0;background:transparent}svg{width:100%;height:100%;display:block}</style><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><text x="128" y="188" text-anchor="middle" fill="#fff" font-family="Arial Black,Segoe UI Black,Arial,sans-serif" font-weight="900" font-size="190">M</text></svg>');
     await page.screenshot({path:smallDir+'/ic_notification.png',omitBackground:true});
   }
   await page.setViewportSize({width:512,height:512});await page.setContent('<style>html,body{margin:0;background:transparent}svg{width:100%;height:100%;display:block}</style>'+svg);await fs.mkdir('.local',{recursive:true});await page.screenshot({path:'.local/linkme-m-link-icon.png',omitBackground:true});
-  console.log('Created uniform M/Link Windows, macOS and Android icons');
+  console.log('Created uniform M Windows, macOS and Android icons');
 }finally{await browser.close()}

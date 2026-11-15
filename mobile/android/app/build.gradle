@@ -15,8 +15,8 @@ android {
         applicationId 'cn.welink.app'
         minSdk 26
         targetSdk 35
-        versionCode 18
-        versionName '0.1.17-preview'
+        versionCode 19
+        versionName '0.1.18-preview'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
