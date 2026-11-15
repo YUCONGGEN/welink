@@ -24,6 +24,10 @@ type meetingNotice struct {
 	code    string
 	created int64
 	notice  client.Notification
+	// Painted card content (see notice_paint_windows.go).
+	caption, heading, detail, accept, reject string
+	dpi                                      uintptr
+	fonts                                    noticeFonts
 }
 
 var meetingNotices sync.Map
@@ -60,12 +64,25 @@ var noticeCallback = syscall.NewCallback(func(hwnd, msg, wp, lp uintptr) uintptr
 			return 0
 		case 0x21:
 			return 3
-		case 0x138:
-			syscall.NewLazyDLL("gdi32.dll").NewProc("SetBkColor").Call(wp, 0xffffff)
-			brush, _, _ := user32.NewProc("GetSysColorBrush").Call(5)
-			return brush
+		case 0x0f: // WM_PAINT
+			n.paint()
+			return 0
+		case 0x14: // WM_ERASEBKGND: painted off-screen in WM_PAINT
+			return 1
+		case 0x20: // WM_SETCURSOR
+			if n.cursorHit() != 0 {
+				n.setHandCursor()
+				return 1
+			}
+		case 0x202: // WM_LBUTTONUP on a painted button
+			if id := n.hit(int32(int16(lp&0xffff)), int32(int16((lp>>16)&0xffff))); id != 0 {
+				n.host.handleIncomingNotice(n.notice, id == 101)
+				destroyMeetingNotice(hwnd)
+				return 0
+			}
 		case 0x82:
 			meetingNotices.Delete(hwnd)
+			n.fonts.release()
 		}
 	}
 	r, _, _ := user32.NewProc("DefWindowProcW").Call(hwnd, msg, wp, lp)
@@ -121,7 +138,7 @@ func (h *windowsHost) layoutMeetingNotices() {
 	var area noticeRect
 	user32.NewProc("SystemParametersInfoW").Call(0x30, 0, uintptr(unsafe.Pointer(&area)), 0)
 	scale := func(v int32) uintptr { return uintptr(v * int32(dpi) / 96) }
-	w, height, gap, margin := scale(336), scale(132), scale(10), scale(14)
+	w, height, gap, margin := scale(noticeWidth), scale(noticeHeight), scale(10), scale(14)
 	workHeight := uintptr(max(int32(1), area.Bottom-area.Top))
 	usableHeight := workHeight
 	if workHeight > margin*2 {
@@ -192,7 +209,7 @@ func (h *windowsHost) showIncomingNotice(notice client.Notification) bool {
 	module, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
 	noticeClassOnce.Do(func() {
 		cursor, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512)
-		c := noticeClass{Proc: noticeCallback, Instance: module, Cursor: cursor, Background: 6, Name: noticeClassName}
+		c := noticeClass{Style: 0x20000, Proc: noticeCallback, Instance: module, Cursor: cursor, Name: noticeClassName} // CS_DROPSHADOW
 		c.Size = uint32(unsafe.Sizeof(c))
 		user32.NewProc("RegisterClassExW").Call(uintptr(unsafe.Pointer(&c)))
 	})
@@ -205,49 +222,39 @@ func (h *windowsHost) showIncomingNotice(notice client.Notification) bool {
 	if ok, _, _ := user32.NewProc("SystemParametersInfoW").Call(0x30, 0, uintptr(unsafe.Pointer(&area)), 0); ok == 0 {
 		return false
 	}
-	w, height := scale(336), scale(132)
+	w, height := scale(noticeWidth), scale(noticeHeight)
 	x, y := uintptr(area.Right)-w-scale(14), uintptr(area.Bottom)-height-scale(14)
-	caption, heading, detail, accept := "LinkMe 邀请", notice.Title, "", "接听"
+	caption, heading, detail, accept, reject := "LinkMe 邀请", notice.Title, "", "接听", "拒绝"
 	switch notice.Type {
 	case "call":
-		caption = "LinkMe 来电"
+		caption = "LinkMe · 语音来电"
+		detail = "邀请你进行语音通话"
 		if notice.Mode == "video" {
-			detail = "邀请你进行视频通话"
-		} else {
-			detail = "邀请你进行语音通话"
+			caption, detail = "LinkMe · 视频来电", "邀请你进行视频通话"
 		}
 	case "remote":
-		caption, detail, accept = "LinkMe 远程协助", "邀请你进行远程协助", "同意"
+		caption, detail, accept = "LinkMe · 远程协助", "邀请你进行远程协助", "同意"
 		if notice.Mode == "control" {
 			detail = "请求观看并控制你的设备"
 		} else if notice.Host == notice.UserID {
 			detail = "请求共享屏幕以进行远程协助"
 		}
 	case "meeting":
-		caption, detail, accept = "LinkMe 会议邀请", "会议号 "+notice.Code, "进入会议"
+		caption, detail, accept, reject = "LinkMe · 会议邀请", "会议号 "+notice.Code, "进入会议", "忽略"
 	}
 	heading = strings.ReplaceAll(strings.ReplaceAll(heading, "\x00", ""), "\r", " ")
 	detail = strings.ReplaceAll(strings.ReplaceAll(detail, "\x00", ""), "\r", " ")
 	class, _ := syscall.UTF16PtrFromString("LinkMeIncomingInvitation")
 	title, _ := syscall.UTF16PtrFromString(caption)
-	hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(0x08000088, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), 0x80800000, x, y, w, height, 0, 0, module, 0)
+	n := &meetingNotice{host: h, key: key, code: notice.Code, created: time.Now().UnixNano(), notice: notice, caption: caption, heading: heading, detail: detail, accept: accept, reject: reject, dpi: dpi, fonts: createNoticeFonts(dpi)}
+	hwnd, _, _ := user32.NewProc("CreateWindowExW").Call(0x08000088, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), 0x80000000, x, y, w, height, 0, 0, module, 0)
 	if hwnd == 0 {
+		n.fonts.release()
 		return false
 	}
-	n := &meetingNotice{window: hwnd, host: h, key: key, code: notice.Code, created: time.Now().UnixNano(), notice: notice}
+	n.window = hwnd
 	meetingNotices.Store(hwnd, n)
-	child := func(className, text string, id uintptr, left, top, width, height int32, style uintptr) {
-		c, _ := syscall.UTF16PtrFromString(className)
-		t, _ := syscall.UTF16PtrFromString(text)
-		control, _, _ := user32.NewProc("CreateWindowExW").Call(0, uintptr(unsafe.Pointer(c)), uintptr(unsafe.Pointer(t)), 0x50000000|style, scale(left), scale(top), scale(width), scale(height), hwnd, id, module, 0)
-		font, _, _ := syscall.NewLazyDLL("gdi32.dll").NewProc("GetStockObject").Call(17)
-		user32.NewProc("SendMessageW").Call(control, 0x30, font, 1)
-	}
-	child("STATIC", caption, 0, 17, 12, 300, 20, 0x80)
-	child("STATIC", heading, 0, 17, 39, 300, 22, 0x0c)
-	child("STATIC", detail, 0, 17, 64, 300, 19, 0x0c)
-	child("BUTTON", accept, 101, 177, 91, 140, 29, 0x10000)
-	child("BUTTON", "拒绝", 102, 84, 91, 82, 29, 0x10000)
+	roundNoticeWindow(hwnd, w, height, scale(16))
 	if notice.Type == "call" && notice.Expires > 0 {
 		ms := min(notice.Expires-time.Now().UnixMilli(), int64(7200000))
 		if ms > 0 {

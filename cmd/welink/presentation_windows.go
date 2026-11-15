@@ -118,6 +118,7 @@ func (h *windowsHost) frameHit(lp uintptr) uintptr {
 	return 0
 }
 func (h *windowsHost) theme(dark bool) {
+	noticeDarkTheme.Store(dark)
 	var enabled int32
 	if dark {
 		enabled = 1
