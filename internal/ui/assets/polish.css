@@ -35,3 +35,27 @@ body.dark .modal .prefs-row input[type=checkbox]:focus-visible{outline:2px solid
 body.dark .modal .secondary{border-color:#3b424d;background:#2f353e;color:var(--ink)}
 body.dark .modal .secondary:hover{background:#373e48}
 body.dark .modal .secondary.danger{color:#ff6b72}
+
+/* Phone layout */
+@media (max-width:700px){
+ /* Top-level tabs reached from the bottom bar need no "返回" row. */
+ .utility-navigation.is-root{display:none}
+ /* Dark theme: a calm surface header instead of a bright blue gradient. */
+ body.dark .mobile-title{background:#1f242c;color:#e8ecf1;border-bottom:1px solid #2c323b}
+ body.dark .mobile-title .icon-btn{color:#c9d2dd}
+ body.dark .mobile-title .avatar{border-color:#3a414c}
+ /* Bottom bar: readable labels, clearer active state. */
+ .rail nav button .rail-label{font-size:11px;letter-spacing:.02em}
+ body.dark .rail{border-top:1px solid #2c323b}
+ body.dark .rail nav button.active{background:#1c3550;color:#5aa8ff}
+}
+
+/* Phone message box: a 44px touch-friendly line by default that grows with
+   the text (fitComposer in app.js caps it at about five lines). 16px text
+   also stops iOS from zooming in when the box is focused. */
+@media(max-width:700px){
+ .composer,.composer.has-reply{height:auto;min-height:116px}
+ .composer textarea,body:not(.dark) .composer textarea{height:44px;min-height:44px;max-height:132px;flex:0 0 auto;padding:10px 12px;font-size:16px;line-height:22px;overflow-y:auto}
+ .compose-bottom{top:14px}
+ .composer.has-reply .compose-bottom{top:41px}
+}

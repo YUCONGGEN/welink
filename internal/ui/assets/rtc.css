@@ -44,6 +44,19 @@ body.dark #call-layer,body.dark #meeting-layer,body.dark .remote-screen,body.dar
 #call-layer .call-buttons .secondary{width:auto;height:40px;border-radius:999px;padding:0 22px;background:var(--rtc-tool);color:var(--rtc-ink);border:0;box-shadow:none}
 #call-layer .call-mini{background:var(--rtc-surface);color:var(--rtc-ink);border:1px solid var(--rtc-line);border-radius:999px;padding:12px 20px 12px 14px;box-shadow:var(--rtc-shadow)}
 #call-layer .call-mini svg{color:var(--rtc-ok)}
+/* No lift on hover: a moving target made clicks near the edge flicker. */
+#call-layer .call-buttons>button:hover{transform:none;filter:brightness(1.07)}
+#call-layer .call-buttons>button:active{filter:brightness(.94)}
+#call-layer .call-buttons>button:disabled,#call-layer .call-mini-end:disabled{opacity:.55;cursor:default;filter:none}
+/* Minimised call: the pill expands, the red button cancels or hangs up. */
+#call-layer .call-mini-bar{position:fixed;z-index:70;right:22px;bottom:22px;display:none;align-items:center;gap:10px}
+#call-layer.call-minimized .call-mini-bar{display:flex;pointer-events:auto}
+#call-layer.call-minimized .call-dialog{display:none}
+#call-layer .call-mini-bar .call-mini{position:static;display:flex;min-width:0;max-width:300px}
+#call-layer .call-mini-bar .call-mini span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#call-layer .call-mini-end{flex-shrink:0;width:46px;height:46px;border:0;border-radius:50%;background:var(--rtc-danger);color:#fff;display:grid;place-items:center;box-shadow:var(--rtc-shadow)}
+#call-layer .call-mini-end svg{width:20px;height:20px;transform:rotate(135deg)}
+#call-layer .call-mini-end:hover{filter:brightness(1.07)}
 @keyframes rtc-ring{0%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 0 rgba(22,119,255,.35)}70%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 18px rgba(22,119,255,0)}100%{box-shadow:0 14px 34px rgba(30,60,120,.22),0 0 0 0 rgba(22,119,255,0)}}
 @media(prefers-reduced-motion:reduce){#call-layer .call-person .avatar.large,#meeting-layer .meeting-person::before,.live-dot{animation:none!important}}
 
@@ -188,6 +201,7 @@ body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#
 
 @media(max-width:700px){
  #call-layer .call-dialog{width:100%;height:100%;border-radius:0;border:0}
+ #call-layer .call-mini-bar{right:12px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px)}
  #meeting-layer.call-mode .meeting-room,#meeting-layer.call-mode.call-audio .meeting-room,#meeting-layer.call-mode:not(.call-audio) .meeting-room{inset:0;transform:none;width:100%;height:100%;max-width:none;max-height:none;border-radius:0;border:0}
  #meeting-layer.call-mode.call-audio .meeting-person{top:22vh}
  #meeting-layer.call-mode.call-audio .meeting-tile-label{top:calc(22vh + 140px)}
@@ -201,3 +215,12 @@ body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#
 }
 .remote-screen .remote-canvas canvas{display:block;max-width:100%;max-height:100%;touch-action:none;outline:0;box-shadow:0 10px 40px rgba(0,0,0,.45)}
 .remote-screen .remote-canvas canvas:not([data-width]){visibility:hidden}
+
+/* Minimised 1:1 call (audio or video, desktop or phone): a compact card in the
+   corner. Last in the file so it beats the call-size rules above. */
+#meeting-layer.call-mode.meeting-minimized .meeting-room{inset:auto 20px 20px auto;transform:none;width:300px;height:auto;max-width:calc(100vw - 24px);max-height:none;border-radius:16px;border:1px solid var(--rtc-line);background:var(--rtc-surface);color:var(--rtc-ink);--rtc-ink:inherit;--rtc-muted:inherit;--rtc-tool:inherit;--rtc-tool-hover:inherit}
+#meeting-layer.call-mode.meeting-minimized .meeting-room::before{content:none}
+#meeting-layer.call-mode.meeting-minimized .meeting-top{position:relative;inset:auto;height:48px;min-height:48px;padding:0 14px;background:transparent;z-index:auto}
+#meeting-layer.call-mode.meeting-minimized .meeting-top b{color:var(--rtc-ink)}
+#meeting-layer.call-mode.meeting-minimized #meeting-copy{display:none}
+@media(max-width:700px){#meeting-layer.call-mode.meeting-minimized .meeting-room{inset:auto 12px calc(84px + env(safe-area-inset-bottom)) auto;width:calc(100vw - 24px)}}

@@ -12,7 +12,7 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  function personHTML(id,name){const u=personUser(id);return u&&av?av(u,'large'):'<span class="meeting-initial">'+esc((name||'M').slice(0,1))+'</span>'}
  const el=id=>document.getElementById(id);
  const display=meetingWindow({active:()=>!!room,toast,changed:full=>{const b=el('meeting-fullscreen');if(b){b.classList.toggle('on',full);b.querySelector('span').textContent=full?'退出全屏':'全屏';b.setAttribute('aria-pressed',String(full))}}});
- async function minimize(){if(!room)return;try{await display.exit();if(room){root().classList.add('meeting-minimized');toast('会议继续进行，点击“返回会议”恢复')}}catch{toast('暂时无法最小化，请先退出全屏')}}
+ async function minimize(){if(!room)return;try{await display.exit();if(room){root().classList.add('meeting-minimized');toast(room.call?'通话继续进行，点击“返回通话”恢复':'会议继续进行，点击“返回会议”恢复')}}catch{toast('暂时无法最小化，请先退出全屏')}}
  const root=()=>{let n=el('meeting-layer');if(!n){n=document.createElement('div');n.id='meeting-layer';document.body.append(n)}return n};
  function invitationText(code){return '邀请你加入 LinkMe 会议\n会议号：'+grouped(code)+'\n会议链接：'+S.config.server.replace(/\/$/,'')+'/join/'+code}
  async function copyInvitation(code){const text=invitationText(code);try{await navigator.clipboard.writeText(text)}catch{const input=document.createElement('textarea');input.value=text;document.body.append(input);input.select();const copied=document.execCommand('copy');input.remove();if(!copied){modal('会议邀请','<textarea readonly style="width:100%;height:120px">'+esc(text)+'</textarea>');return}}toast('邀请链接和会议号已复制')}
@@ -32,7 +32,7 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
   const signalProtocol=location.protocol==='https:'?'wss:':'ws:';
   const ws=new WebSocket(`${signalProtocol}//${location.host}/api/meetings/${code}/ws`);
   room={code,ws,stream,call,rtc,id:'',host:'',states:new Map(),peers:new Map(),tiles:new Map(),screen:null,recording:null,ping:null,started:Date.now(),intentional:false};const active=room;
-  renderRoom();if(call){root().classList.add('call-mode');root().classList.toggle('call-audio',call.mode==='audio');root().querySelector('.meeting-top b').textContent=(call.mode==='video'?'视频通话 · ':'语音通话 · ')+call.peer.name;el('meeting-leave').querySelector('span').textContent='挂断';el('meeting-leave').title='挂断';el('meeting-network').textContent='正在接通…';tile(call.peer.id,call.peer.name,null);active.callClock=setInterval(()=>{if(room===active&&call.started)renderConnection(active)},1000)}closeModal();
+  renderRoom();if(call){root().classList.add('call-mode');root().classList.toggle('call-audio',call.mode==='audio');root().querySelector('.meeting-top b').textContent=(call.mode==='video'?'视频通话 · ':'语音通话 · ')+call.peer.name;el('meeting-leave').querySelector('span').textContent='挂断';el('meeting-leave').title='挂断';el('meeting-restore').textContent='返回通话';el('meeting-mini-leave').textContent='挂断';el('meeting-mini-leave').title='挂断';el('meeting-network').textContent='正在接通…';tile(call.peer.id,call.peer.name,null);active.callClock=setInterval(()=>{if(room===active&&call.started)renderConnection(active)},1000)}closeModal();
   ws.onmessage=event=>{if(room!==active)return;let m;try{m=JSON.parse(event.data)}catch{return}receive(m).catch(e=>toast('会议信令处理失败：'+e.message))};
   ws.onopen=()=>{active.ping=setInterval(()=>send({type:'ping'}),20000)};
   ws.onclose=()=>{if(room===active){const reason=active.id?'会议连接已断开':'无法入会，请核对会议号、等待主持人入会或检查是否已满';cleanup(active);if(!active.intentional)toast(reason)}};
