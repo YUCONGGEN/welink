@@ -555,3 +555,44 @@ func mustGet(t *testing.T, url string) string {
 	b, _ := io.ReadAll(resp.Body)
 	return string(b)
 }
+
+func TestLoginAcceptsNumberOrEmailInEitherField(t *testing.T) {
+	for _, emailAuth := range []bool{false, true} {
+		f := setupCommunity(t)
+		f.s.settings.EmailAuth.Enabled = emailAuth
+		c := f.console()
+		var made struct {
+			User            User
+			InitialPassword string
+		}
+		c.do("POST", "/api/users", map[string]string{"name": "登录测试", "email": "Login.Test@Example.com", "password": "login-test-password-1"}, 200, &made)
+		for _, body := range []map[string]string{
+			{"account": made.User.Number, "password": "login-test-password-1"},
+			{"email": made.User.Number, "password": "login-test-password-1"},
+			{"email": "login.test@example.com", "password": "login-test-password-1"},
+			{"account": "LOGIN.TEST@example.com", "password": "login-test-password-1"},
+		} {
+			f.request("POST", "/api/auth/login", "", body, 200, nil)
+		}
+		f.request("POST", "/api/auth/login", "", map[string]string{"email": "login.test@example.com", "password": "wrong-password-000"}, 401, nil)
+		f.request("POST", "/api/auth/login", "", map[string]string{"email": "not an address", "password": "login-test-password-1"}, 401, nil)
+		// An account created without an email still signs in with its number.
+		c.do("POST", "/api/users", map[string]string{"name": "无邮箱", "password": "login-test-password-2"}, map[bool]int{false: 200, true: 400}[emailAuth], &made)
+		if !emailAuth {
+			f.request("POST", "/api/auth/login", "", map[string]string{"email": made.User.Number, "password": "login-test-password-2"}, 200, nil)
+		}
+	}
+}
+
+func TestDeployGuideOnlyOnTheInstallerSite(t *testing.T) {
+	f := setupCommunity(t)
+	f.s.downloads = t.TempDir()
+	if strings.Contains(mustGet(t, f.url+"/"), `id="deploy"`) {
+		t.Fatal("self-hosted site shows the deployment guide")
+	}
+	os.MkdirAll(filepath.Join(f.s.downloads, "server"), 0755)
+	os.WriteFile(filepath.Join(f.s.downloads, "server", "install.sh"), []byte("#!/bin/sh\n"), 0644)
+	if !strings.Contains(mustGet(t, f.url+"/"), `id="deploy"`) {
+		t.Fatal("installer site lost the deployment guide")
+	}
+}

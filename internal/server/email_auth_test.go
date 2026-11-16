@@ -59,7 +59,8 @@ func TestEmailRegistrationLoginRecovery(t *testing.T) {
 		t.Fatal("incorrect account identity")
 	}
 	f.request("POST", "/api/auth/register", "", p, 400, nil)
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": a.User.Number, "password": p.Password}, 401, nil)
+	// The 6-digit LinkMe number works as well as the email.
+	f.request("POST", "/api/auth/login", "", map[string]string{"account": a.User.Number, "password": p.Password}, 200, nil)
 	f.request("POST", "/api/auth/login", "", map[string]string{"email": "PERSON@EXAMPLE.COM", "password": p.Password}, 200, nil)
 	f.request("POST", "/api/auth/login", "", map[string]string{"email": p.Name, "password": p.Password}, 401, nil)
 	f.s.db.Exec("UPDATE email_challenges SET created=created-61000")

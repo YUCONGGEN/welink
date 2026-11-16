@@ -32,7 +32,11 @@ type Page struct {
 	DownloadURL string
 	DriveGB     int64
 	// ConsoleURL links the management console from the header when it is public.
-	ConsoleURL   string
+	ConsoleURL string
+	// DeployGuide shows the self-hosting install guide. Only the server that
+	// publishes the installers (the official site) shows it; a deployment
+	// installed for an organisation never does.
+	DeployGuide  bool
 	Documents    []Document
 	Content      string
 	DocumentOpen bool

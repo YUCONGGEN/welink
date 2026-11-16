@@ -420,6 +420,16 @@
 
   // internal/ui/src/email-auth.js
   function createEmailAuth({ S: S2, action: action2, enter: enter2, QR: QR2, Desktop: Desktop2, windows: windows2, logo: logo2 }) {
+    function serverLine() {
+      let host = S2.config?.server || "";
+      try {
+        const u = new URL(host);
+        host = u.port && u.port !== "8250" ? u.host : u.hostname;
+      } catch {
+      }
+      const esc2 = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      return '<button type="button" class="auth-server" data-action="connection" title="切换服务器"><span class="auth-server-dot" aria-hidden="true"></span><span>服务器 <b>' + esc2(host || "未设置") + '</b></span><span class="auth-server-switch">切换</span></button>';
+    }
     let timer;
     function render(mode = "login", emailValue = "") {
       clearInterval(timer);
@@ -429,7 +439,7 @@
       const register = mode === "register", reset = mode === "reset", verify = register || reset;
       if (register && !S2.registrationEnabled) return render();
       const choices = register ? cartoonChoices(4) : [];
-      document.querySelector("#app").innerHTML = `<main class="auth-shell email-auth ${register ? "registering" : ""}">${windows2()}${authShowcase()}<form class="auth-card" id="auth-form">${logo2()}<h2>${register ? "创建 LinkMe 账号" : reset ? "找回密码" : "欢迎回来"}</h2><p class="subtitle">${reset ? "验证邮箱，设置新密码" : register ? "用邮箱，开启新的连接" : "邮箱登录，与团队保持连接"}</p>${register ? `<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="${choices[0].id}"><div class="cartoon-grid compact" id="register-avatar-options">${cartoonOptions(choices, choices[0].id)}</div></div>` : ""}<div class="auth-fields">${register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : ""}<input name="email" type="email" autocomplete="username" inputmode="email" placeholder="邮箱地址" aria-label="邮箱" maxlength="254" required>${verify ? '<div class="email-code-row"><input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" aria-label="验证码" pattern="[0-9]{6}" maxlength="6" required><button type="button" class="secondary" id="send-email-code">获取验证码</button></div>' : ""}<input name="password" type="password" autocomplete="${verify ? "new-password" : "current-password"}" placeholder="${verify ? "设置密码（至少 8 位）" : "密码"}" aria-label="密码" minlength="8" maxlength="72" required>${reset ? '<input name="repeatPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-label="确认密码" minlength="8" maxlength="72" required>' : ""}</div><div class="auth-error" id="auth-error" role="status" aria-live="polite"></div><button type="submit" class="primary">${register ? "注册并登录" : reset ? "重设密码" : "登录"}</button>${!verify && S2.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : ""}<div class="auth-links">${verify ? '<button type="button" data-email-mode="login">返回登录</button>' : `${S2.registrationEnabled ? '<button type="button" data-email-mode="register">注册账号</button>' : ""}<button type="button" data-email-mode="reset">忘记密码</button>`}<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ${CLIENT_VERSION} · 让沟通更近一步</small></main>`;
+      document.querySelector("#app").innerHTML = `<main class="auth-shell email-auth ${register ? "registering" : ""}">${windows2()}${authShowcase()}<form class="auth-card" id="auth-form">${logo2()}<h2>${register ? "创建 LinkMe 账号" : reset ? "找回密码" : "欢迎回来"}</h2><p class="subtitle">${reset ? "验证邮箱，设置新密码" : register ? "用邮箱，开启新的连接" : "使用邮箱或 LinkMe 号登录"}</p>${verify ? "" : serverLine()}${register ? `<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="${choices[0].id}"><div class="cartoon-grid compact" id="register-avatar-options">${cartoonOptions(choices, choices[0].id)}</div></div>` : ""}<div class="auth-fields">${register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : ""}${verify ? '<input name="email" type="email" autocomplete="username" inputmode="email" placeholder="邮箱地址" aria-label="邮箱" maxlength="254" required>' : '<input name="email" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="邮箱或 6 位 LinkMe 号" aria-label="邮箱或 LinkMe 号" maxlength="254" required>'}${verify ? '<div class="email-code-row"><input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" aria-label="验证码" pattern="[0-9]{6}" maxlength="6" required><button type="button" class="secondary" id="send-email-code">获取验证码</button></div>' : ""}<input name="password" type="password" autocomplete="${verify ? "new-password" : "current-password"}" placeholder="${verify ? "设置密码（至少 8 位）" : "密码"}" aria-label="密码" minlength="8" maxlength="72" required>${reset ? '<input name="repeatPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-label="确认密码" minlength="8" maxlength="72" required>' : ""}</div><div class="auth-error" id="auth-error" role="status" aria-live="polite"></div><button type="submit" class="primary">${register ? "注册并登录" : reset ? "重设密码" : "登录"}</button>${!verify && S2.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : ""}<div class="auth-links">${verify ? '<button type="button" data-email-mode="login">返回登录</button>' : `${S2.registrationEnabled ? '<button type="button" data-email-mode="register">注册账号</button>' : ""}<button type="button" data-email-mode="reset">忘记密码</button>`}<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ${CLIENT_VERSION} · 让沟通更近一步</small></main>`;
       const form = document.querySelector("#auth-form"), email = form.elements.email, error = form.querySelector("#auth-error");
       email.value = emailValue;
       let challenge = "", challengeEmail = "";
@@ -6952,14 +6962,49 @@
       closeModal();
     };
   }
+  function normalizeServer(value) {
+    let v = value.trim().replace(/\/+$/, "");
+    if (!v) return "";
+    if (!/^https?:\/\//i.test(v)) v = "http://" + v;
+    const explicitPort = /^https?:\/\/(\[[^\]]+\]|[^/:]+):\d+$/i.test(v);
+    try {
+      const u = new URL(v);
+      if (!explicitPort && u.protocol === "http:") u.port = "8250";
+      return u.origin;
+    } catch {
+      return v;
+    }
+  }
   function connection() {
-    modal("连接设置", `<label>服务地址</label><input id="server-url" value="${esc(S.config.server || "")}" placeholder="http://服务器:8250"><label>HTTPS 证书指纹（可选）</label><input id="server-pin" value="${esc(S.config.fingerprint || "")}" placeholder="64 位十六进制指纹"><p class="hint">当前默认使用 HTTP。证书指纹仅在使用 HTTPS 时生效。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存连接</button>');
+    let confirmed = false;
+    modal("连接设置", `<label>服务器地址</label><input id="server-url" value="${esc(S.config.server || "")}" placeholder="例如 192.168.1.10 或 chat.example.com" autocomplete="off" spellcheck="false"><p class="hint">填写管理员提供的服务器 IP 或域名即可，http:// 和默认端口 8250 会自动补全；留空则使用默认服务器。</p><label>HTTPS 证书指纹（可选）</label><input id="server-pin" value="${esc(S.config.fingerprint || "")}" placeholder="64 位十六进制指纹"><p class="hint">证书指纹仅在使用 HTTPS 时需要。</p><p class="hint connection-check" id="server-check" role="status"></p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">连接</button>');
+    $("#server-url").oninput = () => {
+      confirmed = false;
+      const note = $("#server-check");
+      note.textContent = "";
+      note.classList.remove("error");
+      $(".modal [data-action=modal-submit]").textContent = "连接";
+    };
     modalHandler = async () => {
-      const cfg = await action("/local/config", { server: $("#server-url").value, fingerprint: $("#server-pin").value });
+      const server = normalizeServer($("#server-url").value), fingerprint = $("#server-pin").value.trim(), note = $("#server-check"), submit = $(".modal [data-action=modal-submit]");
+      if (!confirmed) {
+        note.classList.remove("error");
+        note.textContent = "正在连接 " + (server || "默认服务器") + " …";
+        try {
+          await action("/local/config/check", { server, fingerprint });
+        } catch (e) {
+          note.classList.add("error");
+          note.textContent = e.message + "。确认地址无误可点击“仍然保存”。";
+          confirmed = true;
+          submit.textContent = "仍然保存";
+          return;
+        }
+      }
+      const cfg = await action("/local/config", { server, fingerprint });
       S.config = cfg;
       closeModal();
       await logout(false);
-      toast("连接已更新，请登录");
+      toast("已切换到 " + cfg.server + "，请登录");
     };
   }
   function contextMenu(x, y, items) {

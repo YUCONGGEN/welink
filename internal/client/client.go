@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -360,13 +361,28 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		localJSON(w, map[string]bool{"ok": true})
+	case "/local/config/check":
+		// Lets the connection dialog confirm an address before switching.
+		var cfg Config
+		if !localDecode(w, r, &cfg) {
+			return
+		}
+		cfg = normalizeConfig(cfg)
+		if _, err := validateConfig(cfg); err != nil {
+			localError(w, 400, err.Error())
+			return
+		}
+		if err := checkServer(r.Context(), cfg); err != nil {
+			localError(w, 502, "无法连接到 "+cfg.Server+"："+err.Error())
+			return
+		}
+		localJSON(w, map[string]any{"ok": true, "server": cfg.Server})
 	case "/local/config":
 		var cfg Config
 		if !localDecode(w, r, &cfg) {
 			return
 		}
-		cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
-		cfg.Fingerprint = strings.TrimSpace(cfg.Fingerprint)
+		cfg = normalizeConfig(cfg)
 		if _, err := validateConfig(cfg); err != nil {
 			localError(w, 400, err.Error())
 			return
@@ -454,4 +470,47 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// normalizeConfig trims the address; an empty address means the default server.
+func normalizeConfig(cfg Config) Config {
+	cfg.Server = strings.TrimRight(strings.TrimSpace(cfg.Server), "/")
+	cfg.Fingerprint = strings.TrimSpace(cfg.Fingerprint)
+	if cfg.Server == "" {
+		cfg.Server, cfg.Fingerprint = DefaultServer, DefaultFingerprint
+	}
+	return cfg
+}
+
+// checkServer confirms that cfg.Server answers like a LinkMe server.
+func checkServer(ctx context.Context, cfg Config) error {
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", cfg.Server+"/health", nil)
+	if err != nil {
+		return errors.New("地址格式不正确")
+	}
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint), Proxy: http.ProxyFromEnvironment}}
+	resp, err := client.Do(req)
+	if err != nil {
+		var netErr net.Error
+		switch {
+		case errors.As(err, &netErr) && netErr.Timeout():
+			return errors.New("连接超时，请检查地址、端口（默认 8250）和服务器防火墙")
+		case strings.Contains(err.Error(), "refused"):
+			return errors.New("连接被拒绝，请确认端口正确且服务器正在运行")
+		case strings.Contains(err.Error(), "no such host"):
+			return errors.New("找不到该域名")
+		}
+		return errors.New("无法建立连接")
+	}
+	defer resp.Body.Close()
+	var health struct {
+		OK      bool   `json:"ok"`
+		Version string `json:"version"`
+	}
+	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&health) != nil || !health.OK {
+		return errors.New("该地址不是 LinkMe 服务器（请使用 API 端口，默认 8250）")
+	}
+	return nil
 }

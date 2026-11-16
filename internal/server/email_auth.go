@@ -284,27 +284,6 @@ func (s *Server) emailError(w http.ResponseWriter, err error) {
 		s.dbError(w, err)
 	}
 }
-func (s *Server) emailLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.rate(r, "login", 30, time.Minute) {
-		fail(w, 429, "尝试次数过多，请稍后再试")
-		return
-	}
-	var p emailInput
-	if !decode(w, r, &p) {
-		return
-	}
-	email, err := emailaddress.Normalize(p.Email)
-	var id string
-	var hash []byte
-	if err == nil {
-		err = s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_emails e ON e.user_id=u.id WHERE e.email=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", email).Scan(&id, &hash)
-	}
-	if err != nil || !storedPasswordMatches(hash, p.Password) {
-		fail(w, 401, "邮箱或密码不正确")
-		return
-	}
-	s.issueSession(w, r, id, hash)
-}
 func (s *Server) emailReset(w http.ResponseWriter, r *http.Request) {
 	if !s.emailAvailable(w) {
 		return

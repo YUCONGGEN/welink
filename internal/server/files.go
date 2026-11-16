@@ -283,7 +283,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "LinkMe · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB, ConsoleURL: s.consoleURL()}); err != nil {
+	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "LinkMe · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB, ConsoleURL: s.consoleURL(), DeployGuide: s.publishesInstallers()}); err != nil {
 		s.logger.Printf("render download page: %v", err)
 	}
 }

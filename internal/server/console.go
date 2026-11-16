@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -591,4 +593,14 @@ func (s *Server) consoleURL() string {
 		return "/admin/"
 	}
 	return ""
+}
+
+// publishesInstallers reports whether this server hosts the self-hosting
+// installers (downloads/server/install.sh), i.e. it is the distribution site.
+func (s *Server) publishesInstallers() bool {
+	if s.downloads == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(s.downloads, "server", "install.sh"))
+	return err == nil
 }

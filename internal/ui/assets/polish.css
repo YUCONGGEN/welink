@@ -59,3 +59,16 @@ body.dark .modal .secondary.danger{color:#ff6b72}
  .compose-bottom{top:14px}
  .composer.has-reply .compose-bottom{top:41px}
 }
+
+/* Login: which server this client signs in to, with a switch button.
+   Scoped to #auth-form to win over the auth card's generic button rules. */
+#auth-form .auth-server{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;height:auto;margin:-2px 0 14px;padding:8px 12px;border:1px solid rgba(110,90,170,.22);border-radius:12px;background:rgba(255,255,255,.55);color:#4f436d;font-size:13px;font-weight:400;text-align:left;cursor:pointer;box-shadow:none}
+#auth-form .auth-server:hover{background:rgba(255,255,255,.85)}
+#auth-form .auth-server b{font-weight:600;word-break:break-all}
+#auth-form .auth-server>span:nth-child(2){flex:1;min-width:0}
+#auth-form .auth-server-dot{width:8px;height:8px;border-radius:50%;background:#3cc68f;flex-shrink:0}
+#auth-form .auth-server-switch{color:#6650d8;font-weight:600;flex-shrink:0}
+body.dark #auth-form .auth-server{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:#c9cfdc}
+body.dark #auth-form .auth-server:hover{background:rgba(255,255,255,.1)}
+body.dark #auth-form .auth-server-switch{color:#8fb4ff}
+.modal p.hint.connection-check.error,body.dark .modal p.hint.connection-check.error{color:#d64550}

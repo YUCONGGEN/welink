@@ -10,7 +10,8 @@ import (
 
 func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 	for _, page := range []Page{
-		{Kind: "download", Title: "LinkMe", DriveGB: 5},
+		{Kind: "download", Title: "LinkMe", DriveGB: 5, DeployGuide: true},
+		{Kind: "download", Title: "自建服务器", DriveGB: 5},
 		{Kind: "meeting", Title: "会议", Code: "123456789", DisplayCode: "123 456 789", DownloadURL: "http://example.com:8251"},
 		{Kind: "share", Title: "分享", Name: `<script>alert("file")</script>.txt`, Size: "1.00 MB", Validity: "永久有效"},
 		{Kind: "space", Title: "空间", Name: "同事", DocumentOpen: true, Content: `</pre><script>alert("content")</script>`},
@@ -45,7 +46,10 @@ func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 			if page.Kind == "download" && (!strings.Contains(html, "/downloads/LinkMe-Setup.exe") || !strings.Contains(html, "/downloads/LinkMe-Android.apk") || !strings.Contains(html, "/downloads/LinkMe-macOS-arm64.zip") || !strings.Contains(html, "Apple Silicon") || !strings.Contains(html, "每人 5 GB") || strings.Contains(html, "LinkMe-Windows.exe") || strings.Contains(html, "便携版")) {
 				t.Fatal("missing client downloads or configured quota")
 			}
-			if page.Kind == "download" && (!strings.Contains(html, `id="deploy"`) || !strings.Contains(html, "/downloads/server/install.sh | sudo sh") || !strings.Contains(html, "/downloads/server/install.ps1 | iex") || !strings.Contains(html, "linkme-server-docker.tar.gz | tar xz") || !strings.Contains(html, "8253")) {
+			if page.Kind == "download" && !page.DeployGuide && (strings.Contains(html, `id="deploy"`) || strings.Contains(html, "服务器部署")) {
+				t.Fatal("self-hosted site shows the deployment guide")
+			}
+			if page.Kind == "download" && page.DeployGuide && (!strings.Contains(html, `id="deploy"`) || !strings.Contains(html, "/downloads/server/install.sh | sudo sh") || !strings.Contains(html, "/downloads/server/install.ps1 | iex") || !strings.Contains(html, "linkme-server-docker.tar.gz | tar xz") || !strings.Contains(html, "8253")) {
 				t.Fatal("missing server deployment guide")
 			}
 		})

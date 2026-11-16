@@ -4,7 +4,7 @@
 <div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div>
 <header class="site-header">
  <a class="brand" href="{{.DownloadURL}}/" aria-label="LinkMe 首页"><span class="brand-mark" aria-hidden="true">M/Link</span><strong>LinkMe</strong></a>
- <nav class="header-nav">{{if eq .Kind "download"}}<a class="header-link" href="#deploy">服务器部署</a>{{if .ConsoleURL}}<a class="header-link console-link" href="{{.ConsoleURL}}">管理后台登录 <span aria-hidden="true">→</span></a>{{end}}{{end}}<a class="header-link" href="https://github.com/YUCONGGEN/welink" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></nav>
+ <nav class="header-nav">{{if eq .Kind "download"}}{{if .DeployGuide}}<a class="header-link" href="#deploy">服务器部署</a>{{end}}{{if .ConsoleURL}}<a class="header-link console-link" href="{{.ConsoleURL}}">管理后台登录 <span aria-hidden="true">→</span></a>{{end}}{{end}}<a class="header-link" href="https://github.com/YUCONGGEN/welink" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></nav>
 </header>
 {{if eq .Kind "download"}}
 <main class="download-layout">
@@ -17,7 +17,7 @@
   <div class="card-detail"><span class="detail-dot" aria-hidden="true"></span>每人 {{.DriveGB}} GB 网盘，聊天附件独立存储。</div>
  </section>
 </main>
-<section class="deploy-layout" id="deploy" aria-labelledby="deploy-title">
+{{if .DeployGuide}}<section class="deploy-layout" id="deploy" aria-labelledby="deploy-title">
  <div class="deploy-intro"><p class="eyebrow"><i aria-hidden="true"></i> SELF-HOSTED · 服务器部署</p><h2 id="deploy-title">一条命令，<br>部署自己的服务器。</h2><p class="hero-description">支持 Linux、macOS、Windows 与 Docker。安装程序会让你亲自选择数据盘，自动生成配置、注册系统服务并开机启动；完成后用浏览器打开管理后台，管理员工账号与全部设置。</p></div>
  <div class="glass deploy-card" id="deploy-card">
   <div class="deploy-tabs" role="tablist" aria-label="选择服务器系统"><button type="button" role="tab" id="tab-linux" aria-controls="panel-linux" aria-selected="true" data-tab="linux">Linux</button><button type="button" role="tab" id="tab-macos" aria-controls="panel-macos" aria-selected="false" data-tab="macos">macOS</button><button type="button" role="tab" id="tab-windows" aria-controls="panel-windows" aria-selected="false" data-tab="windows">Windows</button><button type="button" role="tab" id="tab-docker" aria-controls="panel-docker" aria-selected="false" data-tab="docker">Docker</button></div>
@@ -45,7 +45,7 @@
   </div>
   <div class="download-meta deploy-files"><span>离线安装包：</span><a href="/downloads/server/linkme-server-linux-amd64.tar.gz">Linux x86_64</a><a href="/downloads/server/linkme-server-linux-arm64.tar.gz">Linux ARM64</a><a href="/downloads/server/linkme-server-darwin-arm64.tar.gz">macOS Apple 芯片</a><a href="/downloads/server/linkme-server-darwin-amd64.tar.gz">macOS Intel</a><a href="/downloads/server/linkme-server-windows-amd64.zip">Windows</a><a href="/downloads/server/linkme-server-docker.tar.gz">Docker</a><a href="/downloads/server/SHA256SUMS.txt">校验文件</a></div>
  </div>
-</section>
+</section>{{end}}
 {{else if eq .Kind "meeting"}}
 <main class="center-layout"><section class="glass invitation-card"><p class="eyebrow">MEET &amp; COLLABORATE</p><div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h12v14H3ZM15 9l6-3v12l-6-3"/></svg></div><h1>邀请你加入会议</h1><p class="subtitle">在 LinkMe 登录后，确认加入会议。</p><div class="meeting-number"><span>会议号</span><strong data-meeting-code="{{.Code}}">{{.DisplayCode}}</strong></div><a class="primary block" href="welink://meeting/{{.Code}}">在 LinkMe 中打开 <span aria-hidden="true">↗</span></a><button class="secondary block" id="copy">复制邀请链接和会议号</button><p id="status" class="copy-status" role="status" aria-live="polite">也可将链接或会议号粘贴到“加入会议”</p><div class="download-meta"><a href="{{.DownloadURL}}/downloads/LinkMe-Setup.exe">Windows</a><a href="{{.DownloadURL}}/downloads/LinkMe-Android.apk">Android</a><a href="{{.DownloadURL}}/downloads/LinkMe-macOS-arm64.zip">macOS</a></div></section></main>
 {{else if eq .Kind "share"}}

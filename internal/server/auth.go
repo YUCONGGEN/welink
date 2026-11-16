@@ -3,12 +3,14 @@ package server
 import (
 	"bytes"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+	"welink/internal/emailaddress"
 )
 
 var accountPattern = regexp.MustCompile(`^[a-zA-Z0-9_]{5,24}$`)
@@ -79,27 +81,38 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	s.issueSession(w, r, id)
 	s.directoryChanged()
 }
+
+var linkMeNumber = regexp.MustCompile(`^[1-9][0-9]{5}$`)
+
+// login accepts a 6-digit LinkMe number or an email address with the
+// password, whichever field it arrives in ("account" from older clients,
+// "email" from the email-style login form) and whether or not email
+// verification is enabled, so accounts created in the management console can
+// always sign in.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	if s.settings.EmailAuth.Enabled {
-		s.emailLogin(w, r)
-		return
-	}
 	if !s.rate(r, "login", 30, time.Minute) {
 		fail(w, 429, "尝试次数过多，请稍后再试")
 		return
 	}
-	var p struct{ Account, Password string }
+	var p struct{ Account, Email, Password string }
 	if !decode(w, r, &p) {
 		return
 	}
+	login := strings.TrimSpace(p.Account)
+	if login == "" {
+		login = strings.TrimSpace(p.Email)
+	}
 	var id string
 	var hash []byte
-	login := strings.TrimSpace(p.Account)
-	if !regexp.MustCompile(`^[1-9][0-9]{5}$`).MatchString(login) {
-		fail(w, 401, "请输入正确的 6 位 LinkMe 账号和密码")
+	err := sql.ErrNoRows
+	if linkMeNumber.MatchString(login) {
+		err = s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE CAST(n.number AS TEXT)=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login).Scan(&id, &hash)
+	} else if email, e := emailaddress.Normalize(login); e == nil {
+		err = s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_emails e ON e.user_id=u.id WHERE e.email=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", email).Scan(&id, &hash)
+	} else {
+		fail(w, 401, "请输入邮箱或 6 位 LinkMe 号")
 		return
 	}
-	err := s.db.QueryRow("SELECT u.id,u.password FROM users u JOIN user_numbers n ON n.user_id=u.id WHERE CAST(n.number AS TEXT)=? AND NOT EXISTS(SELECT 1 FROM deleted_accounts d WHERE d.user_id=u.id)", login).Scan(&id, &hash)
 	if err != nil || !storedPasswordMatches(hash, p.Password) {
 		fail(w, 401, "账号或密码不正确")
 		return
