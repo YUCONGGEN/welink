@@ -15,7 +15,7 @@ for tool in gomobile gobind; do
 done
 mkdir -p mobile/android/app/libs mobile/build
 # Separate builds avoid the gomobile shared go.mod mutation race across ABIs.
-for abi in arm64 arm amd64 386; do
+for abi in arm64; do # arm64-v8a only; see abiFilters in app/build.gradle
   gomobile bind -androidapi 26 -target="android/$abi" -javapkg=cn.welink.bridge \
     -ldflags='-s -w -extldflags=-Wl,-z,max-page-size=16384' \
     -o "mobile/build/core-$abi.aar" ./mobile/core

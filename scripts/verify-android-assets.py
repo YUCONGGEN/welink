@@ -11,7 +11,11 @@ with zipfile.ZipFile(apk) as archive:
         name = 'assets/ui/' + path.relative_to(root / 'internal/ui/assets').as_posix()
         if archive.read(name) != path.read_bytes():
             raise SystemExit('APK UI does not match source: ' + name)
-    for abi in ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64']:
+    supported = ['arm64-v8a']
+    for abi in supported:
         if f'lib/{abi}/libgojni.so' not in archive.namelist():
             raise SystemExit('APK native ABI missing: ' + abi)
-print(f'APK verified: {len(files)} current UI files and 4 native ABIs')
+    extra = sorted({n.split('/')[1] for n in archive.namelist() if n.startswith('lib/')} - set(supported))
+    if extra:
+        raise SystemExit('APK contains unsupported native ABIs: ' + ', '.join(extra))
+print(f'APK verified: {len(files)} current UI files and the arm64-v8a native ABI')

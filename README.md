@@ -10,7 +10,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon
 | --- | --- | --- |
 | Windows | [安装版](http://www.yucg.cn:8251/downloads/LinkMe-Setup.exe) | Windows x64，Microsoft Edge WebView2 Runtime |
 | macOS | [Apple Silicon 应用](http://www.yucg.cn:8251/downloads/LinkMe-macOS-arm64.zip) | M1 或更新机型，macOS 12+ |
-| Android | [APK](http://www.yucg.cn:8251/downloads/LinkMe-Android.apk) | Android 8.0+，支持 ARM / x86 四种架构 |
+| Android | [APK](http://www.yucg.cn:8251/downloads/LinkMe-Android.apk) | Android 8.0+，64 位 ARM 手机（arm64-v8a） |
 
 [下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LINKME_RELEASE_0.1.18.md)
 
@@ -68,7 +68,7 @@ macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 
 - macOS：解压 `LinkMe-macOS-arm64.zip`，将 `LinkMe.app` 放入“应用程序”后打开。预览版尚未做 Apple 公证；首次打开时在 Finder 中按住 Control 点击应用并选择“打开”。界面使用系统默认浏览器，本机 Go 客户端在浏览器关闭前保持运行。
 - 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 LinkMe 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。
-- Android：安装 `LinkMe-Android.apk`，支持 Android 8.0+；包含 arm64、ARMv7、x86_64、x86。当前为直接安装的预览 APK。
+- Android：安装 `LinkMe-Android.apk`，支持 Android 8.0+ 的 64 位 ARM 手机（arm64-v8a），不再包含 32 位 ARM 与 x86。当前为直接安装的预览 APK。
 - 自助注册由服务器配置 `registration.enabled` 控制，当前部署已开放。Windows、Android 和 macOS 都使用邮箱与密码登录；新账号填写姓名并通过腾讯云邮箱验证码注册，忘记密码也通过验证码重置。系统会分配 6 位 LinkMe 号码作为员工搜索标识；桌面端也可用 Android 扫码登录。管理员可从“设置 → 管理员 · 账号管理”注册员工账号，姓名必填；管理员可编辑员工资料、重置密码和删除账号。
 - 注册和“编辑资料 → 更换头像”提供 100 个内置卡通头像，每次推荐 8 个，可换一批或查看全部；也可上传照片、拖动裁剪、缩放、旋转或恢复默认。照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
 - 桌面登录页点击“使用二维码登录”；安卓登录后从消息页“+ → 扫一扫”或“我的 → 扫一扫 · 电脑登录”扫描。手机核对数字后确认，电脑自动登录。二维码 3 分钟有效、单次使用；也支持选择二维码图片。

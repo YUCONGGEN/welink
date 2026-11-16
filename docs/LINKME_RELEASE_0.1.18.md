@@ -9,6 +9,7 @@
 - Android 版本号更新为 `0.1.18-preview`，versionCode 为 19。
 - Windows 安装器、macOS Apple Silicon 客户端和 Android APK 全部重新构建。
 - 不再提供 Windows 便携版下载，原便携版链接会自动跳转到 Windows 安装版。
+- Android 安装包只包含 64 位 ARM（arm64-v8a），体积由约 50 MB 降到约 13 MB；不再支持 32 位手机和 x86 模拟器。
 - 服务端健康接口报告版本 `0.1.18`，下载目录同步更新校验清单。
 
 ## 下载

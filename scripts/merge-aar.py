@@ -6,7 +6,7 @@ outputs = root / 'mobile' / 'build'
 target = root / 'mobile' / 'android' / 'app' / 'libs' / 'welink-core.aar'
 with ZipFile(target, 'w', ZIP_DEFLATED) as output:
     seen = set()
-    for abi in ('arm64', 'arm', 'amd64', '386'):
+    for abi in ('arm64',):  # arm64-v8a only; see abiFilters in app/build.gradle
         with ZipFile(outputs / f'core-{abi}.aar') as archive:
             for name in archive.namelist():
                 if name in seen:
