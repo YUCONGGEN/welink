@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -62,6 +63,15 @@ type Settings struct {
 	Registration struct {
 		Enabled bool `json:"enabled"`
 	} `json:"registration"`
+	// Console is the separate web management console (its own listener and
+	// accounts); user administration lives there, not in the apps.
+	Console struct {
+		Enabled bool   `json:"enabled"`
+		Listen  string `json:"listen"`
+		// Public also serves the console at /admin/ on the API and download
+		// listeners and links it from the download page.
+		Public bool `json:"public"`
+	} `json:"console"`
 	Meetings struct {
 		MaxParticipants int      `json:"max_participants"`
 		DurationMinutes int      `json:"duration_minutes"`
@@ -100,6 +110,9 @@ func DefaultSettings() Settings {
 	s.Spaces.MaxDocumentBytes = 2 << 20
 	s.Spaces.MaxDocuments = 10000
 	s.Directory.AllUsers = true
+	s.Console.Enabled = true
+	s.Console.Listen = ":8253"
+	s.Console.Public = true
 	s.Meetings.MaxParticipants = 8
 	s.Meetings.DurationMinutes = 120
 	s.Meetings.STUNURLs = []string{"stun:www.yucg.cn:8233"}
@@ -161,6 +174,11 @@ func (s Settings) Validate() error {
 			return errors.New("storage.volumes requires unique IDs and different nonempty root paths")
 		}
 		volumeIDs[volume.ID], roots[root] = true, true
+	}
+	if s.Console.Enabled {
+		if _, _, err := net.SplitHostPort(s.Console.Listen); err != nil {
+			return errors.New("console.listen must be host:port, for example :8253")
+		}
 	}
 	for _, address := range s.Meetings.STUNURLs {
 		if !strings.HasPrefix(address, "stun:") || strings.ContainsAny(address, "\r\n\t ") {

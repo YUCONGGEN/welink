@@ -1,0 +1,58 @@
+# LinkMe 服务器（Docker Compose）
+#
+# 推荐用 install-docker.sh 生成 .env 并启动；也可以手工创建 .env：
+#   LINKME_DATA_DIR=/data/linkme-data      # 必填：宿主机数据目录（请放在数据盘上）
+#   LINKME_PUBLIC_HOST=203.0.113.10        # 必填：客户端访问的公网 IP 或域名
+#   LINKME_CONSOLE_PASSWORD=               # 可选：不填则自动生成到 数据目录/data/console-admin.txt
+# 然后在本目录执行：docker compose up -d --build
+#
+# 程序来自 dist/server/bin/linux-<arch>/linkme-server，先运行 node scripts/build-server.mjs。
+name: linkme
+
+services:
+  linkme:
+    image: linkme-server:local
+    build:
+      # 默认从仓库构建；安装包内由 install-docker.sh 在 .env 中改为当前目录
+      context: ${LINKME_BUILD_CONTEXT:-../..}
+      dockerfile: ${LINKME_DOCKERFILE:-deploy/docker/Dockerfile}
+      args:
+        BIN_DIR: ${LINKME_BIN_DIR:-dist/server/bin}
+        ENTRYPOINT_SRC: ${LINKME_ENTRYPOINT_SRC:-deploy/docker/entrypoint.sh}
+    restart: unless-stopped
+    environment:
+      LINKME_PUBLIC_HOST: ${LINKME_PUBLIC_HOST:?请在 .env 中设置 LINKME_PUBLIC_HOST}
+      LINKME_API_PORT: ${LINKME_API_PORT:-8250}
+      LINKME_DOWNLOAD_PORT: ${LINKME_DOWNLOAD_PORT:-8251}
+      LINKME_TURN_PORT: ${LINKME_TURN_PORT:-8252}
+      LINKME_CONSOLE_PORT: ${LINKME_CONSOLE_PORT:-8253}
+      LINKME_MEDIA_ENABLED: ${LINKME_MEDIA_ENABLED:-1}
+      LINKME_CONSOLE_USER: ${LINKME_CONSOLE_USER:-admin}
+      LINKME_CONSOLE_PASSWORD: ${LINKME_CONSOLE_PASSWORD:-}
+      LINKME_HOST_DATA_DIR: ${LINKME_DATA_DIR:?请在 .env 中设置 LINKME_DATA_DIR}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      # 容器内外端口必须一致：public_url 与 TURN 地址中写的是这些端口
+      - "${LINKME_API_PORT:-8250}:${LINKME_API_PORT:-8250}/tcp"
+      - "${LINKME_DOWNLOAD_PORT:-8251}:${LINKME_DOWNLOAD_PORT:-8251}/tcp"
+      - "${LINKME_CONSOLE_PORT:-8253}:${LINKME_CONSOLE_PORT:-8253}/tcp"
+      - "${LINKME_TURN_PORT:-8252}:${LINKME_TURN_PORT:-8252}/tcp"
+      - "${LINKME_TURN_PORT:-8252}:${LINKME_TURN_PORT:-8252}/udp"
+      - "20000-20127:20000-20127/udp"
+    volumes:
+      - type: bind
+        source: ${LINKME_DATA_DIR:?请在 .env 中设置 LINKME_DATA_DIR}/config
+        target: /config
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${LINKME_DATA_DIR:?请在 .env 中设置 LINKME_DATA_DIR}/data
+        target: /data
+        bind:
+          create_host_path: true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

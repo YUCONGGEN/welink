@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"log"
 	"math/big"
 	"net"
@@ -25,8 +26,29 @@ import (
 	"welink/internal/server"
 )
 
+// Version is printed by -version and reported by /health.
+const Version = "0.1.18"
+
+// exitRestart tells a supervising service manager (systemd, launchd, the
+// Windows SCM or Docker) that the console asked for a restart.
+const exitRestart = 3
+
 func main() {
+	// Under the Windows Service Control Manager, runService takes over and
+	// calls run itself; everywhere else it returns false immediately.
+	if runService(run) {
+		return
+	}
+	os.Exit(run(context.Background()))
+}
+
+// run starts the server and returns the process exit code.
+func run(parent context.Context) int {
 	configPath := flag.String("config", "", "JSON server configuration file")
+	checkConfig := flag.Bool("check-config", false, "validate the configuration file and exit")
+	consoleAdmin := flag.String("console-admin", "", "create the web console administrator (or reset their password) and exit")
+	consolePasswordFile := flag.String("console-password-file", "", "private file containing the console administrator password")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	bootstrapPasswordFile := flag.String("bootstrap-admin-password-file", "", "private file containing the initial administrator password")
 	bootstrapAlias := flag.String("bootstrap-admin-account", "", "initial administrator login alias")
 	bootstrapName := flag.String("bootstrap-admin-name", "", "initialize the first account in an empty database")
@@ -40,9 +62,47 @@ func main() {
 	initTLS := flag.Bool("init-tls", false, "create local TLS certificate and print fingerprint")
 	web := flag.String("download-listen", "", "optional HTTP listener serving only downloads")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(Version)
+		return 0
+	}
+	// The console edits this file, so remember where it is regardless of
+	// the working directory a service manager starts us in.
+	if *configPath != "" {
+		if abs, err := filepath.Abs(*configPath); err == nil {
+			*configPath = abs
+		}
+	}
 	settings, configErr := server.LoadSettings(*configPath)
 	if configErr != nil {
-		log.Fatal(configErr)
+		log.Print(configErr)
+		return 1
+	}
+	if *checkConfig {
+		fmt.Println("配置有效")
+		return 0
+	}
+	if *consoleAdmin != "" {
+		if *consolePasswordFile == "" {
+			log.Print("-console-admin requires -console-password-file")
+			return 1
+		}
+		raw, err := os.ReadFile(*consolePasswordFile)
+		if err != nil {
+			log.Print(err)
+			return 1
+		}
+		created, err := server.SetConsoleAdmin(settings, *consoleAdmin, strings.TrimRight(string(raw), "\r\n"))
+		if err != nil {
+			log.Print(err)
+			return 1
+		}
+		if created {
+			fmt.Println("后台管理员已创建：" + *consoleAdmin)
+		} else {
+			fmt.Println("后台管理员密码已重置：" + *consoleAdmin)
+		}
+		return 0
 	}
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
@@ -60,62 +120,83 @@ func main() {
 	if *bootstrapName != "" {
 		id, err := server.BootstrapAdmin(settings, *bootstrapName, *bootstrapAlias, *bootstrapPasswordFile, *bootstrapOutput, *bootstrapEmail)
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			return 1
 		}
-		log.Printf("administrator account created; configure admin.users with immutable ID %s", id)
-		return
+		log.Printf("first account created: %s", id)
+		return 0
 	}
 	if *initTLS {
 		if err := generateTLS(*data); err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			return 1
 		}
-		return
+		return 0
 	}
-	s, e := server.New(server.Config{DataDir: *data, DownloadsDir: *downloads, Settings: &settings})
+	s, e := server.New(server.Config{DataDir: *data, DownloadsDir: *downloads, Settings: &settings, ConfigPath: *configPath, Supervised: os.Getenv("LINKME_SUPERVISED") == "1"})
 	if e != nil {
-		log.Fatal(e)
+		log.Print(e)
+		return 1
 	}
 	defer s.Close()
-	var downloadServer *http.Server
+	servers := []*http.Server{}
+	serve := func(name string, srv *http.Server) {
+		servers = append(servers, srv)
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("%s listener: %v", name, err)
+			}
+		}()
+	}
 	if *web != "" {
-		downloadServer = &http.Server{Addr: *web, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != "GET" && r.Method != "HEAD" {
+		serve("download", &http.Server{Addr: *web, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The download port serves the public page, the packages and (when
+			// console.public is on) the management console under /admin/.
+			admin := settings.Console.Enabled && settings.Console.Public && (r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/"))
+			if !admin && r.Method != "GET" && r.Method != "HEAD" {
 				http.NotFound(w, r)
 				return
 			}
-			if r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/downloads/") {
+			if !admin && r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/downloads/") {
 				http.NotFound(w, r)
 				return
 			}
 			s.Handler().ServeHTTP(w, r)
-		})}
-		go func() {
-			if err := downloadServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Printf("download listener: %v", err)
-			}
-		}()
+		})})
+	}
+	if settings.Console.Enabled {
+		serve("console", &http.Server{Addr: settings.Console.Listen, Handler: s.ConsoleHandler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 64 << 10})
+		log.Printf("LinkMe console listening on %s", settings.Console.Listen)
 	}
 	srv := &http.Server{Addr: *addr, Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 64 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	code := 0
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-s.RestartRequested():
+			log.Print("restart requested from the console")
+			code = exitRestart
+		}
 		c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(c)
-		if downloadServer != nil {
-			_ = downloadServer.Shutdown(c)
+		for _, other := range servers {
+			_ = other.Shutdown(c)
 		}
 	}()
-	log.Printf("LinkMe 0.1.18 listening on %s", *addr)
+	log.Printf("LinkMe %s listening on %s", Version, *addr)
 	if *cert != "" && *key != "" {
 		e = srv.ListenAndServeTLS(*cert, *key)
 	} else {
 		e = srv.ListenAndServe()
 	}
 	if e != nil && e != http.ErrServerClosed {
-		log.Fatal(e)
+		log.Print(e)
+		return 1
 	}
+	return code
 }
 func generateTLS(dir string) error {
 	if e := os.MkdirAll(dir, 0700); e != nil {

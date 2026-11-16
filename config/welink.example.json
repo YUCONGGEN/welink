@@ -40,6 +40,10 @@
   "admin": {
     "users": []
   },
+  "console": {
+    "enabled": true,
+    "listen": ":8253"
+  },
   "registration": {
     "enabled": true
   },

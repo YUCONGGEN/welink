@@ -96,34 +96,22 @@ func TestEmailCodeExpiryAttemptsAndProviderFailure(t *testing.T) {
 		t.Fatal("failed delivery became usable")
 	}
 	f.request("POST", "/api/auth/email/code", "", map[string]string{"email": "unknown@example.com", "purpose": "reset"}, 200, nil)
-	f.request("POST", "/api/auth/email/code", "", map[string]string{"email": "a@example.com", "purpose": "admin-register"}, 403, nil)
+	f.request("POST", "/api/auth/email/code", "", map[string]string{"email": "a@example.com", "purpose": "admin-register"}, 400, nil)
 }
-func TestEmailAdminRegistrationWithPublicRegistrationDisabled(t *testing.T) {
-	f, m := setupEmail(t)
-	p := emailChallenge(f, m, "admin@example.com", "register")
-	var admin account
-	f.request("POST", "/api/auth/register", "", p, 200, &admin)
-	f.s.settings.Admin.Users = []string{admin.User.ID}
+func TestConsoleCreatesEmailAccountsWithRegistrationDisabled(t *testing.T) {
+	f, _ := setupEmail(t)
 	f.s.settings.Registration.Enabled = false
 	f.request("POST", "/api/auth/email/code", "", map[string]string{"email": "new@example.com", "purpose": "register"}, 403, nil)
-	var out struct{ ChallengeID string }
-	f.request("POST", "/api/admin/users/email-code", admin.Token, map[string]string{"email": "new@example.com", "purpose": "admin-register"}, 200, &out)
-	input := emailInput{Email: "new@example.com", Name: "员工", ChallengeID: out.ChallengeID, Code: m.code}
-	wrong := input
-	wrong.Code = "invalid"
-	f.request("POST", "/api/admin/users", admin.Token, wrong, 400, nil)
+	c := f.console()
+	c.do("POST", "/api/users", map[string]string{"name": "员工"}, 400, nil)
 	var result struct {
 		User            User
 		InitialPassword string
 	}
-	f.request("POST", "/api/admin/users", admin.Token, input, 200, &result)
-	if result.User.Email != input.Email || result.InitialPassword == "" {
-		t.Fatal("admin registration missing email/password")
+	c.do("POST", "/api/users", map[string]string{"name": "员工", "email": "New@Example.com"}, 200, &result)
+	if result.InitialPassword == "" {
+		t.Fatal("console registration missing password")
 	}
-	f.request("POST", "/api/auth/login", "", map[string]string{"email": input.Email, "password": result.InitialPassword}, 200, nil)
-	var count int
-	f.s.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
-	if count != 2 {
-		t.Fatal("invalid admin verification leaked account")
-	}
+	f.request("POST", "/api/auth/login", "", map[string]string{"email": "new@example.com", "password": result.InitialPassword}, 200, nil)
+	c.do("PATCH", "/api/users/"+result.User.ID, map[string]string{"email": ""}, 400, nil)
 }

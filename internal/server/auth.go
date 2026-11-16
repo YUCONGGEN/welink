@@ -126,6 +126,13 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, id string,
 			return false
 		}
 	}
+	// Accounts disabled in the management console cannot sign in by any
+	// path (password, email, QR); a trigger also guards the insert below.
+	var disabled bool
+	if err = tx.QueryRow("SELECT disabled FROM user_status WHERE user_id=?", id).Scan(&disabled); err == nil && disabled {
+		fail(w, 403, "此账号已被管理员停用，请联系管理员")
+		return false
+	}
 	if _, err := tx.Exec("INSERT INTO sessions VALUES(?,?,?)", hashToken(token), id, time.Now().Add(30*24*time.Hour).UnixMilli()); err != nil {
 		s.dbError(w, err)
 		return false

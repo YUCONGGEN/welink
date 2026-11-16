@@ -27,10 +27,8 @@ func TestSettingsDefaultsOverlayAndValidation(t *testing.T) {
 		t.Fatal("incorrect product defaults")
 	}
 }
-func TestRegistrationClosedAdminResetAndSelfChange(t *testing.T) {
+func TestRegistrationClosedHidesSignup(t *testing.T) {
 	f := setupCommunity(t)
-	admin, other, ordinary := f.register("reset_admin"), f.register("second_admin"), f.register("reset_target")
-	f.s.settings.Admin.Users = []string{admin.User.ID, other.User.ID}
 	f.s.settings.Registration.Enabled = false
 	f.request("POST", "/api/auth/register", "", map[string]string{"name": "unauthorized", "account": "unauthorized", "password": "password-123456"}, 403, nil)
 	var config struct{ RegistrationEnabled bool }
@@ -38,24 +36,6 @@ func TestRegistrationClosedAdminResetAndSelfChange(t *testing.T) {
 	if config.RegistrationEnabled {
 		t.Fatal("public signup appears enabled")
 	}
-	f.request("POST", "/api/admin/users", admin.Token, map[string]string{"name": "管理员创建"}, 200, nil)
-	f.request("POST", "/api/admin/users/"+ordinary.User.ID+"/password", ordinary.Token, map[string]string{"password": "not-allowed-password"}, 403, nil)
-	q, scan := newQRChallenge(f)
-	f.request("POST", "/api/auth/qr/scan", ordinary.Token, scan, 200, nil)
-	f.request("POST", "/api/auth/qr/confirm", ordinary.Token, map[string]any{"id": q.ID, "key": scan["key"], "accept": true}, 200, nil)
-	f.request("POST", "/api/admin/users/"+ordinary.User.ID+"/password", admin.Token, map[string]string{"password": "reset-password-876!"}, 200, nil)
-	f.request("POST", "/api/auth/qr/poll", "", map[string]string{"id": q.ID, "pollSecret": q.PollSecret}, 404, nil)
-	f.request("GET", "/api/me", ordinary.Token, nil, 401, nil)
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": ordinary.User.Number, "password": "test-password-937!"}, 401, nil)
-	var fresh account
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": ordinary.User.Number, "password": "reset-password-876!"}, 200, &fresh)
-	f.request("POST", "/api/auth/password", fresh.Token, map[string]string{"oldPassword": "reset-password-876!", "newPassword": "self-change-password-234!"}, 200, nil)
-	f.request("POST", "/api/auth/login", "", map[string]string{"account": ordinary.User.Number, "password": "self-change-password-234!"}, 200, nil)
-	f.request("POST", "/api/admin/users/"+other.User.ID+"/password", admin.Token, map[string]string{"password": "other-admin-password-987!"}, 200, nil)
-	f.request("GET", "/api/me", other.Token, nil, 401, nil)
-	f.request("GET", "/api/me", admin.Token, nil, 200, nil)
-	f.request("POST", "/api/admin/users/"+admin.User.ID+"/password", admin.Token, map[string]string{"password": "current-admin-password-234!"}, 200, nil)
-	f.request("GET", "/api/admin/users", admin.Token, nil, 200, nil)
 }
 func TestBootstrapAdminWritesPrivateCredentialsOnce(t *testing.T) {
 	settings := DefaultSettings()

@@ -69,7 +69,7 @@ macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 
 - 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 LinkMe 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。
 - Android：安装 `LinkMe-Android.apk`，支持 Android 8.0+ 的 64 位 ARM 手机（arm64-v8a），不再包含 32 位 ARM 与 x86。当前为直接安装的预览 APK。
-- 自助注册由服务器配置 `registration.enabled` 控制，当前部署已开放。Windows、Android 和 macOS 都使用邮箱与密码登录；新账号填写姓名并通过腾讯云邮箱验证码注册，忘记密码也通过验证码重置。系统会分配 6 位 LinkMe 号码作为员工搜索标识；桌面端也可用 Android 扫码登录。管理员可从“设置 → 管理员 · 账号管理”注册员工账号，姓名必填；管理员可编辑员工资料、重置密码和删除账号。
+- 自助注册由服务器配置 `registration.enabled` 控制，当前部署已开放。Windows、Android 和 macOS 都使用邮箱与密码登录；新账号填写姓名并通过腾讯云邮箱验证码注册，忘记密码也通过验证码重置。系统会分配 6 位 LinkMe 号码作为员工搜索标识；桌面端也可用 Android 扫码登录。员工账号统一在独立的网页**管理后台**（下载页右上角“管理后台登录”，即 `http://服务器:8251/admin/`；使用单独的后台管理员账号登录）中管理：新建账号、编辑资料与邮箱、重置密码、停用 / 启用、强制下线或下线单台设备、删除账号，并可修改全部系统设置、凭据文件和下载页安装包，所有操作记入操作日志；应用内不再提供管理员功能。安装与使用见 [一键部署与管理后台](docs/DEPLOYMENT.md)。
 - 注册和“编辑资料 → 更换头像”提供 100 个内置卡通头像，每次推荐 8 个，可换一批或查看全部；也可上传照片、拖动裁剪、缩放、旋转或恢复默认。照片最大 8 MB、单边最多 4096 像素，保存为 512 像素静态头像。群主和管理员可在群设置修改群头像，个人与群头像同步到其他在线设备。
 - 桌面登录页点击“使用二维码登录”；安卓登录后从消息页“+ → 扫一扫”或“我的 → 扫一扫 · 电脑登录”扫描。手机核对数字后确认，电脑自动登录。二维码 3 分钟有效、单次使用；也支持选择二维码图片。
 - 会话列表点击每行“更多”、Windows 右键或 Android 长按，可置顶、免打扰、标为已读、从消息列表移除。移除直接执行、不弹确认，只隐藏本账号会话，保留聊天历史和群成员资格。设置子页左上角提供返回，安卓系统返回键按当前页面逐层返回。
@@ -128,7 +128,7 @@ UI 源文件在 `internal/ui/src/`，构建到 `internal/ui/assets/`。Windows �
 }
 ```
 
-`true` 开放，`false` 关闭；更改后重启服务生效，无需重新编译或安装客户端。当前 LaunchAgent 配置了 KeepAlive，可执行 `launchctl kill SIGTERM gui/$(id -u)/cn.welink.server` 让服务正常退出并自动启动。`GET /api/public-config` 返回实际的 `registrationEnabled` 状态；客户端启动时读取，已打开的登录页需完全退出客户端后重新打开以更新入口。此开关仅控制自助注册，关闭时管理员仍可创建账号。
+`true` 开放，`false` 关闭；更改后重启服务生效，无需重新编译或安装客户端。当前 LaunchAgent 配置了 KeepAlive，可执行 `launchctl kill SIGTERM gui/$(id -u)/cn.welink.server` 让服务正常退出并自动启动。`GET /api/public-config` 返回实际的 `registrationEnabled` 状态；客户端启动时读取，已打开的登录页需完全退出客户端后重新打开以更新入口。此开关仅控制自助注册，关闭时管理员仍可在管理后台创建账号。以上所有配置也可在管理后台“系统设置”中修改并一键重启生效。
 
 每个账号的网盘额度使用同一配置文件中的 `drive.quota_gb`，默认及当前部署均为 `5`。配置单位按 1024³ 字节计算；修改后重启服务生效。降低额度不会删除已有文件，超出额度时暂停新增网盘上传，仍可下载或删除已有文件；聊天附件不占此额度。完整配置示例见 [welink.example.json](config/welink.example.json)。
 
@@ -162,7 +162,6 @@ node scripts/forwarding-test.mjs
 node scripts/media-test.mjs --long-recording
 node scripts/groups-test.mjs
 node scripts/group-workflow-test.mjs
-node scripts/admin-profile-test.mjs
 node scripts/remote-fullscreen-test.mjs
 node scripts/contacts-test.mjs
 node scripts/mentions-test.mjs

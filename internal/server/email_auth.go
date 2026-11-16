@@ -86,16 +86,9 @@ func (s *Server) emailCode(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	if p.Purpose != "register" && p.Purpose != "reset" && p.Purpose != "admin-register" {
+	if p.Purpose != "register" && p.Purpose != "reset" {
 		fail(w, 400, "验证码用途无效")
 		return
-	}
-	if p.Purpose == "admin-register" {
-		actor, _ := r.Context().Value(userKey{}).(string)
-		if actor == "" || !s.isAdmin(actor) {
-			fail(w, 403, "仅管理员可执行此操作")
-			return
-		}
 	}
 	if p.Purpose == "register" && !s.settings.Registration.Enabled {
 		fail(w, 403, "暂未开放自助注册，请联系管理员")
@@ -204,13 +197,13 @@ func verifyEmailCode(tx *sql.Tx, p emailInput, purpose string) error {
 	return err
 }
 func (s *Server) emailRegister(w http.ResponseWriter, r *http.Request) {
-	s.createEmailUser(w, r, false)
+	s.createEmailUser(w, r)
 }
-func (s *Server) createEmailUser(w http.ResponseWriter, r *http.Request, admin bool) {
-	if admin && !s.adminOnly(w, r) {
-		return
-	}
-	if !admin && !s.settings.Registration.Enabled {
+
+// createEmailUser is self-service registration. Administrators create
+// accounts in the management console instead.
+func (s *Server) createEmailUser(w http.ResponseWriter, r *http.Request) {
+	if !s.settings.Registration.Enabled {
 		fail(w, 403, "暂未开放自助注册，请联系管理员")
 		return
 	}
@@ -229,15 +222,6 @@ func (s *Server) createEmailUser(w http.ResponseWriter, r *http.Request, admin b
 	p.Email, valid = normalizeEmail(w, p.Email)
 	if !valid {
 		return
-	}
-	generated := admin && p.Password == ""
-	if generated {
-		var err error
-		p.Password, err = temporaryPassword()
-		if err != nil {
-			s.dbError(w, err)
-			return
-		}
 	}
 	p.Name = strings.TrimSpace(p.Name)
 	if p.Name == "" || !validText(p.Name, 32) || len(p.Password) < 8 || len(p.Password) > 72 {
@@ -259,15 +243,7 @@ func (s *Server) createEmailUser(w http.ResponseWriter, r *http.Request, admin b
 		return
 	}
 	defer tx.Rollback()
-	purpose := "register"
-	if admin {
-		purpose = "admin-register"
-		if err = adminSession(tx, r); err != nil {
-			s.dbError(w, err)
-			return
-		}
-	}
-	if err = verifyEmailCode(tx, p, purpose); err != nil {
+	if err = verifyEmailCode(tx, p, "register"); err != nil {
 		s.emailError(w, err)
 		return
 	}
@@ -292,28 +268,13 @@ func (s *Server) createEmailUser(w http.ResponseWriter, r *http.Request, admin b
 		_, err = tx.Exec("INSERT INTO user_emails VALUES(?,?,?)", id, p.Email, now())
 	}
 	if err == nil {
-		if admin {
-			_, err = tx.Exec("INSERT INTO admin_audit VALUES(?,?,?,?,?)", newID(), uid(r), id, "create-account", now())
-		}
-		if err == nil {
-			err = tx.Commit()
-		}
+		err = tx.Commit()
 	}
 	if err != nil {
 		s.dbError(w, err)
 		return
 	}
-	if admin {
-		u, _ := s.user(id)
-		u.Email = p.Email
-		result := map[string]any{"user": u}
-		if generated {
-			result["initialPassword"] = p.Password
-		}
-		ok(w, result)
-	} else {
-		s.issueSession(w, r, id)
-	}
+	s.issueSession(w, r, id)
 	s.directoryChanged()
 }
 func (s *Server) emailError(w http.ResponseWriter, err error) {

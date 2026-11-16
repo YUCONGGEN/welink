@@ -12,10 +12,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"welink/internal/publicweb"
 )
+
+// Server installers and bundles published for one-command deployment.
+var serverDownloadPattern = regexp.MustCompile(`^(install\.sh|install\.ps1|SHA256SUMS\.txt|linkme-server-docker\.tar\.gz|linkme-server-(linux|darwin|windows)-(amd64|arm64)\.(tar\.gz|zip))$`)
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if s.settings.Chat.UploadsPerHour > 0 && !s.rate(r, "upload:"+uid(r), s.settings.Chat.UploadsPerHour, time.Hour) {
@@ -257,6 +261,17 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		case "WeLink-Android.apk":
 			name = "LinkMe-Android.apk"
 		}
+		if rest, isServer := strings.CutPrefix(name, "server/"); isServer {
+			if !serverDownloadPattern.MatchString(rest) {
+				http.NotFound(w, r)
+				return
+			}
+			if strings.HasPrefix(rest, "install.") || strings.HasSuffix(rest, ".txt") {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			}
+			http.ServeFile(w, r, filepath.Join(s.downloads, "server", rest))
+			return
+		}
 		if name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" {
 			http.NotFound(w, r)
 			return
@@ -268,7 +283,7 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "LinkMe · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB}); err != nil {
+	if err := publicweb.Render(w, publicweb.Page{Kind: "download", Title: "LinkMe · 即时通讯", DownloadURL: strings.TrimRight(s.settings.DownloadURL, "/"), DriveGB: s.settings.Drive.QuotaGB, ConsoleURL: s.consoleURL()}); err != nil {
 		s.logger.Printf("render download page: %v", err)
 	}
 }

@@ -22,15 +22,17 @@ var pageCSS string
 var pageJS string
 
 type Page struct {
-	Kind         string
-	Title        string
-	Name         string
-	Size         string
-	Validity     string
-	Code         string
-	DisplayCode  string
-	DownloadURL  string
-	DriveGB      int64
+	Kind        string
+	Title       string
+	Name        string
+	Size        string
+	Validity    string
+	Code        string
+	DisplayCode string
+	DownloadURL string
+	DriveGB     int64
+	// ConsoleURL links the management console from the header when it is public.
+	ConsoleURL   string
 	Documents    []Document
 	Content      string
 	DocumentOpen bool

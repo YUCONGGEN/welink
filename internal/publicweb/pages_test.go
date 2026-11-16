@@ -45,6 +45,9 @@ func TestPublicPagesKeepLinksAndEscapeContent(t *testing.T) {
 			if page.Kind == "download" && (!strings.Contains(html, "/downloads/LinkMe-Setup.exe") || !strings.Contains(html, "/downloads/LinkMe-Android.apk") || !strings.Contains(html, "/downloads/LinkMe-macOS-arm64.zip") || !strings.Contains(html, "Apple Silicon") || !strings.Contains(html, "每人 5 GB") || strings.Contains(html, "LinkMe-Windows.exe") || strings.Contains(html, "便携版")) {
 				t.Fatal("missing client downloads or configured quota")
 			}
+			if page.Kind == "download" && (!strings.Contains(html, `id="deploy"`) || !strings.Contains(html, "/downloads/server/install.sh | sudo sh") || !strings.Contains(html, "/downloads/server/install.ps1 | iex") || !strings.Contains(html, "linkme-server-docker.tar.gz | tar xz") || !strings.Contains(html, "8253")) {
+				t.Fatal("missing server deployment guide")
+			}
 		})
 	}
 }

@@ -23,6 +23,10 @@ type Config struct {
 	Logger                *log.Logger
 	Settings              *Settings
 	EmailSender           emailSender
+	// ConfigPath is the settings file the console edits; empty disables editing.
+	ConfigPath string
+	// Supervised means a service manager restarts the process after it exits.
+	Supervised bool
 }
 type Server struct {
 	db                   *sql.DB
@@ -45,6 +49,11 @@ type Server struct {
 	media                *mediaRelay
 	emailSender          emailSender
 	ai                   *aiService
+	configPath           string
+	supervised           bool
+	started              time.Time
+	restart              chan struct{}
+	restartOnce          sync.Once
 }
 type bucket struct {
 	count int
@@ -82,7 +91,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = log.New(os.Stderr, "welink ", log.LstdFlags)
 	}
-	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux()}
+	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux(), configPath: cfg.ConfigPath, supervised: cfg.Supervised, started: time.Now(), restart: make(chan struct{})}
 	s.settings = settings
 	if err = s.initEmail(cfg.EmailSender); err != nil {
 		db.Close()
@@ -194,10 +203,6 @@ func (s *Server) routes() {
 		"POST /api/drive/folders": s.createDriveFolder, "PATCH /api/drive/folders/{id}": s.renameDriveFolder, "DELETE /api/drive/folders/{id}": s.deleteDriveFolder, "POST /api/drive/files/{id}/move": s.moveDriveFile,
 		"GET /api/drive": s.listDrive, "POST /api/drive/files": s.uploadDrive, "GET /api/drive/files/{id}": s.downloadDrive, "PATCH /api/drive/files/{id}": s.renameDrive, "DELETE /api/drive/files/{id}": s.deleteDrive, "POST /api/drive/files/{id}/share": s.shareDrive, "DELETE /api/drive/files/{id}/share": s.revokeDriveShare,
 		"GET /api/spaces/{user}": s.listSpace, "PATCH /api/spaces/me/access": s.setSpaceAccess, "GET /api/spaces/{user}/documents/{id}": s.readSpaceDocument, "POST /api/spaces/me/documents": s.saveSpaceDocument, "PUT /api/spaces/me/documents/{id}": s.saveSpaceDocument, "DELETE /api/spaces/me/documents/{id}": s.deleteSpaceDocument,
-		"POST /api/admin/users/{id}/password": s.adminResetPassword,
-		"POST /api/admin/users/email-code":    s.emailCode,
-		"GET /api/admin/users/{id}":           s.adminUserProfile, "PATCH /api/admin/users/{id}": s.adminUpdateProfile,
-		"GET /api/admin/users": s.adminUsers, "POST /api/admin/users": s.adminCreateUser, "DELETE /api/admin/users/{id}": s.adminDeleteUser,
 		"DELETE /api/conversations/{id}":    s.hideConversation,
 		"POST /api/conversations/{id}/open": s.openConversation,
 		"GET /api/users/{id}":               s.userProfile,
@@ -230,6 +235,13 @@ func (s *Server) routes() {
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {
 		s.mux.Handle(pattern, s.auth(h))
+	}
+	if s.settings.Console.Enabled && s.settings.Console.Public {
+		console := http.StripPrefix("/admin", s.consoleHandler("/admin"))
+		for _, method := range []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"} {
+			s.mux.Handle(method+" /admin/", console)
+		}
+		s.mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/admin/", http.StatusFound) })
 	}
 	s.mux.HandleFunc("GET /", s.landing)
 }
