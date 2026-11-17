@@ -1,12 +1,12 @@
 export function createMe({S,api,action,esc,icon,modal,closeModal,toast,refresh,selectConversation,renderSidebar}){
- const $=s=>document.querySelector(s),localDesktop=()=>['windows','darwin'].includes(S.config.platform);let config=null,local={workspace:'',available:false},generation=0,timer,task=null,seen=new Set(),starting=false;
+ const $=s=>document.querySelector(s),localDesktop=()=>['windows','darwin'].includes(S.config.platform)&&config?.localTasks!==false;let config=null,local={workspace:'',available:false},generation=0,timer,task=null,seen=new Set(),starting=false;
  const active=()=>S.conversations.find(c=>c.id===S.active),live=g=>g===generation&&S.user&&!S.signingOut;
  async function start(){stop();const g=generation;try{const value=await api('/api/ai/config');if(!live(g))return;config=value;if(!value.enabled)return;if(localDesktop()){try{const prefs=await api('/local/ai/config');if(live(g))local=prefs}catch{}}if(live(g)){renderSidebar();poll()}}catch{}}
  function stop(){generation++;clearTimeout(timer);task=null;config=null;local={workspace:'',available:false};seen.clear();starting=false;$('#me-panel')?.remove()}
  function sidebar(){return config?.enabled&&!S.conversations.some(c=>c.peer?.id===config.user.id)?'<button class="conversation-row me-entry" data-me-open><span class="me-avatar">M</span><div class="row-text"><b>Me <em class="ai-label">AI</em></b><div class="row-preview">你的 AI 助手</div></div></button>':''}
  function render(){const panel=$('#me-panel');if(!panel||!active()?.peer?.ai)return;panel.classList.remove('hidden');
   if(!panel.querySelector('.me-config'))panel.innerHTML='<div class="me-config"><span class="ai-label">AI</span><span data-me-workspace></span><button class="text-btn" data-me-workspace-button>工作目录</button></div><div class="me-progress" role="status"><span data-me-status></span><button class="text-btn hidden" data-me-cancel>停止</button></div><div class="me-approvals"></div>';
-  panel.querySelector('[data-me-workspace]').textContent=localDesktop()?(local.workspace?'本机：'+local.workspace:'对话模式 · 选择目录后可处理本机任务'):'记住本会话上下文 · 本机任务请在桌面端执行';
+  panel.querySelector('[data-me-workspace]').textContent=config?.localTasks===false?'对话模式 · 当前模型不支持本机任务':localDesktop()?(local.workspace?'本机：'+local.workspace:'对话模式 · 选择目录后可处理本机任务'):'记住本会话上下文 · 本机任务请在桌面端执行';
   panel.querySelector('[data-me-workspace-button]').classList.toggle('hidden',!localDesktop());
   const current=task?.conversationId===S.active?task:null,busy=starting||current?.state==='running';panel.querySelector('[data-me-status]').textContent=starting?'正在交给 Me…':current?.error||(current?.state==='running'?'Me 正在处理…':current?.state==='completed'?'已完成':current?.state==='cancelled'?'已停止':'');
   panel.querySelector('[data-me-cancel]').classList.toggle('hidden',!current||!busy);

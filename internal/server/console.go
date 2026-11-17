@@ -151,6 +151,9 @@ func (s *Server) consoleHandler(prefix string) http.Handler {
 		static.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("POST /api/login", s.consoleLogin)
+	// Name and icon for the login screen and sidebar (no session needed).
+	mux.HandleFunc("GET /api/brand", s.publicBranding)
+	mux.HandleFunc("GET /api/brand/icon", s.brandIcon)
 	for pattern, h := range map[string]func(http.ResponseWriter, *http.Request, consoleActor){
 		"POST /api/logout": s.consoleLogout, "GET /api/me": s.consoleMe, "POST /api/me/password": s.consoleChangePassword,
 		"GET /api/overview": s.consoleOverview, "GET /api/audit": s.consoleAudit,
@@ -163,6 +166,8 @@ func (s *Server) consoleHandler(prefix string) http.Handler {
 		"GET /api/files": s.consoleConfigFiles, "PUT /api/files/{kind}": s.consoleSaveConfigFile,
 		"GET /api/downloads": s.consoleDownloads, "PUT /api/downloads/{name}": s.consoleUploadDownload, "DELETE /api/downloads/{name}": s.consoleDeleteDownload,
 		"POST /api/restart": s.consoleRestart,
+		"GET /api/branding": s.consoleBranding, "PUT /api/branding": s.consoleSaveBranding, "PUT /api/branding/icon": s.consoleUploadBrandIcon, "DELETE /api/branding/icon": s.consoleDeleteBrandIcon,
+		"GET /api/ai": s.consoleAI, "PUT /api/ai": s.consoleSaveAI, "POST /api/ai/test": s.consoleTestAI,
 	} {
 		mux.Handle(pattern, s.consoleAuth(h))
 	}

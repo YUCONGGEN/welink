@@ -27,7 +27,14 @@ type AISettings struct {
 	ContextMessages    int    `json:"context_messages"`
 	ContextCharacters  int    `json:"context_characters"`
 	ConcurrentRequests int    `json:"concurrent_requests"`
+	// API is the provider protocol: "responses" (OpenAI Responses) or "chat"
+	// (OpenAI-compatible Chat Completions: DeepSeek, Qwen, Kimi, GLM, Ollama…).
+	// Local desktop tasks run Codex, which needs the Responses API.
+	API string `json:"api"`
 }
+
+func (a AISettings) chatAPI() bool { return a.API == "chat" }
+
 type aiService struct {
 	user, base, key string
 	client          *http.Client
@@ -63,7 +70,7 @@ func (s *Server) initAI() error {
 		return errors.New("invalid AI credentials file")
 	}
 	u, err := url.Parse(private.BaseURL)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") || len(private.Token) < 16 {
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") || len(private.Token) < 8 {
 		return errors.New("invalid AI provider settings")
 	}
 	tx, err := s.db.Begin()
@@ -106,7 +113,7 @@ func (s *Server) aiConfig(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, err)
 		return
 	}
-	ok(w, map[string]any{"enabled": true, "user": u, "model": s.settings.AI.Model, "effort": s.settings.AI.ReasoningEffort})
+	ok(w, map[string]any{"enabled": true, "user": u, "model": s.settings.AI.Model, "effort": s.settings.AI.ReasoningEffort, "localTasks": !s.settings.AI.chatAPI()})
 }
 
 type aiContextMessage struct {
@@ -346,8 +353,15 @@ func (s *Server) answerAI(ctx context.Context, id, user, cid string, history []a
 		return
 	}
 	payload := map[string]any{"model": s.settings.AI.Model, "reasoning": map[string]string{"effort": s.settings.AI.ReasoningEffort}, "instructions": aiInstructions, "input": history, "store": false, "stream": true}
+	endpoint := a.base + "/responses"
+	readReply := readAIReply
+	if s.settings.AI.chatAPI() {
+		messages := append([]aiContextMessage{{Role: "system", Content: aiInstructions}}, history...)
+		payload = map[string]any{"model": s.settings.AI.Model, "messages": messages, "stream": true}
+		endpoint, readReply = a.base+"/chat/completions", readChatReply
+	}
 	raw, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", a.base+"/responses", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return
 	}
@@ -360,10 +374,10 @@ func (s *Server) answerAI(ctx context.Context, id, user, cid string, history []a
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		_ = s.finishAI(id, user, "", fmt.Sprintf("AI 服务返回 %d，请稍后重试", resp.StatusCode))
+		_ = s.finishAI(id, user, "", providerError(resp))
 		return
 	}
-	text, err := readAIReply(resp.Body, resp.Header.Get("Content-Type"), func(delta string) {
+	text, err := readReply(resp.Body, resp.Header.Get("Content-Type"), func(delta string) {
 		if ctx.Err() != nil {
 			return
 		}
@@ -465,6 +479,10 @@ func (s *Server) aiProxy(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "Me 暂未启用")
 		return
 	}
+	if s.settings.AI.chatAPI() {
+		fail(w, 400, "当前 AI 模型使用 Chat Completions 接口，不支持本机任务；请在 Me 中清除工作目录，使用对话模式")
+		return
+	}
 	grant := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if len(grant) != 64 {
 		fail(w, 401, "任务授权无效")
@@ -535,4 +553,110 @@ func (s *Server) aiProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// readChatReply reads an OpenAI-compatible Chat Completions reply, streamed
+// (server-sent events) or not. Reasoning text (deepseek-reasoner's
+// reasoning_content) is not part of the answer and is skipped.
+func readChatReply(body io.Reader, contentType string, onDelta ...func(string)) (string, error) {
+	type choice struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	type chunk struct {
+		Choices []choice        `json:"choices"`
+		Error   json.RawMessage `json:"error"`
+	}
+	body = io.LimitReader(body, 8<<20)
+	if !strings.Contains(contentType, "text/event-stream") {
+		var result chunk
+		if json.NewDecoder(body).Decode(&result) != nil || len(result.Choices) == 0 {
+			return "", errors.New("AI 回复格式无效")
+		}
+		return result.Choices[0].Message.Content, nil
+	}
+	var text strings.Builder
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var c chunk
+		if json.Unmarshal([]byte(data), &c) != nil {
+			continue
+		}
+		if len(c.Error) > 0 && string(c.Error) != "null" {
+			return "", errors.New("AI 服务返回错误：" + providerMessage(c.Error))
+		}
+		for _, ch := range c.Choices {
+			if delta := ch.Delta.Content; delta != "" {
+				text.WriteString(delta)
+				for _, f := range onDelta {
+					f(delta)
+				}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", errors.New("AI 回复中断，请重试")
+	}
+	if text.Len() == 0 {
+		return "", errors.New("AI 没有返回内容")
+	}
+	return text.String(), nil
+}
+
+// providerError turns a provider's non-200 reply into a readable message,
+// including its own explanation (bad key, unknown model, no balance…).
+func providerError(resp *http.Response) string {
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	message := providerMessage(raw)
+	if message == "" {
+		return fmt.Sprintf("AI 服务返回 %d，请稍后重试", resp.StatusCode)
+	}
+	return fmt.Sprintf("AI 服务返回 %d：%s", resp.StatusCode, message)
+}
+
+func providerMessage(raw []byte) string {
+	var v struct {
+		Error   json.RawMessage `json:"error"`
+		Message string          `json:"message"`
+	}
+	text := ""
+	if json.Unmarshal(raw, &v) == nil {
+		var nested struct {
+			Message string `json:"message"`
+		}
+		var plain string
+		switch {
+		case json.Unmarshal(v.Error, &nested) == nil && nested.Message != "":
+			text = nested.Message
+		case json.Unmarshal(v.Error, &plain) == nil && plain != "":
+			text = plain
+		case v.Message != "":
+			text = v.Message
+		}
+	} else {
+		var nested struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(raw, &nested) == nil {
+			text = nested.Message
+		}
+	}
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) > 200 {
+		runes = append(runes[:200], '…')
+	}
+	return string(runes)
 }

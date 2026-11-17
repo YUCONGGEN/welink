@@ -13,8 +13,8 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
     if(!selection)return;
     const selectedMessages=S.messages.filter(m=>selection.ids.has(m.id));
     selection.ids=new Set(selectedMessages.map(m=>m.id));
-    const count=selection.ids.size,unavailable=selectedMessages.some(m=>m.recalled);
-    area.insertAdjacentHTML('afterend',`<section class="message-selection-toolbar" id="message-selection-toolbar"><div><b>已选择 ${count} 条消息</b><button data-fw="cancel-select">取消</button></div><nav><button data-fw="selected-forward" ${!count||unavailable?'disabled':''} title="${unavailable?'已撤回消息不能转发':'转发所选消息'}">${icon('send')}<span>转发</span></button><button data-fw="selected-delete" ${count?'':'disabled'}>${icon('trash')}<span>删除</span></button></nav></section>`);
+    const count=selection.ids.size,unavailable=selectedMessages.some(m=>m.recalled),voice=selectedMessages.some(m=>m.kind==='voice');
+    area.insertAdjacentHTML('afterend',`<section class="message-selection-toolbar" id="message-selection-toolbar"><div><b>已选择 ${count} 条消息</b><button data-fw="cancel-select">取消</button></div><nav><button data-fw="selected-forward" ${!count||unavailable||voice?'disabled':''} title="${unavailable?'已撤回消息不能转发':voice?'语音消息不能转发':'转发所选消息'}">${icon('send')}<span>转发</span></button><button data-fw="selected-delete" ${count?'':'disabled'}>${icon('trash')}<span>删除</span></button></nav></section>`);
   }
   function start(id){selection={cid:S.active,ids:new Set([id])};renderMessages(true)}
   function toggle(id){if(selection.ids.has(id))selection.ids.delete(id);else if(selection.ids.size<100)selection.ids.add(id);else{toast('一次最多选择 100 条消息');return}renderMessages(true)}
@@ -46,6 +46,7 @@ export function createForwarding({S,api,action,modal,closeModal,toast,esc,icon,a
   }
   function open(ids){
     const messages=S.messages.filter(m=>ids.includes(m.id));if(!messages.length||messages.some(m=>m.recalled)||messages.length!==ids.length){toast('所选消息已删除或撤回');return}
+     if(messages.some(m=>m.kind==='voice')){toast('语音消息不能转发');return}
     const state=chooser={cid:S.active,ids,tab:'recent',targets:new Map(),mode:ids.length>1?'merge':'each',messages,signature:'',clientId:''};
     modal('发送给',`<div class="forward-chooser"><section class="forward-people"><input id="forward-search" aria-label="搜索接收人" placeholder="搜索好友或群聊"><nav class="forward-tabs"><button data-forward-tab="recent" class="active">最近</button><button data-forward-tab="friends">好友</button><button data-forward-tab="groups">群聊</button></nav><div id="forward-recipients"></div></section><section class="forward-confirm"><b id="forward-selected-count"></b><div id="forward-selected"></div>${ids.length>1?'<div class="forward-mode"><label><input type="radio" name="forward-mode" value="merge" checked>合并转发</label><label><input type="radio" name="forward-mode" value="each">逐条转发</label></div>':''}<div class="forward-send-preview"><b>${ids.length>1?'聊天记录':esc(preview(messages[0]).slice(0,60))}</b>${ids.length>1?messages.slice(0,3).map(m=>`<p>${esc(m.name+'：'+preview(m))}</p>`).join(''):''}<small>${ids.length} 条消息</small></div><textarea id="forward-note" placeholder="给对方留言（可选）" aria-label="转发留言" maxlength="600"></textarea></section></div>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="forward-submit" disabled>发送</button>',true);
     $('.modal').classList.add('forward-dialog');renderTargets();renderChosen();

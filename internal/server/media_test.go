@@ -104,18 +104,13 @@ func TestVoiceValidationPlaybackAuthorizationAndForwardMetadata(t *testing.T) {
 		t.Fatal("authenticated playback range failed")
 	}
 	checkForwardDownload(t, f, upload.ID, c, 403, nil)
-	var forwarded forwardResult
-	f.request("POST", "/api/messages/forward", a.Token, forwardRequest{ConversationID: source, MessageIDs: []string{message.ID}, Targets: []string{target}, Mode: "merge", ClientID: newID()}, 200, &forwarded)
-	var record forwardDocument
-	f.request("GET", "/api/messages/"+forwarded.IDs[0]+"/forward", c.Token, nil, 200, &record)
-	if len(record.Items) != 1 || record.Items[0].DurationMS != 1250 {
-		t.Fatal("merged voice metadata missing")
-	}
-	checkForwardDownload(t, f, record.Items[0].AttachmentID, c, 200, wav)
-	var copiedKind string
-	var copiedDuration int64
-	if err = f.s.db.QueryRow("SELECT kind,duration_ms FROM attachment_media WHERE attachment_id=?", record.Items[0].AttachmentID).Scan(&copiedKind, &copiedDuration); err != nil || copiedKind != "voice" || copiedDuration != 1250 {
-		t.Fatal("attachment metadata not cloned", err)
+	// Like WeChat, voice messages can be recalled but not forwarded.
+	for _, mode := range []string{"merge", "each"} {
+		var failure struct{ Error string }
+		f.request("POST", "/api/messages/forward", a.Token, forwardRequest{ConversationID: source, MessageIDs: []string{message.ID}, Targets: []string{target}, Mode: mode, ClientID: newID()}, 400, &failure)
+		if failure.Error != "语音消息不能转发" {
+			t.Fatal("voice forward", mode, failure.Error)
+		}
 	}
 	var recalled Message
 	f.request("POST", "/api/messages/"+message.ID+"/recall", a.Token, nil, 200, &recalled)

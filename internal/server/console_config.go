@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -576,4 +578,173 @@ func (s *Server) consoleDeleteDownload(w http.ResponseWriter, r *http.Request, a
 	}
 	_ = s.audit(nil, a, "delete-package", name, "")
 	ok(w, map[string]bool{"ok": true})
+}
+
+// AI model configuration: protocol, endpoint URL, API key (write-only) and
+// model ID live together on one console page. The key and URL are stored in
+// the private credentials file; everything else in the settings file.
+
+type aiCredentials struct {
+	BaseURL string `json:"base_url"`
+	Token   string `json:"token"`
+}
+
+type aiConfigInput struct {
+	Enabled bool   `json:"enabled"`
+	API     string `json:"api"`
+	BaseURL string `json:"baseUrl"`
+	APIKey  string `json:"apiKey"`
+	Model   string `json:"model"`
+	Effort  string `json:"effort"`
+}
+
+func (s *Server) aiCredentialsPath(settings Settings) string {
+	if settings.AI.CredentialsFile != "" {
+		return settings.AI.CredentialsFile
+	}
+	return s.defaultConfigFilePath("ai")
+}
+
+func readAICredentials(path string) aiCredentials {
+	var c aiCredentials
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &c)
+	}
+	return c
+}
+
+func (s *Server) consoleAI(w http.ResponseWriter, r *http.Request, _ consoleActor) {
+	settings, err := s.fileSettings()
+	if err != nil {
+		settings = s.settings
+	}
+	creds := readAICredentials(s.aiCredentialsPath(settings))
+	api := settings.AI.API
+	if api == "" {
+		api = "responses"
+	}
+	ok(w, map[string]any{"enabled": settings.AI.Enabled, "api": api, "baseUrl": creds.BaseURL, "keySet": creds.Token != "", "model": settings.AI.Model, "effort": settings.AI.ReasoningEffort,
+		"running": s.ai != nil, "restartPending": s.settingsChangedOnDisk(), "supervised": s.supervised})
+}
+
+// resolve fills a blank key from the saved credentials and validates the three
+// required fields.
+func (s *Server) resolveAIInput(p *aiConfigInput, settings Settings) error {
+	p.API, p.BaseURL, p.Model, p.Effort = strings.TrimSpace(p.API), strings.TrimRight(strings.TrimSpace(p.BaseURL), "/"), strings.TrimSpace(p.Model), strings.TrimSpace(p.Effort)
+	p.APIKey = strings.TrimSpace(p.APIKey)
+	if p.API == "" {
+		p.API = "chat"
+	}
+	if p.API != "chat" && p.API != "responses" {
+		return errors.New("请选择接口类型")
+	}
+	if p.APIKey == "" {
+		p.APIKey = readAICredentials(s.aiCredentialsPath(settings)).Token
+	}
+	u, err := url.Parse(p.BaseURL)
+	switch {
+	case p.BaseURL == "" || err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.User != nil:
+		return errors.New("请填写以 http:// 或 https:// 开头的接口地址，例如 https://api.deepseek.com")
+	case len(p.APIKey) < 8:
+		return errors.New("请填写 API Key")
+	case p.Model == "" || len(p.Model) > 128 || strings.ContainsAny(p.Model, " \r\n\t"):
+		return errors.New("请填写模型 ID，例如 deepseek-chat")
+	}
+	if p.API == "responses" && p.Effort == "" {
+		p.Effort = "medium"
+	}
+	return nil
+}
+
+func (s *Server) consoleSaveAI(w http.ResponseWriter, r *http.Request, a consoleActor) {
+	var p aiConfigInput
+	if !decode(w, r, &p) {
+		return
+	}
+	settings, err := s.fileSettings()
+	if err != nil {
+		fail(w, 409, "配置文件当前无效，请先在“系统设置”中修正："+err.Error())
+		return
+	}
+	if err = s.resolveAIInput(&p, settings); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	path := s.aiCredentialsPath(settings)
+	data, _ := json.MarshalIndent(aiCredentials{BaseURL: p.BaseURL, Token: p.APIKey}, "", "  ")
+	if err = writeFileAtomic(path, data, 0600); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	settings.AI.Enabled, settings.AI.API, settings.AI.Model, settings.AI.CredentialsFile = p.Enabled, p.API, p.Model, path
+	if p.Effort != "" {
+		settings.AI.ReasoningEffort = p.Effort
+	}
+	if err = s.saveSettingsFile(settings); err != nil {
+		s.dbError(w, err)
+		return
+	}
+	_ = s.audit(nil, a, "save-ai", "", p.API+" "+p.BaseURL+" "+p.Model)
+	ok(w, map[string]any{"ok": true, "restartPending": s.settingsChangedOnDisk(), "supervised": s.supervised})
+}
+
+// consoleTestAI sends one short request with the given settings (saved key if
+// the field is blank) and reports the model's reply or the provider's error.
+func (s *Server) consoleTestAI(w http.ResponseWriter, r *http.Request, _ consoleActor) {
+	var p aiConfigInput
+	if !decode(w, r, &p) {
+		return
+	}
+	if !s.rate(r, "console-ai-test", 20, time.Minute) {
+		fail(w, 429, "测试过于频繁，请稍后再试")
+		return
+	}
+	settings, _ := s.fileSettings()
+	if err := s.resolveAIInput(&p, settings); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	prompt := "请只回复四个字：连接成功"
+	payload := map[string]any{"model": p.Model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "stream": false, "max_tokens": 32}
+	endpoint, read := p.BaseURL+"/chat/completions", readChatReply
+	if p.API == "responses" {
+		payload = map[string]any{"model": p.Model, "input": prompt, "store": false, "max_output_tokens": 64}
+		endpoint, read = p.BaseURL+"/responses", readAIReply
+	}
+	raw, _ := json.Marshal(payload)
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(raw))
+	if err != nil {
+		fail(w, 400, "接口地址无效")
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	started := time.Now()
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		message := "无法连接到 " + endpoint
+		if ctx.Err() != nil {
+			message += "（45 秒内没有响应）"
+		}
+		fail(w, 502, message)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		fail(w, 502, providerError(resp)+"（请求地址 "+endpoint+"）")
+		return
+	}
+	reply, err := read(resp.Body, resp.Header.Get("Content-Type"))
+	if err != nil {
+		fail(w, 502, err.Error())
+		return
+	}
+	runes := []rune(strings.TrimSpace(reply))
+	if len(runes) > 120 {
+		runes = append(runes[:120], '…')
+	}
+	ok(w, map[string]any{"ok": true, "reply": string(runes), "ms": time.Since(started).Milliseconds(), "endpoint": endpoint})
 }

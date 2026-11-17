@@ -362,7 +362,7 @@ func (s *Server) publicSpace(w http.ResponseWriter, r *http.Request) {
 		}
 		rows.Close()
 	}
-	if err := publicweb.Render(w, page); err != nil {
+	if err := publicweb.Render(w, s.brandPage(page)); err != nil {
 		s.logger.Printf("render public space: %v", err)
 	}
 }

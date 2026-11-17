@@ -43,6 +43,8 @@ const icons = {
   sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M14 9l2 2"/>',
   box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m20.5 16-5-5-8 8"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
   logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h11"/>',
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
@@ -119,7 +121,7 @@ async function copy(text) {
 
 // ---------- login ----------
 function renderLogin(message) {
-  app.innerHTML = `<div class="login"><div class="login-card"><div class="brand"><div class="brand-mark">M</div><div><b>LinkMe 管理后台</b><span>用户与系统管理</span></div></div>
+  app.innerHTML = `<div class="login"><div class="login-card"><div class="brand">${brandMark()}<div><b>${esc(brand.name)} 管理后台</b><span>用户与系统管理</span></div></div>
   <form id="login-form" autocomplete="on"><label class="field">用户名<input type="text" name="username" autocomplete="username" required></label>
   <label class="field">密码<input type="password" name="password" autocomplete="current-password" required></label>
   <div class="form-error">${esc(message || '')}</div><button class="btn primary" type="submit">登录</button></form>
@@ -137,18 +139,18 @@ function renderLogin(message) {
 // ---------- shell and routing ----------
 const pages = [
   ['overview', '概览', 'home'], ['users', '用户管理', 'users'], ['admins', '后台管理员', 'shield'],
-  ['settings', '系统设置', 'sliders'], ['credentials', '凭据与密钥', 'key'], ['packages', '客户端安装包', 'box'], ['audit', '操作日志', 'list'],
+  ['settings', '系统设置', 'sliders'], ['brand', '品牌与图标', 'image'], ['ai', 'AI 模型', 'spark'], ['credentials', '凭据与密钥', 'key'], ['packages', '客户端安装包', 'box'], ['audit', '操作日志', 'list'],
 ];
 function shell() {
   if ($('.shell')) return;
-  app.innerHTML = `<div class="shell"><aside class="side"><div class="brand"><div class="brand-mark">M</div><div><b>LinkMe</b><span>管理后台</span></div></div>
+  app.innerHTML = `<div class="shell"><aside class="side"><div class="brand">${brandMark()}<div><b>${esc(brand.name)}</b><span>管理后台</span></div></div>
    ${pages.map(([id, label, ic]) => `<button class="nav" data-nav="${id}">${icon(ic)}<span>${label}</span></button>`).join('')}
    <div class="side-foot"><div class="side-user">当前登录<b>${esc(state.me.username)}</b></div>
    <button class="nav" data-act="password">${icon('lock')}<span>修改密码</span></button><button class="nav" data-act="logout">${icon('logout')}<span>退出登录</span></button></div></aside>
-   <div><div class="topbar"><button class="btn ghost small" data-act="menu" aria-label="菜单">${icon('menu')}</button><b>LinkMe 管理后台</b></div><main class="main" id="main"></main></div></div>`;
+   <div><div class="topbar"><button class="btn ghost small" data-act="menu" aria-label="菜单">${icon('menu')}</button><b>${esc(brand.name)} 管理后台</b></div><main class="main" id="main"></main></div></div>`;
   app.addEventListener('click', e => {
     const nav = e.target.closest('[data-nav]');
-    if (nav) { if (!leaveSettings()) return; location.hash = '#/' + nav.dataset.nav; $('.shell').classList.remove('menu-open'); return; }
+    if (nav) { if (!leaveSettings()) return; const target = '#/' + nav.dataset.nav; if (location.hash === target) route(); else location.hash = target; $('.shell').classList.remove('menu-open'); return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'menu') $('.shell').classList.toggle('menu-open');
     if (act === 'logout') busy(null, async () => { await api('/logout', { method: 'POST' }); state.me = null; renderLogin(); });
@@ -166,7 +168,7 @@ function route() {
   const main = $('#main');
   main.onclick = main.onchange = null;
   main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  const views = { overview, users, user: () => userDetail(id), admins, settings, credentials, packages, audit };
+  const views = { overview, users, user: () => userDetail(id), admins, settings, brand: branding, ai: aiModel, credentials, packages, audit };
   (views[page] || overview)().catch(e => { if (e.status !== 401) main.innerHTML = `<div class="card card-body empty">${esc(e.message)}</div>`; });
   window.scrollTo(0, 0);
 }
@@ -469,14 +471,10 @@ const sections = [
     ['media.secret_file', 'text', '中继密钥文件', '在“凭据与密钥”中生成后会自动填写', true],
     ['media.allowed_peer_cidrs', 'list', '允许中继的内网网段', '每行一个 CIDR，留空则只允许公网地址', true],
   ] },
-  { id: 'ai', title: 'Me 助手', desc: '启用前请先在“凭据与密钥”中填写接口地址与令牌。', fields: [
-    ['ai.enabled', 'bool', '启用 Me 助手'],
-    ['ai.model', 'text', '模型名称'],
-    ['ai.reasoning_effort', 'text', '推理强度', '例如 low / medium / high / xhigh'],
+  { id: 'ai', title: 'Me 助手', desc: '接口地址、API Key、模型 ID 在“AI 模型”页面设置；这里是用量限制。', fields: [
     ['ai.context_messages', 'int', '上下文消息条数', '2–200'],
     ['ai.context_characters', 'int', '上下文字符数', '1000–200000'],
     ['ai.concurrent_requests', 'int', '同时处理的请求数', '1–32'],
-    ['ai.credentials_file', 'text', '接口凭据文件', '在“凭据与密钥”中保存后会自动填写', true],
   ] },
   { id: 'raw', title: '配置文件（高级）', desc: '直接编辑完整的 JSON 配置，保存前会校验。' },
 ];
@@ -557,12 +555,126 @@ async function saveSettings(button) {
   });
 }
 
+
+
+// ---------- branding ----------
+const brand = { name: 'LinkMe', iconVersion: '' };
+async function loadBrand() {
+  try { const b = await (await fetch(API + '/brand', { cache: 'no-store' })).json(); brand.name = b.name || 'LinkMe'; brand.iconVersion = b.iconVersion || ''; } catch { }
+  document.title = brand.name + ' 管理后台';
+}
+// The sidebar/login mark: the uploaded icon, or the default "M" tile.
+function brandMark() { return brand.iconVersion ? `<img class="brand-mark brand-img" src="${API}/brand/icon?v=${esc(brand.iconVersion)}" alt="">` : '<div class="brand-mark">M</div>'; }
+async function branding() {
+  const b = await api('/branding');
+  brand.name = b.name; brand.iconVersion = b.iconVersion || '';
+  const preview = () => brand.iconVersion ? `<img src="${API}/brand/icon?v=${esc(brand.iconVersion)}" alt="">` : '<span class="default-mark">M</span>';
+  $('#main').innerHTML = head('品牌与图标', '修改软件名称、上传图标后立即生效：下载页、管理后台和员工的客户端都会显示新的名称与图标。') +
+   `<div class="grid two"><div class="card"><div class="card-head"><div><h2>软件名称</h2><p>默认为 ${esc(b.default)}</p></div></div><div class="card-body stack">
+     <label class="field">名称<input type="text" id="brand-name" maxlength="24" value="${esc(b.name)}" placeholder="${esc(b.default)}"><small>1–24 个字符，例如公司或产品名称；留空恢复默认</small></label></div>
+     <div class="save-bar"><span>客户端在线时会立即更新</span><span class="spacer"></span><button class="btn primary" data-save-brand>保存名称</button></div></div>
+    <div class="card"><div class="card-head"><div><h2>软件图标</h2><p>PNG 或 JPG，建议 512×512 的正方形图片</p></div></div><div class="card-body stack">
+     <div class="brand-preview"><div class="brand-icon-preview" id="brand-icon">${preview()}</div><div><b id="brand-preview-name">${esc(b.name)}</b><small>${b.icon ? '已使用自定义图标' : '当前为默认图标'}</small></div></div>
+     <input type="file" id="brand-file" class="hidden" accept="image/png,image/jpeg"><div class="progress hidden" id="brand-progress"><i></i></div></div>
+     <div class="save-bar"><span>非正方形图片会自动居中裁剪</span><span class="spacer"></span>${b.icon ? '<button class="btn danger small" data-reset-icon>恢复默认图标</button>' : ''}<button class="btn primary" data-upload-icon>${icon('upload')}上传图标</button></div></div></div>
+    <div class="card" id="brand-scope"><div class="card-body"><b>生效范围</b><ul class="help">
+     <li>下载页、会议邀请页、网盘分享页、管理后台：名称与图标</li>
+     <li>Windows、macOS、安卓客户端界面：登录页、窗口标题、会话列表等处的名称与图标；Windows 任务栏与托盘图标（含新消息呼吸灯）</li>
+     <li>不会改变：安卓桌面上的 App 名称与启动图标、安装包文件名（需重新打包）</li></ul></div></div>`;
+  $('#brand-name').oninput = e => { $('#brand-preview-name').textContent = e.target.value.trim() || b.default; };
+  $('[data-save-brand]').onclick = e => busy(e.currentTarget, async () => {
+    const r = await api('/branding', { method: 'PUT', body: { name: $('#brand-name').value.trim() } });
+    brand.name = r.name; document.title = brand.name + ' 管理后台'; refreshChrome(); toast('名称已保存并生效');
+  });
+  $('[data-upload-icon]').onclick = () => $('#brand-file').click();
+  $('#brand-file').onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    if (file.size > 4 * 1048576) { toast('图标文件不能超过 4 MB', true); return; }
+    busy($('[data-upload-icon]'), async () => {
+      const res = await fetch(API + '/branding/icon', { method: 'PUT', headers: { 'X-LinkMe-Console': '1' }, body: file, credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new ApiError(data.error || '上传失败', res.status);
+      brand.iconVersion = data.iconVersion || ''; refreshChrome(); toast('图标已更新'); branding();
+    });
+  };
+  const reset = $('[data-reset-icon]');
+  if (reset) reset.onclick = () => confirmModal('恢复默认图标', '删除自定义图标，恢复默认图标？', '恢复', 'danger solid').then(ok => ok && busy(reset, async () => {
+    const r = await api('/branding/icon', { method: 'DELETE' }); brand.iconVersion = r.iconVersion || ''; refreshChrome(); toast('已恢复默认图标'); branding();
+  }));
+}
+// Re-render the sidebar brand after a change.
+function refreshChrome() {
+  const side = $('.side .brand'); if (side) { side.innerHTML = `${brandMark()}<div><b>${esc(brand.name)}</b><span>管理后台</span></div>`; }
+  const top = $('.topbar b'); if (top) top.textContent = brand.name + ' 管理后台';
+}
+
+// ---------- AI model ----------
+// Presets only pre-fill the form; every field stays editable.
+const aiPresets = [
+  { id: 'deepseek', label: 'DeepSeek', api: 'chat', baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { id: 'qwen', label: '通义千问', api: 'chat', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
+  { id: 'kimi', label: 'Kimi', api: 'chat', baseUrl: 'https://api.moonshot.cn/v1', model: '', models: [] },
+  { id: 'glm', label: '智谱 GLM', api: 'chat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: '', models: [] },
+  { id: 'ollama', label: 'Ollama（本机）', api: 'chat', baseUrl: 'http://127.0.0.1:11434/v1', model: '', models: [] },
+  { id: 'openai', label: 'OpenAI', api: 'responses', baseUrl: 'https://api.openai.com/v1', model: '', models: [] },
+];
+async function aiModel() {
+  const c = await api('/ai');
+  $('#main').innerHTML = head('AI 模型', 'Me 助手使用的大模型。<b>接口地址、API Key、模型 ID</b> 为必填项，可接入 DeepSeek、通义千问、Kimi、智谱等兼容 OpenAI 接口的模型。') +
+    `<div id="ai-banner">${restartBanner(c.restartPending)}</div>
+    <div class="card"><div class="card-head"><div><h2>模型接入</h2><p>${c.running ? '<span class="badge ok">Me 助手运行中</span>' : '<span class="badge">Me 助手未运行</span>'} 保存后重启服务生效</p></div></div>
+    <div class="card-body stack"><form id="ai-form" class="stack" autocomplete="off">
+      <label class="check"><input type="checkbox" class="switch" name="enabled" ${c.enabled ? 'checked' : ''}><span>启用 Me 助手<br><small class="help">员工的会话列表中会出现 AI 助手“Me”</small></span></label>
+      <div class="field"><span>快速填写</span><div class="row">${aiPresets.map(p => `<button type="button" class="btn small" data-preset="${p.id}">${esc(p.label)}</button>`).join('')}</div><small class="help">只会预填接口类型、地址和常用模型 ID，可再修改。</small></div>
+      <div class="fields">
+        <label class="field wide">接口类型<select name="api">
+          <option value="chat" ${c.api === 'chat' ? 'selected' : ''}>OpenAI 兼容 · Chat Completions（DeepSeek、通义千问、Kimi、智谱、Ollama 等）</option>
+          <option value="responses" ${c.api === 'responses' ? 'selected' : ''}>OpenAI · Responses（支持桌面端本机任务）</option>
+        </select><small id="api-hint"></small></label>
+        <label class="field wide">接口地址 *<input type="text" name="baseUrl" required value="${esc(c.baseUrl)}" placeholder="例如 https://api.deepseek.com" spellcheck="false"><small>不含 /chat/completions，系统会自动拼接</small></label>
+        <label class="field">API Key *<input type="password" name="apiKey" ${c.keySet ? '' : 'required'} placeholder="${c.keySet ? '已设置，留空表示不修改' : '例如 sk-…'}" autocomplete="new-password"><small class="secret-state">${c.keySet ? '● 已设置（出于安全不显示）' : '○ 未设置'}</small></label>
+        <label class="field">模型 ID *<input type="text" name="model" required list="ai-models" value="${esc(c.model)}" placeholder="例如 deepseek-chat" spellcheck="false"><datalist id="ai-models"></datalist></label>
+        <label class="field" id="effort-field">推理强度<select name="effort">${['low', 'medium', 'high', 'xhigh'].map(v => `<option ${c.effort === v ? 'selected' : ''}>${v}</option>`).join('')}</select><small>仅 Responses 接口使用</small></label>
+      </div>
+      <p class="help" id="ai-result" role="status"></p>
+    </form></div>
+    <div class="save-bar"><span>先测试连接，确认可用后再保存</span><span class="spacer"></span><button class="btn" data-ai-test>测试连接</button><button class="btn primary" data-ai-save>保存</button></div></div>`;
+  const form = $('#ai-form');
+  const sync = () => {
+    const chat = form.api.value === 'chat';
+    $('#effort-field').classList.toggle('hidden', chat);
+    $('#api-hint').textContent = chat ? '对话可正常使用；桌面端“本机任务”需要 OpenAI Responses 接口。' : '对话与桌面端本机任务（Codex）都可使用。';
+  };
+  sync(); form.api.onchange = sync;
+  const values = () => ({ enabled: form.enabled.checked, api: form.api.value, baseUrl: form.baseUrl.value.trim(), apiKey: form.apiKey.value.trim(), model: form.model.value.trim(), effort: form.effort.value });
+  const result = (text, ok) => { const r = $('#ai-result'); r.textContent = text; r.style.color = ok === undefined ? '' : ok ? 'var(--ok)' : 'var(--danger)'; };
+  form.onclick = e => {
+    const b = e.target.closest('[data-preset]'); if (!b) return;
+    const p = aiPresets.find(x => x.id === b.dataset.preset);
+    form.api.value = p.api; form.baseUrl.value = p.baseUrl; form.model.value = p.model;
+    $('#ai-models').innerHTML = p.models.map(m => `<option value="${esc(m)}">`).join('');
+    sync(); result(`已填入 ${p.label} 的接口地址${p.model ? '和模型 ID' : '，请填写模型 ID'}，再填写 API Key${p.id === 'ollama' ? '（Ollama 可填任意内容）' : ''}。`);
+    (p.model ? form.apiKey : form.model).focus();
+  };
+  $('[data-ai-test]').onclick = e => busy(e.currentTarget, async () => {
+    result('正在调用模型…');
+    try { const r = await api('/ai/test', { method: 'POST', body: values() }); result(`连接成功（${(r.ms / 1000).toFixed(1)} 秒）。模型回复：${r.reply}`, true); }
+    catch (err) { result('连接失败：' + err.message, false); }
+  });
+  $('[data-ai-save]').onclick = e => busy(e.currentTarget, async () => {
+    if (!form.reportValidity()) return;
+    const r = await api('/ai', { method: 'PUT', body: values() });
+    toast('AI 模型配置已保存'); $('#ai-banner').innerHTML = restartBanner(r.restartPending);
+    form.apiKey.value = ''; form.apiKey.required = false; form.apiKey.placeholder = '已设置，留空表示不修改'; form.querySelector('.secret-state').textContent = '● 已设置（出于安全不显示）';
+  });
+}
+
 // ---------- credentials ----------
 async function credentials() {
   const files = await api('/files'), byKind = Object.fromEntries(files.map(f => [f.kind, f]));
   const status = f => `<div class="row"><span class="path">${esc(f.path || '尚未创建（保存后自动创建并写入配置）')}</span>${f.exists ? `<span class="badge ok">已保存 · ${fmtTime(f.modified)}</span>` : '<span class="badge">未配置</span>'}${f.error ? `<span class="badge danger">${esc(f.error)}</span>` : ''}</div>`;
   const secret = (f, key, label) => `<label class="field">${label}<input type="password" name="${key}" autocomplete="new-password" placeholder="${f.secrets[key] ? '已设置，留空表示不修改' : '未设置'}"><small class="secret-state">${f.secrets[key] ? '● 已设置（出于安全不显示）' : '○ 未设置'}</small></label>`;
-  const e = byKind.email, a = byKind.ai, m = byKind.media;
+  const e = byKind.email, m = byKind.media;
   $('#main').innerHTML = head('凭据与密钥', '这些私密文件由配置引用，文件权限为仅服务可读。密钥只能写入、不会回显。保存后需重启服务生效。') + `<div id="cred-banner"></div><div class="stack">
    <div class="card"><div class="card-head"><div><h2>邮件服务（腾讯云 SES）</h2><p>用于邮箱登录、注册和找回密码的验证码邮件</p></div></div><div class="card-body stack">${status(e)}
     <form id="email-form" class="fields"><label class="field">SecretId<input type="text" name="secretId" value="${esc(e.values.secretId)}" autocomplete="off"></label>${secret(e, 'secretKey', 'SecretKey')}
@@ -571,9 +683,6 @@ async function credentials() {
     <label class="field">发件地址<input type="text" name="from" value="${esc(e.values.from)}" placeholder="LinkMe <no-reply@example.com>"></label>
     <label class="field">邮件主题<input type="text" name="subject" value="${esc(e.values.subject)}" placeholder="LinkMe 验证码"></label></form></div>
     <div class="save-bar"><span>启用邮箱登录：系统设置 → 账号与登录</span><span class="spacer"></span><button class="btn primary" data-save-file="email">保存</button></div></div>
-   <div class="card"><div class="card-head"><div><h2>Me 助手接口</h2><p>兼容 OpenAI Responses 接口的服务地址与访问令牌</p></div></div><div class="card-body stack">${status(a)}
-    <form id="ai-form" class="fields"><label class="field wide">接口地址<input type="text" name="base_url" value="${esc(a.values.base_url)}" placeholder="https://api.example.com"></label>${secret(a, 'token', '访问令牌')}</form></div>
-    <div class="save-bar"><span>启用助手：系统设置 → Me 助手</span><span class="spacer"></span><button class="btn primary" data-save-file="ai">保存</button></div></div>
    <div class="card"><div class="card-head"><div><h2>媒体中继密钥</h2><p>通话与会议中继（TURN）使用的共享密钥</p></div></div><div class="card-body stack">${status(m)}
     <form id="media-form" class="fields">${secret(m, 'secret', '密钥')}</form></div>
     <div class="save-bar"><span>更换密钥后正在进行的通话可能需要重新接通</span><span class="spacer"></span><button class="btn" data-generate-media>自动生成新密钥</button><button class="btn primary" data-save-file="media">保存</button></div></div>
@@ -582,7 +691,6 @@ async function credentials() {
     const b = ev.target.closest('button'); if (!b) return;
     const save = body => busy(b, async () => { await api('/files/' + (b.dataset.saveFile || 'media'), { method: 'PUT', body }); toast('已保存，重启服务后生效'); await credentials(); $('#cred-banner').innerHTML = restartBanner(true); });
     if (b.dataset.saveFile === 'email') { const f = $('#email-form'); save({ ...formValues(f, ['secretId', 'secretKey', 'region', 'from', 'subject']), templateId: Number(f.templateId.value) || 0 }); }
-    if (b.dataset.saveFile === 'ai') save(formValues($('#ai-form'), ['base_url', 'token']));
     if (b.dataset.saveFile === 'media') save({ secret: $('#media-form').secret.value.trim() });
     if (b.hasAttribute('data-generate-media')) confirmModal('生成中继密钥', '生成新的随机密钥并保存？', '生成').then(ok => ok && save({ generate: true }));
   };
@@ -630,7 +738,7 @@ const actionNames = {
   'enable-admin': '启用管理员', 'disable-admin': '停用管理员', 'delete-admin': '删除管理员', 'cli-create-admin': '命令行创建管理员', 'cli-reset-password': '命令行重置管理员密码',
   'create-user': '新建用户', 'update-user': '修改用户资料', 'reset-password': '重置用户密码', 'disable-user': '停用用户', 'enable-user': '启用用户',
   'sign-out-user': '用户全部下线', 'revoke-device': '下线用户设备', 'reset-avatar': '重置用户头像', 'delete-user': '删除用户',
-  'save-settings': '保存系统设置', 'save-credentials': '更新凭据', 'upload-package': '上传安装包', 'delete-package': '删除安装包', 'restart': '重启服务',
+  'save-settings': '保存系统设置', 'save-credentials': '更新凭据', 'upload-package': '上传安装包', 'delete-package': '删除安装包', 'restart': '重启服务', 'save-ai': '修改 AI 模型', 'save-brand-name': '修改软件名称', 'upload-brand-icon': '上传软件图标', 'reset-brand-icon': '恢复默认图标',
 };
 async function audit(before) {
   const list = await api('/audit' + (before ? '?before=' + before : ''));
@@ -647,6 +755,7 @@ async function audit(before) {
 
 // ---------- start ----------
 async function start() {
+  await loadBrand();
   try { state.me = await api('/me'); } catch { return renderLogin(); }
   app.innerHTML = '';
   if (!location.hash) location.hash = '#/overview';

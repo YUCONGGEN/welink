@@ -56,3 +56,4 @@ code.inline{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;background:
 @media(max-width:480px){.deploy-layout{padding:4px 20px 36px}.deploy-card{padding:22px 18px}.deploy-steps{grid-template-columns:minmax(0,1fr)}.command{flex-direction:column}.copy-command{border-left:0;border-top:1px solid #ffffff1f;min-height:42px}.deploy-tabs button{padding:0 12px}.header-link{padding:0 13px}}
 .header-link.console-link{background:#111015;color:#fff;border-color:#111015}.header-link.console-link:hover{background:#302936}
 @media(max-width:600px){.site-header{flex-wrap:wrap;gap:12px}.header-nav{width:100%;justify-content:flex-start;gap:8px;flex-wrap:nowrap}.header-nav .header-link{min-height:36px;padding:0 12px;gap:8px;font-size:12px;white-space:nowrap}}
+.brand-icon{width:46px;height:46px;border-radius:13px;object-fit:cover;box-shadow:0 6px 22px #37336a22;border:1px solid #ffffff80}

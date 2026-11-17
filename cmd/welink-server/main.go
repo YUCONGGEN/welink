@@ -157,7 +157,8 @@ func run(parent context.Context) int {
 				http.NotFound(w, r)
 				return
 			}
-			if !admin && r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/downloads/") {
+			brand := r.URL.Path == "/api/branding" || r.URL.Path == "/api/branding/icon"
+			if !admin && !brand && r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/downloads/") {
 				http.NotFound(w, r)
 				return
 			}

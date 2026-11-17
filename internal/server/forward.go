@@ -163,6 +163,10 @@ func (s *Server) performForward(user string, p forwardRequest) (forwardResult, [
 			}
 			return result, nil, err
 		}
+		// Like WeChat, voice messages can be recalled but never forwarded.
+		if m.Kind == "voice" {
+			return result, nil, forwardFail(400, "语音消息不能转发")
+		}
 		sources = append(sources, m)
 	}
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Seq < sources[j].Seq })

@@ -46,8 +46,11 @@ func TestNativeMessageDoesNotPopupAndUnreadPulsesTaskbar(t *testing.T) {
 				failure = fmt.Errorf("ordinary message created %d desktop popup(s)", count)
 				return
 			}
-			if h.desktop.unread != 1 || !h.desktop.greenPhase || h.desktop.greenIcon == 0 || (h.desktop.trayAvailable && h.desktop.icon.Icon != h.desktop.greenIcon) {
-				failure = fmt.Errorf("unread message did not pulse the taskbar icon: %+v", h.desktop)
+			// Unread with nobody looking: the icons breathe; tray shows the current frame.
+			if h.desktop.unread != 1 {
+				failure = fmt.Errorf("unread count %d", h.desktop.unread)
+			} else if h.needsAttention() && (!h.desktop.breathing || len(h.desktop.breathBig) != breathFrameCount || (h.desktop.trayAvailable && h.desktop.icon.Icon != h.desktop.breathSmall[h.desktop.breathFrame])) {
+				failure = fmt.Errorf("unread message did not start the breathing icon: %+v", h.desktop)
 			}
 		})
 	}()

@@ -1,7 +1,7 @@
 (() => {
   // internal/ui/src/me-ai.js
   function createMe({ S: S2, api: api2, action: action2, esc: esc2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2 }) {
-    const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform);
+    const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform) && config?.localTasks !== false;
     let config = null, local = { workspace: "", available: false }, generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
     const active = () => S2.conversations.find((c) => c.id === S2.active), live = (g) => g === generation && S2.user && !S2.signingOut;
     async function start() {
@@ -44,7 +44,7 @@
       if (!panel || !active()?.peer?.ai) return;
       panel.classList.remove("hidden");
       if (!panel.querySelector(".me-config")) panel.innerHTML = '<div class="me-config"><span class="ai-label">AI</span><span data-me-workspace></span><button class="text-btn" data-me-workspace-button>工作目录</button></div><div class="me-progress" role="status"><span data-me-status></span><button class="text-btn hidden" data-me-cancel>停止</button></div><div class="me-approvals"></div>';
-      panel.querySelector("[data-me-workspace]").textContent = localDesktop() ? local.workspace ? "本机：" + local.workspace : "对话模式 · 选择目录后可处理本机任务" : "记住本会话上下文 · 本机任务请在桌面端执行";
+      panel.querySelector("[data-me-workspace]").textContent = config?.localTasks === false ? "对话模式 · 当前模型不支持本机任务" : localDesktop() ? local.workspace ? "本机：" + local.workspace : "对话模式 · 选择目录后可处理本机任务" : "记住本会话上下文 · 本机任务请在桌面端执行";
       panel.querySelector("[data-me-workspace-button]").classList.toggle("hidden", !localDesktop());
       const current = task?.conversationId === S2.active ? task : null, busy = starting || current?.state === "running";
       panel.querySelector("[data-me-status]").textContent = starting ? "正在交给 Me…" : current?.error || (current?.state === "running" ? "Me 正在处理…" : current?.state === "completed" ? "已完成" : current?.state === "cancelled" ? "已停止" : "");
@@ -398,8 +398,20 @@
 
   // internal/ui/src/branding.js
   var CLIENT_VERSION = "0.1.18-preview";
+  var APP_NAME = "LinkMe";
+  var brandIconURL = "";
+  function setBrand(name, iconVersion) {
+    APP_NAME = String(name || "").trim() || "LinkMe";
+    brandIconURL = iconVersion ? "/api/branding/icon?v=" + encodeURIComponent(iconVersion) : "";
+  }
+  function brandIcon() {
+    return brandIconURL || "/assets/icon.svg";
+  }
+  function customBrandIcon() {
+    return brandIconURL;
+  }
   function authShowcase() {
-    return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> LINKME · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
+    return '<div class="snowfall" aria-hidden="true"><span></span><span></span><span></span></div><aside class="auth-showcase"><p class="auth-kicker"><i aria-hidden="true"></i> ' + APP_NAME + ' · 即时通讯</p><h1>每一句，<br>都有回应。</h1><p class="auth-intro">从一句消息，到一次默契的协作。<br>让同事、想法和文件，在这里相遇。</p><div class="auth-features"><span>即时消息</span><span>音视频会议</span><span>文件共享</span></div></aside>';
   }
 
   // internal/ui/src/cartoon-catalog.js
@@ -439,7 +451,7 @@
       const register = mode === "register", reset = mode === "reset", verify = register || reset;
       if (register && !S2.registrationEnabled) return render();
       const choices = register ? cartoonChoices(4) : [];
-      document.querySelector("#app").innerHTML = `<main class="auth-shell email-auth ${register ? "registering" : ""}">${windows2()}${authShowcase()}<form class="auth-card" id="auth-form">${logo2()}<h2>${register ? "创建 LinkMe 账号" : reset ? "找回密码" : "欢迎回来"}</h2><p class="subtitle">${reset ? "验证邮箱，设置新密码" : register ? "用邮箱，开启新的连接" : "使用邮箱或 LinkMe 号登录"}</p>${verify ? "" : serverLine()}${register ? `<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="${choices[0].id}"><div class="cartoon-grid compact" id="register-avatar-options">${cartoonOptions(choices, choices[0].id)}</div></div>` : ""}<div class="auth-fields">${register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : ""}${verify ? '<input name="email" type="email" autocomplete="username" inputmode="email" placeholder="邮箱地址" aria-label="邮箱" maxlength="254" required>' : '<input name="email" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="邮箱或 6 位 LinkMe 号" aria-label="邮箱或 LinkMe 号" maxlength="254" required>'}${verify ? '<div class="email-code-row"><input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" aria-label="验证码" pattern="[0-9]{6}" maxlength="6" required><button type="button" class="secondary" id="send-email-code">获取验证码</button></div>' : ""}<input name="password" type="password" autocomplete="${verify ? "new-password" : "current-password"}" placeholder="${verify ? "设置密码（至少 8 位）" : "密码"}" aria-label="密码" minlength="8" maxlength="72" required>${reset ? '<input name="repeatPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-label="确认密码" minlength="8" maxlength="72" required>' : ""}</div><div class="auth-error" id="auth-error" role="status" aria-live="polite"></div><button type="submit" class="primary">${register ? "注册并登录" : reset ? "重设密码" : "登录"}</button>${!verify && S2.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : ""}<div class="auth-links">${verify ? '<button type="button" data-email-mode="login">返回登录</button>' : `${S2.registrationEnabled ? '<button type="button" data-email-mode="register">注册账号</button>' : ""}<button type="button" data-email-mode="reset">忘记密码</button>`}<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">LinkMe ${CLIENT_VERSION} · 让沟通更近一步</small></main>`;
+      document.querySelector("#app").innerHTML = `<main class="auth-shell email-auth ${register ? "registering" : ""}">${windows2()}${authShowcase()}<form class="auth-card" id="auth-form">${logo2()}<h2>${register ? "创建 " + APP_NAME + " 账号" : reset ? "找回密码" : "欢迎回来"}</h2><p class="subtitle">${reset ? "验证邮箱，设置新密码" : register ? "用邮箱，开启新的连接" : "使用邮箱或 " + APP_NAME + " 号登录"}</p>${verify ? "" : serverLine()}${register ? `<div class="register-avatars"><div class="cartoon-heading"><span>选一个喜欢的头像</span><button type="button" id="register-avatar-shuffle">换一批</button></div><input type="hidden" name="avatar" id="register-avatar" value="${choices[0].id}"><div class="cartoon-grid compact" id="register-avatar-options">${cartoonOptions(choices, choices[0].id)}</div></div>` : ""}<div class="auth-fields">${register ? '<input name="name" autocomplete="name" placeholder="姓名（别人能搜索到）" aria-label="姓名" maxlength="32" required>' : ""}${verify ? '<input name="email" type="email" autocomplete="username" inputmode="email" placeholder="邮箱地址" aria-label="邮箱" maxlength="254" required>' : '<input name="email" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="邮箱或 6 位 ' + APP_NAME + ' 号" aria-label="邮箱或 ' + APP_NAME + ' 号" maxlength="254" required>'}${verify ? '<div class="email-code-row"><input name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" aria-label="验证码" pattern="[0-9]{6}" maxlength="6" required><button type="button" class="secondary" id="send-email-code">获取验证码</button></div>' : ""}<input name="password" type="password" autocomplete="${verify ? "new-password" : "current-password"}" placeholder="${verify ? "设置密码（至少 8 位）" : "密码"}" aria-label="密码" minlength="8" maxlength="72" required>${reset ? '<input name="repeatPassword" type="password" autocomplete="new-password" placeholder="再次输入新密码" aria-label="确认密码" minlength="8" maxlength="72" required>' : ""}</div><div class="auth-error" id="auth-error" role="status" aria-live="polite"></div><button type="submit" class="primary">${register ? "注册并登录" : reset ? "重设密码" : "登录"}</button>${!verify && S2.config.platform !== "android" ? '<button type="button" class="qr-login-entry" data-action="qr-login">使用二维码登录</button>' : ""}<div class="auth-links">${verify ? '<button type="button" data-email-mode="login">返回登录</button>' : `${S2.registrationEnabled ? '<button type="button" data-email-mode="register">注册账号</button>' : ""}<button type="button" data-email-mode="reset">忘记密码</button>`}<button type="button" data-action="connection">连接设置</button></div></form><small class="auth-footer">${APP_NAME} ${CLIENT_VERSION} · 让沟通更近一步</small></main>`;
       const form = document.querySelector("#auth-form"), email = form.elements.email, error = form.querySelector("#auth-error");
       email.value = emailValue;
       let challenge = "", challengeEmail = "";
@@ -839,7 +851,7 @@
   var iconShown = null;
   function markUnread(count) {
     count = Math.max(0, Number(count) || 0);
-    const href = count ? UNREAD_ICON : ICON, link = document.querySelector("link[rel~=icon]");
+    const custom = customBrandIcon(), href = custom || (count ? UNREAD_ICON : ICON), link = document.querySelector("link[rel~=icon]");
     if (link && iconShown !== href) {
       link.href = href;
       iconShown = href;
@@ -1540,7 +1552,7 @@
       }
       shape = next;
       const hang = c.state === "ringing" ? "取消" : "挂断";
-      layer().innerHTML = `<section class="call-dialog ${c.mode === "video" ? "call-video" : "call-audio"} ${incoming ? "is-incoming" : "is-outgoing"}" role="dialog" aria-label="${incoming ? "来电" : "通话"}"><header><b>LinkMe · ${c.mode === "video" ? "视频" : "语音"}通话</b><button data-call-minimize title="收起">${icon2("minus")}</button></header><div class="call-person">${av2(c.peer, "large")}<h2>${esc2(c.peer.remark || c.peer.name)}</h2><p class="call-kind">${c.mode === "video" ? "视频通话" : "语音通话"}</p><p class="call-status" role="status">${esc2(status)}</p></div><div class="call-buttons">${incoming ? `<button class="call-decline" data-call-reject>${icon2("phone")}<span>拒绝</span></button>${c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : ""}<button class="call-answer" data-call-answer="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}<span>接听</span></button>` : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : ""}${c.canEnd ? '<button class="call-decline" data-call-end' + (busy ? " disabled" : "") + ">" + icon2("phone") + "<span>" + hang + "</span></button>" : ""}${other ? '<button class="secondary" data-call-dismiss>知道了</button>' : ""}</div></section><div class="call-mini-bar"><button class="call-mini" data-call-expand title="展开通话">${icon2("phone")}<span>${esc2(c.peer.name)} · ${esc2(status)}</span></button>${c.canEnd && !incoming ? '<button class="call-mini-end" data-call-mini-end title="' + hang + '" aria-label="' + hang + '"' + (busy ? " disabled" : "") + ">" + icon2("phone") + "</button>" : ""}</div>`;
+      layer().innerHTML = `<section class="call-dialog ${c.mode === "video" ? "call-video" : "call-audio"} ${incoming ? "is-incoming" : "is-outgoing"}" role="dialog" aria-label="${incoming ? "来电" : "通话"}"><header><b>${APP_NAME} · ${c.mode === "video" ? "视频" : "语音"}通话</b><button data-call-minimize title="收起">${icon2("minus")}</button></header><div class="call-person">${av2(c.peer, "large")}<h2>${esc2(c.peer.remark || c.peer.name)}</h2><p class="call-kind">${c.mode === "video" ? "视频通话" : "语音通话"}</p><p class="call-status" role="status">${esc2(status)}</p></div><div class="call-buttons">${incoming ? `<button class="call-decline" data-call-reject>${icon2("phone")}<span>拒绝</span></button>${c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : ""}<button class="call-answer" data-call-answer="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}<span>接听</span></button>` : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : ""}${c.canEnd ? '<button class="call-decline" data-call-end' + (busy ? " disabled" : "") + ">" + icon2("phone") + "<span>" + hang + "</span></button>" : ""}${other ? '<button class="secondary" data-call-dismiss>知道了</button>' : ""}</div></section><div class="call-mini-bar"><button class="call-mini" data-call-expand title="展开通话">${icon2("phone")}<span>${esc2(c.peer.name)} · ${esc2(status)}</span></button>${c.canEnd && !incoming ? '<button class="call-mini-end" data-call-mini-end title="' + hang + '" aria-label="' + hang + '"' + (busy ? " disabled" : "") + ">" + icon2("phone") + "</button>" : ""}</div>`;
     }
     async function refreshConversation(c, g) {
       if (S2.active !== c.conversationId || S2.historyMode) return;
@@ -1850,7 +1862,7 @@
         const p = await window.welinkDesktopSettings();
         const toggle = (id, label, checked) => `<label class="prefs-row" for="${id}"><span>${label}</span><input id="${id}" type="checkbox" ${checked ? "checked" : ""}></label>`;
         const shortcut = (id, label, value, error) => `<label class="prefs-row desktop-shortcut" for="${id}"><span>${label}</span><span class="shortcut-control"><input id="${id}" class="shortcut-input" readonly value="${esc2(value || "")}" placeholder="点击后按下快捷键" aria-label="${label}快捷键"><button class="secondary" type="button" data-clear-shortcut="${id}">清除</button></span></label>${error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc2(error) + "</p>" : ""}`;
-        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 LinkMe", p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", p.startMinimized ?? true) + `<p class="hint">仅对当前 Windows 用户生效，默认关闭。${p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : ""}</p>` + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><p class="hint">普通聊天只通过任务栏图标提示未读；来电、远程和会议邀请会在右下角显示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", p.hotkeysEnabled ?? true) + shortcut("desktop-show-hotkey", "显示主界面", p.showHotkey ?? "Ctrl+Alt+W", p.hotkeyErrors?.show) + shortcut("desktop-capture-hotkey", "截图", p.captureHotkey ?? "Ctrl+Alt+A", p.hotkeyErrors?.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 LinkMe”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
+        modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 " + APP_NAME, p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", p.startMinimized ?? true) + `<p class="hint">仅对当前 Windows 用户生效，默认关闭。${p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : ""}</p>` + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><p class="hint">普通聊天只通过任务栏图标提示未读；来电、远程和会议邀请会在右下角显示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", p.hotkeysEnabled ?? true) + shortcut("desktop-show-hotkey", "显示主界面", p.showHotkey ?? "Ctrl+Alt+W", p.hotkeyErrors?.show) + shortcut("desktop-capture-hotkey", "截图", p.captureHotkey ?? "Ctrl+Alt+A", p.hotkeyErrors?.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 ' + APP_NAME + '”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
         document.querySelector(".modal").classList.add("desktop-settings");
         const $2 = (id) => document.getElementById(id), availability = () => {
           $2("desktop-start-minimized").disabled = !$2("desktop-auto-start").checked;
@@ -1903,13 +1915,13 @@
       }
     }
     function quit() {
-      modal2("退出 LinkMe", "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
+      modal2("退出 " + APP_NAME, "<p>退出后将停止接收消息，并结束当前通话和远程协助。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-exit">退出</button>');
       document.querySelector("#desktop-exit").onclick = () => window.welinkDesktopExit();
     }
     window.addEventListener("welink-native-visibility", (event) => {
       nativeHidden = !!event.detail?.hidden;
       if (!hidden() && S2.user) {
-        document.title = "LinkMe";
+        document.title = "" + APP_NAME;
         markRead2().catch(() => {
         });
       }
@@ -1920,7 +1932,7 @@
       if (action2 === "settings") settings2();
       if (action2 === "quit") quit();
     });
-    return { native, hidden, unread, activity, clearActivities, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 LinkMe</button>' : "" };
+    return { native, hidden, unread, activity, clearActivities, settingsRow: () => native ? '<div class="prefs-row"><span>Windows 桌面设置</span><button class="secondary" data-desktop="settings">管理</button></div>' : "", exitMenu: () => native ? '<button data-desktop="quit">退出 ' + APP_NAME + "</button>" : "" };
   }
 
   // internal/ui/src/screenshots.js
@@ -2497,7 +2509,7 @@
         resolve(request.result);
       };
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(Error("请关闭其他 LinkMe 窗口后重试"));
+      request.onblocked = () => reject(Error("请关闭其他 " + APP_NAME + " 窗口后重试"));
     }).catch((error) => {
       database = null;
       throw error;
@@ -3482,12 +3494,12 @@
       return self + '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!q && !peopleSource.length && !care.length ? '<div class="empty-list">还没有最近联系人<br>搜索用户，直接开始聊天</div>' : q && !found && !self ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return `${av2(u, "large", true)}<h2>${esc2(title(u))}${badge(u)}</h2>${u.remark ? '<span class="profile-line">姓名：' + esc2(u.name) + "</span>" : ""}<span class="profile-line">LinkMe 账号：${esc2(u.number || u.account)}</span><dl class="profile-details"><dt>手机号</dt><dd>${esc2(u.phone || "未设置")}</dd><dt>性别</dt><dd>${esc2({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置")}</dd><dt>职位</dt><dd>${esc2(u.jobTitle || "未设置")}</dd></dl><p class="profile-bio">${esc2(u.bio || "这个人很酷，还没有写签名。")}</p>${u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : ""}<div class="contact-profile-actions">${u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : `<button class="primary" data-start-chat="${u.id}">发消息</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="${u.id}">${u.specialCare ? "取消特别关心" : "设为特别关心"}</button><button class="secondary" data-contact="messages" data-user="${u.id}">${u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息"}</button><button class="secondary" data-contact="edit" data-user="${u.id}">联系人设置</button>`}</div>`;
+      return `${av2(u, "large", true)}<h2>${esc2(title(u))}${badge(u)}</h2>${u.remark ? '<span class="profile-line">姓名：' + esc2(u.name) + "</span>" : ""}<span class="profile-line">${APP_NAME} 账号：${esc2(u.number || u.account)}</span><dl class="profile-details"><dt>手机号</dt><dd>${esc2(u.phone || "未设置")}</dd><dt>性别</dt><dd>${esc2({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置")}</dd><dt>职位</dt><dd>${esc2(u.jobTitle || "未设置")}</dd></dl><p class="profile-bio">${esc2(u.bio || "这个人很酷，还没有写签名。")}</p>${u.note ? '<p class="contact-private-note">' + esc2(u.note) + "</p>" : ""}<div class="contact-profile-actions">${u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : `<button class="primary" data-start-chat="${u.id}">发消息</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="${u.id}">${u.specialCare ? "取消特别关心" : "设为特别关心"}</button><button class="secondary" data-contact="messages" data-user="${u.id}">${u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息"}</button><button class="secondary" data-contact="edit" data-user="${u.id}">联系人设置</button>`}</div>`;
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
       if (!detail.friend) {
-        modal2("联系人资料", `<div class="contact-person">${av2(u, "large")}<h3>${esc2(u.name)}</h3><p>LinkMe 号 ${esc2(u.number)}</p></div><p class="hint">${detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。"}</p>`, detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
+        modal2("联系人资料", `<div class="contact-person">${av2(u, "large")}<h3>${esc2(u.name)}</h3><p>${APP_NAME} 号 ${esc2(u.number)}</p></div><p class="hint">${detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。"}</p>`, detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
         bind("contact-unblock", async () => {
           await api2("/api/contact-blocks/" + id, { method: "DELETE" });
           await refresh2();
@@ -3496,7 +3508,7 @@
         bind("contact-add", () => requestFriend2(id, u.name));
         return;
       }
-      modal2("联系人设置", `<div class="contact-person compact">${av2(u)}<div><h3>${esc2(title(u))}</h3><p>LinkMe 号 ${esc2(u.number)}</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="${esc2(u.remark || "")}" placeholder="${esc2(u.name)}"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>${S2.contactGroups.map((g) => `<option value="${g.id}" ${g.id === u.contactGroupId ? "selected" : ""}>${esc2(g.name)}</option>`).join("")}</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">${esc2(u.note || "")}</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ${u.specialCare ? "checked" : ""}></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ${detail.messageBlocked ? "checked" : ""}></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="${id}">从列表移除</button><button data-contact="block" data-user="${id}">加入黑名单</button></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      modal2("联系人设置", `<div class="contact-person compact">${av2(u)}<div><h3>${esc2(title(u))}</h3><p>${APP_NAME} 号 ${esc2(u.number)}</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="${esc2(u.remark || "")}" placeholder="${esc2(u.name)}"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>${S2.contactGroups.map((g) => `<option value="${g.id}" ${g.id === u.contactGroupId ? "selected" : ""}>${esc2(g.name)}</option>`).join("")}</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">${esc2(u.note || "")}</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ${u.specialCare ? "checked" : ""}></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ${detail.messageBlocked ? "checked" : ""}></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="${id}">从列表移除</button><button data-contact="block" data-user="${id}">加入黑名单</button></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
       bind("contact-save", async () => {
         await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, specialCare: $2("#contact-special-care").checked, messageBlocked: $2("#contact-message-blocked").checked } });
         closeModal2();
@@ -3726,7 +3738,7 @@
       }
       ;
       const g = c.group, self = id === S2.user.id, canManage = manager(g) && !self && u.role !== "owner" && (g.role === "owner" || u.role !== "admin"), canCard = self || canManage;
-      modal2("群成员资料", `<div class="group-summary">${av2(u, "large")}<div><h3>${esc2(u.name)}</h3><p>LinkMe 号 ${esc2(u.number)}</p><span class="group-role ${u.role}">${roles[u.role]}</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="${esc2(u.nickname || "")}" placeholder="${esc2(u.name)}" ${canCard ? "" : "disabled"}>${canManage ? `<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">${u.muteUntil > Date.now() ? "禁言至 " + esc2(new Date(u.muteUntil).toLocaleString()) : "当前未禁言"}</p>` : ""}${g.role === "owner" && !self ? `<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" ${u.role === "admin" ? "checked" : ""}></label>` : ""}${canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""}`, '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
+      modal2("群成员资料", `<div class="group-summary">${av2(u, "large")}<div><h3>${esc2(u.name)}</h3><p>${APP_NAME} 号 ${esc2(u.number)}</p><span class="group-role ${u.role}">${roles[u.role]}</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="${esc2(u.nickname || "")}" placeholder="${esc2(u.name)}" ${canCard ? "" : "disabled"}>${canManage ? `<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">${u.muteUntil > Date.now() ? "禁言至 " + esc2(new Date(u.muteUntil).toLocaleString()) : "当前未禁言"}</p>` : ""}${g.role === "owner" && !self ? `<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" ${u.role === "admin" ? "checked" : ""}></label>` : ""}${canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""}`, '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
       bind("group-member-save", async () => {
         const p = { nickname: $2("#group-member-card").value };
         if ($2("#group-member-admin") && $2("#group-member-admin").checked !== (u.role === "admin")) p.admin = $2("#group-member-admin").checked;
@@ -4428,8 +4440,8 @@
       if (!selection) return;
       const selectedMessages = S2.messages.filter((m) => selection.ids.has(m.id));
       selection.ids = new Set(selectedMessages.map((m) => m.id));
-      const count = selection.ids.size, unavailable = selectedMessages.some((m) => m.recalled);
-      area.insertAdjacentHTML("afterend", `<section class="message-selection-toolbar" id="message-selection-toolbar"><div><b>已选择 ${count} 条消息</b><button data-fw="cancel-select">取消</button></div><nav><button data-fw="selected-forward" ${!count || unavailable ? "disabled" : ""} title="${unavailable ? "已撤回消息不能转发" : "转发所选消息"}">${icon2("send")}<span>转发</span></button><button data-fw="selected-delete" ${count ? "" : "disabled"}>${icon2("trash")}<span>删除</span></button></nav></section>`);
+      const count = selection.ids.size, unavailable = selectedMessages.some((m) => m.recalled), voice = selectedMessages.some((m) => m.kind === "voice");
+      area.insertAdjacentHTML("afterend", `<section class="message-selection-toolbar" id="message-selection-toolbar"><div><b>已选择 ${count} 条消息</b><button data-fw="cancel-select">取消</button></div><nav><button data-fw="selected-forward" ${!count || unavailable || voice ? "disabled" : ""} title="${unavailable ? "已撤回消息不能转发" : voice ? "语音消息不能转发" : "转发所选消息"}">${icon2("send")}<span>转发</span></button><button data-fw="selected-delete" ${count ? "" : "disabled"}>${icon2("trash")}<span>删除</span></button></nav></section>`);
     }
     function start(id) {
       selection = { cid: S2.active, ids: /* @__PURE__ */ new Set([id]) };
@@ -4518,6 +4530,10 @@
       const messages = S2.messages.filter((m) => ids.includes(m.id));
       if (!messages.length || messages.some((m) => m.recalled) || messages.length !== ids.length) {
         toast2("所选消息已删除或撤回");
+        return;
+      }
+      if (messages.some((m) => m.kind === "voice")) {
+        toast2("语音消息不能转发");
         return;
       }
       const state = chooser = { cid: S2.active, ids, tab: "recent", targets: /* @__PURE__ */ new Map(), mode: ids.length > 1 ? "merge" : "each", messages, signature: "", clientId: "" };
@@ -4764,7 +4780,7 @@
     const el = (id) => document.getElementById(id);
     const when = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无活动记录";
     function open() {
-      modal2("账号与安全", `<div class="security-account">${icon2("shield")}<div><b>${esc2(S2.user.name)}</b>${S2.user.email ? `<p>邮箱：${esc2(S2.user.email)}</p>` : ""}<p>LinkMe 号：${esc2(S2.user.number)}</p></div></div><button class="utility-row security-option" data-security="devices">${icon2("monitor")}<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>${icon2("chevron")}</button><button class="utility-row security-option" data-security="password">${icon2("shield")}<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>${icon2("chevron")}</button>`);
+      modal2("账号与安全", `<div class="security-account">${icon2("shield")}<div><b>${esc2(S2.user.name)}</b>${S2.user.email ? `<p>邮箱：${esc2(S2.user.email)}</p>` : ""}<p>${APP_NAME} 号：${esc2(S2.user.number)}</p></div></div><button class="utility-row security-option" data-security="devices">${icon2("monitor")}<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>${icon2("chevron")}</button><button class="utility-row security-option" data-security="password">${icon2("shield")}<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>${icon2("chevron")}</button>`);
     }
     async function devices() {
       if (!S2.user) return;
@@ -4857,17 +4873,17 @@
       stop();
       const current = { timer: null };
       active = current;
-      el("app").innerHTML = `<main class="auth-shell">${windows2()}${authShowcase()}<section class="auth-card qr-auth">${logo2()}<h2>扫码登录</h2><p class="subtitle">使用安卓 LinkMe「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 LinkMe 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>${S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : ""}</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">LinkMe ${CLIENT_VERSION}</small></main>`;
+      el("app").innerHTML = `<main class="auth-shell">${windows2()}${authShowcase()}<section class="auth-card qr-auth">${logo2()}<h2>扫码登录</h2><p class="subtitle">使用安卓 ${APP_NAME}「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 ${APP_NAME} 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>${S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : ""}</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">${APP_NAME} ${CLIENT_VERSION}</small></main>`;
       el("qr-refresh").onclick = open;
       try {
-        const q = await action2("/api/auth/qr", { device: "LinkMe Windows 客户端" });
+        const q = await action2("/api/auth/qr", { device: "" + APP_NAME + " Windows 客户端" });
         if (active !== current) {
           action2("/api/auth/qr/cancel", q).catch(() => {
           });
           return;
         }
         Object.assign(current, q);
-        el("qr-image").innerHTML = `<img alt="LinkMe 桌面登录二维码" src="${q.image}">`;
+        el("qr-image").innerHTML = `<img alt="${APP_NAME} 桌面登录二维码" src="${q.image}">`;
         el("qr-check").textContent = "核对码 " + q.checkCode;
         await poll(current);
       } catch (e) {
@@ -4888,7 +4904,7 @@
           return;
         }
         const ended = result.state === "expired" || result.state === "rejected";
-        el("qr-status").textContent = result.state === "scanned" ? "扫码成功，请在手机上确认" : result.state === "expired" ? "二维码已过期，请刷新" : result.state === "rejected" ? "手机已取消登录，请刷新" : "请使用安卓 LinkMe 扫描二维码";
+        el("qr-status").textContent = result.state === "scanned" ? "扫码成功，请在手机上确认" : result.state === "expired" ? "二维码已过期，请刷新" : result.state === "rejected" ? "手机已取消登录，请刷新" : "请使用安卓 " + APP_NAME + " 扫描二维码";
         el("qr-image").classList.toggle("qr-inactive", ended);
         if (!ended) current.timer = setTimeout(() => poll(current), 1200);
       } catch (e) {
@@ -4903,19 +4919,19 @@
     }
     async function scanned(payload) {
       if (!S2.user) {
-        toast2("请先在手机上登录 LinkMe");
+        toast2("请先在手机上登录 " + APP_NAME);
         return;
       }
       const match = /^welink:\/\/login\/([a-f0-9]{32})\?key=([a-f0-9]{64})$/.exec(String(payload));
       if (!match) {
-        toast2("这不是 LinkMe 登录二维码");
+        toast2("这不是 " + APP_NAME + " 登录二维码");
         return;
       }
       const request = { id: match[1], key: match[2] };
       try {
         const result = await action2("/api/auth/qr/scan", request);
         phonePending = request;
-        modal2("登录 Windows 版 LinkMe", `<div class="qr-confirm"><div class="qr-computer">${icon2("monitor")}</div><h3>${esc2(result.device)}</h3><p>将使用 ${esc2(S2.user.name)} 登录</p><p>LinkMe 号：${esc2(S2.user.number)}</p><div class="qr-check">核对码 ${esc2(result.checkCode)}</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>`, '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
+        modal2("登录 Windows 版 " + APP_NAME, `<div class="qr-confirm"><div class="qr-computer">${icon2("monitor")}</div><h3>${esc2(result.device)}</h3><p>将使用 ${esc2(S2.user.name)} 登录</p><p>${APP_NAME} 号：${esc2(S2.user.number)}</p><div class="qr-check">核对码 ${esc2(result.checkCode)}</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>`, '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
         const resolve = async (accept) => {
           const button = el(accept ? "qr-phone-confirm" : "qr-phone-cancel");
           button.disabled = true;
@@ -4945,7 +4961,7 @@
           return;
         }
         if (window.WeLinkAndroid?.scanQRCode) window.WeLinkAndroid.scanQRCode();
-        else toast2("请在安卓 LinkMe 中使用扫一扫");
+        else toast2("请在安卓 " + APP_NAME + " 中使用扫一扫");
       }
       if (a === "close-modal" && phonePending) {
         const request = phonePending;
@@ -5216,7 +5232,7 @@
       return n;
     };
     function invitationText(code) {
-      return "邀请你加入 LinkMe 会议\n会议号：" + grouped(code) + "\n会议链接：" + S2.config.server.replace(/\/$/, "") + "/join/" + code;
+      return "邀请你加入 " + APP_NAME + " 会议\n会议号：" + grouped(code) + "\n会议链接：" + S2.config.server.replace(/\/$/, "") + "/join/" + code;
     }
     async function copyInvitation(code) {
       const text = invitationText(code);
@@ -5431,7 +5447,7 @@
       }
     }
     function renderRoom() {
-      root().innerHTML = `<section class="meeting-room"><header class="meeting-top"><b>LinkMe 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">${grouped(room.code)} ${icon2("copy")}</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">${icon2("minus")}</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><div class="meeting-tool-group"><button id="meeting-audio" title="麦克风">${icon2("mic")}<span>麦克风</span></button><button id="meeting-video" title="摄像头">${icon2("video")}<span>摄像头</span></button><button id="meeting-share" title="共享屏幕">${icon2("monitor")}<span>共享屏幕</span></button><button id="meeting-record" title="录制">${icon2("record")}<span>录制</span></button><button id="meeting-fullscreen" title="全屏">${icon2("maximize")}<span>全屏</span></button></div><button id="meeting-leave" class="meeting-leave" title="离开会议">${icon2("phone")}<span>离开会议</span></button><button id="meeting-end" class="meeting-end" title="结束会议"><span>结束会议</span></button></footer></section>`;
+      root().innerHTML = `<section class="meeting-room"><header class="meeting-top"><b>${APP_NAME} 会议</b><button id="meeting-copy" title="复制邀请链接和会议号">${grouped(room.code)} ${icon2("copy")}</button><span id="meeting-network">正在连接…</span><button id="meeting-minimize" title="最小化会议" aria-label="最小化会议">${icon2("minus")}</button></header><button id="meeting-restore">返回会议</button><button id="meeting-mini-leave" title="离开会议">离开</button><div class="meeting-content"><div id="meeting-grid" class="meeting-grid"></div><aside class="meeting-members"><h3>成员 <span id="meeting-count"></span></h3><div id="meeting-members-list"></div><button class="secondary" id="meeting-invite">邀请好友</button><p class="meeting-record-indicator hidden" id="meeting-recording">● 主持人正在录制</p></aside></div><footer class="meeting-tools"><div class="meeting-tool-group"><button id="meeting-audio" title="麦克风">${icon2("mic")}<span>麦克风</span></button><button id="meeting-video" title="摄像头">${icon2("video")}<span>摄像头</span></button><button id="meeting-share" title="共享屏幕">${icon2("monitor")}<span>共享屏幕</span></button><button id="meeting-record" title="录制">${icon2("record")}<span>录制</span></button><button id="meeting-fullscreen" title="全屏">${icon2("maximize")}<span>全屏</span></button></div><button id="meeting-leave" class="meeting-leave" title="离开会议">${icon2("phone")}<span>离开会议</span></button><button id="meeting-end" class="meeting-end" title="结束会议"><span>结束会议</span></button></footer></section>`;
       el("meeting-copy").onclick = () => {
         if (root().classList.contains("meeting-minimized")) {
           show();
@@ -6006,7 +6022,7 @@
       box.className = "meeting-invitation-notice";
       box.dataset.meetingNotice = m.code;
       box.setAttribute("role", "alert");
-      box.innerHTML = `<header><b>LinkMe · 会议邀请</b><button data-meeting-notice-close title="关闭">${icon2("close")}</button></header><h3>${esc2(m.title)}</h3><p>会议号 ${grouped(m.code)}</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>`;
+      box.innerHTML = `<header><b>${APP_NAME} · 会议邀请</b><button data-meeting-notice-close title="关闭">${icon2("close")}</button></header><h3>${esc2(m.title)}</h3><p>会议号 ${grouped(m.code)}</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>`;
       area.append(box);
       box.querySelectorAll("[data-meeting-notice-close]").forEach((b) => b.onclick = () => dismissInvitation(m.code));
       box.querySelector("[data-meeting-notice-enter]").onclick = () => nativeAction(m.code, true);
@@ -6144,7 +6160,46 @@
     const cartoon = cartoonURL(u.avatar), photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
     return `<span class="avatar ${photo || cartoon ? "has-photo" : esc(u.avatar || "blue")} ${size}" ${u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc(u.sender || u.id) + '"' : ""}>${u.kind === "group" ? icon("contacts") : esc((u.name || "M").slice(0, 1))}${photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : ""}${online && u.online ? '<i class="dot"></i>' : ""}</span>`;
   };
-  var logo = () => '<div class="logo"><img src="/assets/icon.svg" alt=""><b>LinkMe</b></div>';
+  var logo = () => '<div class="logo"><img src="' + brandIcon() + '" alt=""><b>' + APP_NAME + "</b></div>";
+  async function applyBrand(name, iconVersion) {
+    const old = APP_NAME;
+    setBrand(name, iconVersion);
+    document.title = document.title.replace(/^(\(\d+\+?\)\s*)?.*$/, (m, count) => (count || "") + APP_NAME);
+    const icon2 = document.querySelector("link[rel~=icon]");
+    if (icon2 && customBrandIcon()) icon2.href = customBrandIcon();
+    document.querySelectorAll(".logo img").forEach((img) => {
+      img.src = brandIcon();
+    });
+    document.querySelectorAll(".logo b").forEach((b) => {
+      b.textContent = APP_NAME;
+    });
+    if (old !== APP_NAME && !S.user) {
+      const root = $("#app");
+      if (root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.nodeValue.includes(old)) node.nodeValue = node.nodeValue.split(old).join(APP_NAME);
+        root.querySelectorAll("[placeholder],[aria-label],[alt]").forEach((el) => {
+          for (const a of ["placeholder", "aria-label", "alt"]) {
+            const v = el.getAttribute(a);
+            if (v && v.includes(old)) el.setAttribute(a, v.split(old).join(APP_NAME));
+          }
+        });
+      }
+    }
+    if (window.welinkBrand) {
+      let data = "";
+      try {
+        if (customBrandIcon()) {
+          const bytes2 = new Uint8Array(await (await fetch(customBrandIcon())).arrayBuffer());
+          let text = "";
+          for (let i = 0; i < bytes2.length; i += 8192) text += String.fromCharCode.apply(null, bytes2.subarray(i, i + 8192));
+          data = btoa(text);
+        }
+      } catch {
+      }
+      window.welinkBrand(APP_NAME, data);
+    }
+  }
   var S = { token: localStorage.getItem("welink_token") || "", user: null, config: {}, policy: {}, registrationEnabled: false, tab: "messages", contactTab: "friends", conversations: [], friends: [], requests: [], groupRequests: [], contactGroups: [], myGroups: [], messages: [], active: null, profile: null, search: "", historyMode: false, reply: null, drafts: {}, ws: null, offline: false, cacheView: false, cacheSyncing: false, remote: null, remoteTimer: null, remoteLocal: null };
   var modalHandler = null;
   var refreshTimer = null;
@@ -6390,7 +6445,7 @@
     ;
     const c = activeConversation();
     if (!c) {
-      main.innerHTML = empty("LinkMe", "每一句，都有回应。", true);
+      main.innerHTML = empty("" + APP_NAME, "每一句，都有回应。", true);
       return;
     }
     ;
@@ -6464,7 +6519,7 @@
     }
     if (m.kind === "image") content = S.offline ? '<div class="file-card">' + icon("image") + "<span><b>" + esc(m.fileName || "图片") + "</b><small>联网后查看图片</small></span></div>" : `<img src="${fileURL(m.attachmentId)}" alt="${esc(m.fileName || "图片")}" loading="lazy" data-preview-image="${m.attachmentId}">`;
     if (m.kind === "file") content = `<button class="file-card" data-download="${m.attachmentId}" data-filename="${esc(m.fileName)}">${icon("file")}<span><b>${esc(m.fileName)}</b><small>${bytes(m.fileSize)} · 点击下载</small></span></button>`;
-    return `<article class="message ${mine ? "mine" : ""}" data-message="${m.id}">${Forwarding.checkbox(m)}${av(m)}<div class="message-body"><span class="message-name">${esc(m.name || (mine ? S.user.name : activeConversation()?.name) || "LinkMe 用户")}</span><div class="bubble ${m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : ""}">${content}</div>${m.replyId ? `<button class="quote" data-action="jump-message" data-mid="${m.replyId}" title="查看原消息">${quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用"}</button>` : ""}<span class="message-time">${shortTime(m.created)}</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="${m.id}">${icon("send")}</button>${btn("reply", "引用", "quote", `data-mid="${m.id}"`)}${btn("star", "收藏", "favorite", `data-mid="${m.id}"`)}${mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", `data-mid="${m.id}"`) : ""}${btn("trash", "删除", "delete-message", `data-mid="${m.id}"`)}</div></article>`;
+    return `<article class="message ${mine ? "mine" : ""}" data-message="${m.id}">${Forwarding.checkbox(m)}${av(m)}<div class="message-body"><span class="message-name">${esc(m.name || (mine ? S.user.name : activeConversation()?.name) || "" + APP_NAME + " 用户")}</span><div class="bubble ${m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : ""}">${content}</div>${m.replyId ? `<button class="quote" data-action="jump-message" data-mid="${m.replyId}" title="查看原消息">${quote ? esc(quote.name + "：" + preview(quote)) : "原消息不可用"}</button>` : ""}<span class="message-time">${shortTime(m.created)}</span></div><div class="message-menu"><button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="${m.id}">${icon("send")}</button>${btn("reply", "引用", "quote", `data-mid="${m.id}"`)}${btn("star", "收藏", "favorite", `data-mid="${m.id}"`)}${mine && Date.now() - m.created < 12e4 ? btn("history", "撤回", "recall", `data-mid="${m.id}"`) : ""}${btn("trash", "删除", "delete-message", `data-mid="${m.id}"`)}</div></article>`;
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -6705,6 +6760,9 @@
         Me.changed(event.type, d);
       } else if (event.type === "call") {
         Calls.changed(d);
+      } else if (event.type === "branding") {
+        applyBrand(d.name, d.iconVersion).catch(() => {
+        });
       } else if (event.type === "drive") {
         Cloud.changed(event.type);
       } else if (event.type === "call-history") {
@@ -6723,7 +6781,7 @@
         if ((S.active !== d.conversationId || S.tab !== "messages" || Desktop.hidden()) && d.sender !== S.user.id && (!S.conversations.find((c) => c.id === d.conversationId)?.muted || Mentions.applies(d))) {
           if (!NativeNotifications.active()) Sounds.notify();
           if (!NativeNotifications.active() && !Desktop.native && document.hidden && window.Notification?.permission === "granted") new Notification(S.friends.find((u) => u.id === d.sender)?.remark || d.name, { body: (Mentions.applies(d) ? "有人 @你：" : "") + preview(d), icon: "/assets/icon.svg", silent: true });
-          document.title = Mentions.applies(d) ? "有人 @你 · LinkMe" : "新消息 · LinkMe";
+          document.title = Mentions.applies(d) ? "有人 @你 · " + APP_NAME : "新消息 · " + APP_NAME;
         }
         queueRefresh(true);
       } else if (event.type === "read") {
@@ -6827,7 +6885,7 @@
     }
   }
   function addFriend() {
-    modal("查找用户", `<label for="find-user">LinkMe 号码 / 姓名</label><input id="find-user" placeholder="输入 LinkMe 号码或姓名" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>`);
+    modal("查找用户", `<label for="find-user">${APP_NAME} 号码 / 姓名</label><input id="find-user" placeholder="输入 ${APP_NAME} 号码或姓名" autocomplete="off"><div id="user-results" class="member-select"><p class="hint">输入至少两个字符，找到想联系的人。</p></div>`);
     $("#find-user").oninput = (e) => {
       clearTimeout(searchTimer);
       const q = e.target.value;
@@ -6941,7 +6999,7 @@
   }
   function profile(initial = {}) {
     const user = { ...S.user, ...initial };
-    modal("编辑资料", `<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">${av(S.user, "large")}<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">LinkMe 账号：${esc(user.number)}</p><label>姓名</label><input id="profile-name" value="${esc(user.name)}" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="${esc(user.phone || "")}" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>${[["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => `<option value="${v}" ${user.gender === v ? "selected" : ""}>${t}</option>`).join("")}</select><label>职位</label><input id="profile-job" value="${esc(user.jobTitle || "")}" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="${esc(user.bio)}" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("编辑资料", `<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">${av(S.user, "large")}<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">${APP_NAME} 账号：${esc(user.number)}</p><label>姓名</label><input id="profile-name" value="${esc(user.name)}" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="${esc(user.phone || "")}" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>${[["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => `<option value="${v}" ${user.gender === v ? "selected" : ""}>${t}</option>`).join("")}</select><label>职位</label><input id="profile-job" value="${esc(user.jobTitle || "")}" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="${esc(user.bio)}" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, phone: $("#profile-phone").value, gender: $("#profile-gender").value, jobTitle: $("#profile-job").value, avatar: user.avatar } });
       closeModal();
@@ -6951,11 +7009,11 @@
     };
   }
   function renderMyPage() {
-    $("#main-content").innerHTML = `<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">${av(S.user, "large")}<h2>${esc(S.user.name)}</h2><span class="profile-line">LinkMe 号：${esc(S.user.number || S.user.account)}</span></div><button class="utility-row" style="width:100%" data-action="profile">${icon("user")}<div class="body" style="text-align:left">个人资料</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="drive">${icon("cloud")}<div class="body" style="text-align:left">我的网盘</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="files">${icon("folder")}<div class="body" style="text-align:left">我的文件</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="favorites">${icon("star")}<div class="body" style="text-align:left">我的收藏</div>${icon("chevron")}</button>${S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : ""}<button class="utility-row" style="width:100%" data-action="settings">${icon("settings")}<div class="body" style="text-align:left">设置</div>${icon("chevron")}</button></div></section>`;
+    $("#main-content").innerHTML = `<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">${av(S.user, "large")}<h2>${esc(S.user.name)}</h2><span class="profile-line">${APP_NAME} 号：${esc(S.user.number || S.user.account)}</span></div><button class="utility-row" style="width:100%" data-action="profile">${icon("user")}<div class="body" style="text-align:left">个人资料</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="drive">${icon("cloud")}<div class="body" style="text-align:left">我的网盘</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="files">${icon("folder")}<div class="body" style="text-align:left">我的文件</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="favorites">${icon("star")}<div class="body" style="text-align:left">我的收藏</div>${icon("chevron")}</button>${S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : ""}<button class="utility-row" style="width:100%" data-action="settings">${icon("settings")}<div class="body" style="text-align:left">设置</div>${icon("chevron")}</button></div></section>`;
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 LinkMe 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>' : ""}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION.replace("-preview", "")} 预览版</span></div><div class="prefs-row"><span>服务器</span><span>${esc(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
+    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION.replace("-preview", "")} 预览版</span></div><div class="prefs-row"><span>服务器</span><span>${esc(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -7018,7 +7076,7 @@
     n.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
   }
   function messageMenu(m, x, y) {
-    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button><button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>${m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 12e4 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
+    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button>${m.kind === "voice" ? "" : `<button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>`}${m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 12e4 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
   }
   function emojis() {
     const old = $(".popup");
@@ -7698,7 +7756,7 @@
   }, true);
   document.addEventListener("visibilitychange", () => {
     if (!Desktop.hidden()) {
-      document.title = "LinkMe";
+      document.title = "" + APP_NAME;
       if (S.active && S.user) markRead().catch(() => {
       });
     } else action("/local/remote/release").catch(() => {
@@ -7789,6 +7847,8 @@
       const response = await Promise.race([fetch("/api/public-config"), new Promise((_, reject) => setTimeout(() => reject(Error("config timeout")), 4e3))]);
       if (!response.ok) return;
       const value = await response.json();
+      applyBrand(value.appName, value.brandIcon).catch(() => {
+      });
       S.registrationEnabled = !!value.registrationEnabled;
       S.emailAuthEnabled = true;
       const links = document.querySelector("#auth-form .auth-links");

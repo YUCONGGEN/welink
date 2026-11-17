@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"log"
 	"os"
 	"path/filepath"
@@ -51,8 +52,12 @@ type desktopState struct {
 	icon                           notifyIconData
 	trayAvailable, hidden, closing bool
 	taskbarCreated                 uint32
-	normalIcon, greenIcon          uintptr
-	greenPhase                     bool
+	normalIcon                     uintptr
+	breathBig, breathSmall         []uintptr // unread breathing-light frames
+	breathFrame                    int
+	breathing                      bool
+	appName, brandIconData         string      // server branding (console → 品牌与图标)
+	brandImage                     image.Image // custom icon, nil = built-in M
 	normalIconOwned                bool
 	unread                         int
 	messageUnread                  int
@@ -270,6 +275,7 @@ func (h *windowsHost) installDesktop(directory string) error {
 	h.view.Bind("welinkScreenshotCancel", h.cancelScreenshot)
 	h.view.Bind("welinkScreenshotCopy", func(encoded string) error { return copyScreenshot(encoded) })
 	h.view.Bind("welinkDesktopUnread", func(count int) { h.setUnread(count) })
+	h.view.Bind("welinkBrand", func(name, icon string) { h.applyBrand(name, icon) })
 	h.view.Bind("welinkDesktopActivity", func(key string, active bool) { h.setActivityUnread(key, active) })
 	h.view.Bind("welinkDesktopClearActivities", func(prefix string) { h.clearActivityUnread(prefix) })
 	h.view.Bind("welinkDesktopExit", func() { h.Action("quit") })
@@ -321,9 +327,9 @@ func (h *windowsHost) addTray() {
 }
 
 func (h *windowsHost) trayTip() {
-	text := "LinkMe · 双击打开，右键退出"
+	text := h.appTitle() + " · 双击打开，右键退出"
 	if h.desktop.unread > 0 {
-		text = fmt.Sprintf("LinkMe · %d 条未读消息", h.desktop.unread)
+		text = fmt.Sprintf("%s · %d 条未读消息", h.appTitle(), h.desktop.unread)
 	}
 	h.desktop.icon.Tip = [128]uint16{}
 	copy(h.desktop.icon.Tip[:], syscall.StringToUTF16(text))
@@ -362,11 +368,15 @@ func (h *windowsHost) clearActivityUnread(prefix string) {
 func (h *windowsHost) updateUnread() {
 	previous := h.desktop.unread
 	h.desktop.unread = min(99999, h.desktop.messageUnread+len(h.desktop.activityUnread))
+	// A new message while nobody is looking highlights the taskbar button.
+	if h.desktop.unread > previous && h.needsAttention() {
+		h.flashTaskbar(true)
+	}
 	if h.desktop.unread == 0 {
+		h.flashTaskbar(false)
 		h.stopUnreadPulse()
 	} else if previous == 0 {
-		h.unreadPulse()
-		user32.NewProc("SetTimer").Call(h.hwnd, unreadTimer, 650, 0)
+		h.startUnreadPulse()
 	} else if previous != h.desktop.unread {
 		h.refreshTray(0) // keep the "N 条未读消息" tooltip current
 	}

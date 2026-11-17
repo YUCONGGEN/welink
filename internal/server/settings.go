@@ -63,6 +63,11 @@ type Settings struct {
 	Registration struct {
 		Enabled bool `json:"enabled"`
 	} `json:"registration"`
+	// Branding.Name replaces "LinkMe" in the apps, pages and console (empty =
+	// default). The icon is uploaded in the console and kept in the data dir.
+	Branding struct {
+		Name string `json:"name"`
+	} `json:"branding"`
 	// Console is the separate web management console (its own listener and
 	// accounts); user administration lives there, not in the apps.
 	Console struct {
@@ -139,7 +144,10 @@ func LoadSettings(path string) (Settings, error) {
 	return s, s.Validate()
 }
 func (s Settings) Validate() error {
-	if s.AI.Enabled && (s.AI.CredentialsFile == "" || s.AI.Model == "" || s.AI.ReasoningEffort == "" || s.AI.ContextMessages < 2 || s.AI.ContextMessages > 200 || s.AI.ContextCharacters < 1000 || s.AI.ContextCharacters > 200000 || s.AI.ConcurrentRequests < 1 || s.AI.ConcurrentRequests > 32) {
+	if s.AI.API != "" && s.AI.API != "responses" && s.AI.API != "chat" {
+		return errors.New("ai.api must be responses or chat")
+	}
+	if s.AI.Enabled && (s.AI.CredentialsFile == "" || s.AI.Model == "" || (!s.AI.chatAPI() && s.AI.ReasoningEffort == "") || s.AI.ContextMessages < 2 || s.AI.ContextMessages > 200 || s.AI.ContextCharacters < 1000 || s.AI.ContextCharacters > 200000 || s.AI.ConcurrentRequests < 1 || s.AI.ConcurrentRequests > 32) {
 		return errors.New("invalid ai configuration")
 	}
 	if s.EmailAuth.Enabled && s.EmailAuth.CredentialsFile == "" {
@@ -174,6 +182,11 @@ func (s Settings) Validate() error {
 			return errors.New("storage.volumes requires unique IDs and different nonempty root paths")
 		}
 		volumeIDs[volume.ID], roots[root] = true, true
+	}
+	if s.Branding.Name != "" {
+		if err := validAppName(s.Branding.Name); err != nil {
+			return err
+		}
 	}
 	if s.Console.Enabled {
 		if _, _, err := net.SplitHostPort(s.Console.Listen); err != nil {

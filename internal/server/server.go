@@ -49,6 +49,7 @@ type Server struct {
 	media                *mediaRelay
 	emailSender          emailSender
 	ai                   *aiService
+	brand                brandState
 	configPath           string
 	supervised           bool
 	started              time.Time
@@ -93,6 +94,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{db: db, dir: cfg.DataDir, downloads: cfg.DownloadsDir, clients: map[string]map[*socket]bool{}, rooms: map[string]map[string]*socket{}, limits: map[string]*bucket{}, logger: cfg.Logger, mux: http.NewServeMux(), configPath: cfg.ConfigPath, supervised: cfg.Supervised, started: time.Now(), restart: make(chan struct{})}
 	s.settings = settings
+	s.loadBrand()
 	if err = s.initEmail(cfg.EmailSender); err != nil {
 		db.Close()
 		return nil, err
@@ -179,8 +181,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/ai/v1/responses", s.aiProxy)
 	s.mux.HandleFunc("POST /api/integrations/yudesk/support", s.yudeskSupport)
 	s.mux.HandleFunc("GET /api/public-config", func(w http.ResponseWriter, r *http.Request) {
-		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled, "emailAuthEnabled": s.settings.EmailAuth.Enabled})
+		ok(w, map[string]any{"registrationEnabled": s.settings.Registration.Enabled, "emailAuthEnabled": s.settings.EmailAuth.Enabled, "appName": s.appName(), "brandIcon": s.brandIconVersion()})
 	})
+	s.mux.HandleFunc("GET /api/branding", s.publicBranding)
+	s.mux.HandleFunc("GET /api/branding/icon", s.brandIcon)
 	s.mux.HandleFunc("GET /share/{token}", s.publicDriveShare)
 	s.mux.HandleFunc("GET /space/{user}", s.publicSpace)
 	s.mux.HandleFunc("GET /join/{code}", s.meetingLink)
