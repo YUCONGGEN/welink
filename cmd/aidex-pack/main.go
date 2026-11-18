@@ -1,10 +1,10 @@
 // Command aidex-pack builds a linkme-AIdex release from official Codex
 // app-server packages (github.com/openai/codex releases, the
-// codex-app-server-package-<target>.tar.zst files): it keeps only what Me
-// needs, repacks each platform as linkme-aidex-<version>-<platform>.tar.zst
+// codex-app-server-package-<target>.tar.zst files): it keeps every file,
+// repacks each platform as linkme-aidex-<version>-<platform>.tar.zst
 // and writes aidex.json signed with the LinkMe release key.
 //
-//	go run ./cmd/aidex-pack -key ~/.linkme/aidex-signing.key -version 0.169.1 \
+//	go run ./cmd/aidex-pack -key ~/.linkme/aidex-signing.key -version 0.169.1.1 \
 //	  -windows codex-app-server-package-x86_64-pc-windows-msvc.tar.zst \
 //	  -mac codex-app-server-package-aarch64-apple-darwin.tar.zst -out dist/tools
 //
@@ -35,13 +35,19 @@ import (
 
 type platform struct {
 	key, suffix, entry string
-	keep               []string
 }
 
+// Every file of the official package is kept: the app-server starts helper
+// programs next to it (codex-code-mode-host, codex-exec-server, the Windows
+// sandbox helpers) depending on the model and features in use, and a missing
+// one only fails in the middle of a task.
 var platforms = map[string]platform{
-	"windows": {"windows/amd64", "windows-amd64", "bin/codex-app-server.exe", []string{"bin/codex-app-server.exe", "codex-resources/codex-command-runner.exe", "codex-resources/codex-windows-sandbox-setup.exe", "codex-path/rg.exe", "codex-package.json"}},
-	"mac":     {"darwin/arm64", "darwin-arm64", "bin/codex-app-server", []string{"bin/codex-app-server", "codex-path/rg", "codex-package.json"}},
+	"windows": {"windows/amd64", "windows-amd64", "bin/codex-app-server.exe"},
+	"mac":     {"darwin/arm64", "darwin-arm64", "bin/codex-app-server"},
 }
+
+// required must be present in every package.
+var required = []string{"codex-package.json", "bin/codex-code-mode-host", "bin/codex-exec-server", "codex-path/rg"}
 
 func main() {
 	keyPath := flag.String("key", "", "base64 Ed25519 private key")
@@ -71,7 +77,7 @@ func main() {
 		}
 		p := platforms[name]
 		file := fmt.Sprintf("%s-%s-%s.tar.zst", aiagent.AIdexName, *version, p.suffix)
-		size, sum, err := repack(*src, filepath.Join(*out, file), p.keep)
+		size, sum, err := repack(*src, filepath.Join(*out, file), p.entry, strings.HasSuffix(p.entry, ".exe"))
 		if err != nil {
 			log.Fatalf("%s: %v", name, err)
 		}
@@ -91,7 +97,7 @@ func main() {
 	fmt.Println("wrote", filepath.Join(*out, aiagent.AIdexManifest))
 }
 
-func repack(src, dst string, keep []string) (int64, string, error) {
+func repack(src, dst, entry string, windows bool) (int64, string, error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return 0, "", err
@@ -103,6 +109,7 @@ func repack(src, dst string, keep []string) (int64, string, error) {
 	}
 	defer z.Close()
 	files := map[string][]byte{}
+	var keep []string
 	t := tar.NewReader(z)
 	for {
 		h, err := t.Next()
@@ -112,22 +119,28 @@ func repack(src, dst string, keep []string) (int64, string, error) {
 		if err != nil {
 			return 0, "", err
 		}
-		for _, k := range keep {
-			if h.Name == k && h.Typeflag == tar.TypeReg {
-				if files[k], err = io.ReadAll(t); err != nil {
-					return 0, "", err
-				}
-			}
+		name := strings.TrimPrefix(h.Name, "./")
+		if h.Typeflag != tar.TypeReg || name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "..") {
+			continue
+		}
+		if files[name], err = io.ReadAll(t); err != nil {
+			return 0, "", err
+		}
+		keep = append(keep, name)
+	}
+	for _, k := range append([]string{entry}, required...) {
+		if windows && k != "codex-package.json" && !strings.HasSuffix(k, ".exe") {
+			k += ".exe"
+		}
+		if _, ok := files[k]; !ok {
+			return 0, "", fmt.Errorf("package lacks %s", k)
 		}
 	}
 	var buf bytes.Buffer
 	w, _ := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedBestCompression), zstd.WithWindowSize(1<<26))
 	tw := tar.NewWriter(w)
 	for _, k := range keep {
-		data, ok := files[k]
-		if !ok {
-			return 0, "", fmt.Errorf("package lacks %s", k)
-		}
+		data := files[k]
 		mode := int64(0755)
 		if strings.HasSuffix(k, ".json") {
 			mode = 0644

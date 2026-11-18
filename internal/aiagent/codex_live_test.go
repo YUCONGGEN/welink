@@ -166,3 +166,86 @@ func TestLiveCodexCallsLinkMeTools(t *testing.T) {
 		t.Fatal("LinkMe tool was not called; tool name seen:", toolName)
 	}
 }
+
+// TestLiveCodexCodeMode checks the helper programs shipped next to the
+// app-server: newer models (gpt-6 family) get "code mode", whose exec tool
+// runs JavaScript in codex-code-mode-host. A package missing it fails only
+// when the model first uses exec.
+func TestLiveCodexCodeMode(t *testing.T) {
+	bin := os.Getenv("LINKME_CODEX_LIVE")
+	if bin == "" {
+		t.Skip("set LINKME_CODEX_LIVE to a codex-app-server binary")
+	}
+	workspace, _ := os.MkdirTemp("", "aidex-live")
+	defer os.RemoveAll(workspace) // best effort: Codex may still be exiting
+	// With LINKME_TOOL_BRIDGE set, the script also sends a message through
+	// LinkMe's tools, as the model does in code mode.
+	bridge := os.Getenv("LINKME_TOOL_BRIDGE")
+	script := "text('js-ok ' + (1+2))"
+	var toolServer *ToolServer
+	called := make(chan string, 1)
+	if bridge != "" {
+		tools := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var p struct {
+				Op, Name  string
+				Arguments json.RawMessage
+			}
+			json.NewDecoder(r.Body).Decode(&p)
+			if p.Op == "list" {
+				json.NewEncoder(w).Encode([]Tool{{Name: "linkme_send_message", Description: "发送消息", InputSchema: json.RawMessage(`{"type":"object","properties":{"to":{"type":"array","items":{"type":"string"}},"text":{"type":"string"}},"required":["to","text"]}`)}})
+				return
+			}
+			called <- p.Name + " " + string(p.Arguments)
+			json.NewEncoder(w).Encode(ToolResult{Text: "已发送给 张三"})
+		}))
+		defer tools.Close()
+		toolServer = &ToolServer{Command: bridge, Env: map[string]string{"LINKME_TOOLS_URL": tools.URL, "LINKME_TOOLS_KEY": "task-key"}}
+		script = "const k = Object.keys(tools).find(n => n.endsWith('linkme_send_message')); const r = await tools[k]({to: ['张三'], text: '你好'}); text('js-ok ' + (1+2) + ' ' + k + ' ' + JSON.stringify(r))"
+	}
+	input, _ := json.Marshal(script)
+	calls, output := 0, ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		calls++
+		if i := strings.Index(string(raw), `"type":"custom_tool_call_output"`); i >= 0 {
+			output = string(raw)[i:min(len(raw), i+600)]
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		ev := func(data string) { fmt.Fprintf(w, "data: %s\n\n", data) }
+		ev(`{"type":"response.created","response":{"id":"r"}}`)
+		if calls == 1 {
+			ev(`{"type":"response.output_item.done","item":{"type":"custom_tool_call","id":"ctc_1","call_id":"call_1","namespace":"functions","name":"exec","input":` + string(input) + `}}`)
+		} else {
+			ev(`{"type":"response.output_item.done","item":{"type":"message","role":"assistant","id":"msg_1","content":[{"type":"output_text","text":"完成"}]}}`)
+		}
+		ev(`{"type":"response.completed","response":{"id":"r","usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}}`)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	var s *Session
+	var err error
+	s, err = Start(ctx, Options{Binary: bin, Home: filepath.Join(workspace, ".home"), Workspace: workspace, Model: "gpt-6-sol", Effort: "low", ProviderURL: srv.URL + "/v1", Grant: "grant", Prompt: "hi", Tools: toolServer}, func(e Event) {
+		if e.Type == "approval" {
+			go s.Approve(e.ID, true, nil)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "js-ok 3") {
+		t.Fatal("code mode exec failed:", output)
+	}
+	if bridge != "" {
+		select {
+		case got := <-called:
+			t.Log("tool called from code mode:", got)
+		default:
+			t.Fatal("LinkMe tool was not called from code mode:", output)
+		}
+	}
+}

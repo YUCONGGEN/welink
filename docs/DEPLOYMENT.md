@@ -100,8 +100,8 @@ curl -fsSL http://www.yucg.cn:8251/downloads/server/install.sh | sudo sh -s -- -
 官方发布（只在持有签名私钥的发布机上进行，私钥不进代码仓库）：
 
 ```bash
-# linkme-AIdex：用官方 codex-app-server-package-*.tar.zst 生成压缩包和 aidex.json
-go run ./cmd/aidex-pack -key ~/.linkme/aidex-signing.key -version 0.169.1 -windows <Windows 包> -mac <macOS 包> -out dist/tools
+# linkme-AIdex：用官方 codex-app-server-package-*.tar.zst 生成压缩包和 aidex.json（保留官方包的全部文件；同一 Codex 版本重新打包时在末尾加一位，如 0.169.1.1）
+go run ./cmd/aidex-pack -key ~/.linkme/aidex-signing.key -version 0.169.1.1 -windows <Windows 包> -mac <macOS 包> -out dist/tools
 # 客户端：为已构建的安装包生成 app.json（每次发布先提升 internal/version 的版本号）
 go run ./cmd/release-sign -key ~/.linkme/aidex-signing.key -name linkme-app -version 0.1.19 -out dist/app.json windows/amd64=dist/LinkMe-Setup.exe darwin/arm64=dist/LinkMe-macOS-arm64.zip android/arm64=dist/LinkMe-Android.apk
 ```
