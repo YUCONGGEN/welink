@@ -26,7 +26,11 @@ func loadPerformance(dir string) (Performance, error) {
 	// constant 12 Mbps pace that made a 100 KB frame take at least 67 ms.
 	// 100 is also the largest value older LinkMe versions accept, so the
 	// file stays valid if someone reinstalls an older client.
-	p := Performance{FPS: 30, Quality: 80, MaxWidth: 1920, MaxMbps: unpacedMbps, STUNURLs: peerpath.DefaultOptions().STUNURLs, DirectTimeoutMS: 15000, PortMapping: true}
+	// The picture is reconstructed pixel for pixel: the source resolution
+	// (MaxWidth 3840 or more means "never scale"), lossless tiles, 30 frames per second and no bandwidth cap.
+	// Quality only applies to whole-JPEG frames for LinkMe versions that
+	// predate tiles.
+	p := Performance{FPS: 30, Quality: 90, MaxWidth: nativeWidth, MaxMbps: unpacedMbps, STUNURLs: peerpath.DefaultOptions().STUNURLs, DirectTimeoutMS: 15000, PortMapping: true}
 	path := filepath.Join(dir, "remote-performance.json")
 	raw, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -36,8 +40,9 @@ func loadPerformance(dir string) (Performance, error) {
 		err = json.Unmarshal(raw, &p)
 		// Files written by earlier versions hold the old defaults verbatim;
 		// upgrade them rather than keeping a cap nobody chose.
-		if err == nil && p.FPS == 30 && p.Quality == 78 && p.MaxWidth == 1920 && p.MaxMbps == 12 {
-			p.Quality, p.MaxMbps = 80, unpacedMbps
+		old := p.FPS == 30 && p.MaxWidth == 1920 && ((p.Quality == 78 && p.MaxMbps == 12) || (p.Quality == 80 && p.MaxMbps == unpacedMbps))
+		if err == nil && old {
+			p.FPS, p.Quality, p.MaxWidth, p.MaxMbps = 30, 90, nativeWidth, unpacedMbps
 			if upgraded, marshalErr := json.MarshalIndent(p, "", "  "); marshalErr == nil {
 				_ = os.WriteFile(path, upgraded, 0600)
 			}
@@ -58,10 +63,19 @@ func (p Performance) interval() time.Duration { return time.Second / time.Durati
 
 const unpacedMbps = 100
 
-// bulkRate is the sender pacing in bytes per second; 0 disables pacing.
-func (p Performance) bulkRate() int {
-	if p.MaxMbps >= unpacedMbps {
+// nativeWidth is the largest width older LinkMe versions accept in the file;
+// it means "capture at the source resolution, however wide".
+const nativeWidth = 3840
+
+// captureWidth is the capture width limit; 0 keeps every source pixel.
+func (p Performance) captureWidth() int {
+	if p.MaxWidth >= nativeWidth {
 		return 0
 	}
-	return p.MaxMbps * 1000000 / 8
+	return p.MaxWidth
 }
+
+// bulkRate is the sender pacing in bytes per second. Remote assistance is
+// never bandwidth-capped: max_mbps is kept in the file only so older LinkMe
+// versions still accept it.
+func (p Performance) bulkRate() int { return 0 }

@@ -12,6 +12,21 @@ type LatencyController struct {
 	bad, good, congested int
 	Quality, Width       int
 	maxQuality, maxWidth int
+	// minQuality/minWidth raise the backoff floors chosen by the viewer
+	// (原画 never shrinks the picture); zero keeps the defaults below.
+	minQuality, minWidth int
+}
+
+// SetLimits switches to a new quality preset and starts from its best
+// settings at once. A minWidth at or above the source width keeps the
+// original resolution under congestion; only JPEG quality and the frame
+// rate (through backpressure) give way.
+func (c *LatencyController) SetLimits(maxQuality, maxWidth, minQuality, minWidth int) {
+	c.maxQuality, c.maxWidth = maxQuality, maxWidth
+	c.minQuality, c.minWidth = min(minQuality, maxQuality), minWidth
+	c.Quality, c.Width = maxQuality, maxWidth
+	c.bad, c.good, c.congested = 0, 0, 0
+	c.lastChange = time.Time{}
 }
 
 func NewLatencyController(o Options) *LatencyController {
@@ -61,6 +76,8 @@ func (c *LatencyController) Update(now time.Time, cost, budget time.Duration, so
 		if c.congested < 3 {
 			qualityFloor, widthFloor = min(60, c.maxQuality), min(1280, limit)
 		}
+		qualityFloor = max(qualityFloor, c.minQuality)
+		widthFloor = max(widthFloor, min(c.minWidth, limit))
 		c.Quality = max(qualityFloor, c.Quality-8)
 		// Reducing the captured image also improves PNG/text traffic, which
 		// does not respond to JPEG quality changes.

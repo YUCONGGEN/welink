@@ -28,11 +28,11 @@ type remoteFrame struct {
 // Tile viewers keep every tile in their hub and need no refresh.
 const idleRefresh = time.Second
 
-// After remote input, capture at up to 60 Hz for this long (YuDesk uses
-// 120/60 Hz bursts), so clicks and typing show up without waiting a tick.
+// After remote input, capture at the full 30 Hz for this long even when a
+// slower rate is configured, so clicks and typing show up without waiting.
 const (
 	inputBurst         = time.Second
-	inputBurstInterval = time.Second / 60
+	inputBurstInterval = time.Second / 30
 )
 
 // capture runs grab+encode on this goroutine and the network write on
@@ -47,6 +47,9 @@ const (
 // older peers a one-slot mailbox keeps only the newest.
 func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
 	controller := e.performance.controller()
+	// Never shrink the picture: the viewer rebuilds the desktop pixel for
+	// pixel, and a slow network costs frames, not sharpness.
+	controller.SetLimits(e.performance.Quality, e.performance.captureWidth(), e.performance.Quality, 1<<16)
 	budget := e.performance.interval()
 	mailbox := make(chan remoteFrame, 1)
 	var writeCost atomic.Int64
@@ -67,7 +70,7 @@ func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
 			return true
 		}
 	}
-	encoder := &stream.TileEncoder{GridSize: 128}
+	encoder := &stream.TileEncoder{GridSize: 128, Lossless: true}
 	forceReset := true
 	var previous, spare *image.RGBA
 	var lastQueued, lastStart time.Time

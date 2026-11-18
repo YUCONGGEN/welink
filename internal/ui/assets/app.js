@@ -4977,15 +4977,14 @@
   }
 
   // internal/ui/src/meeting-tuning.js
-  function videoBudget(screen, peers, available = 0) {
-    const count = Math.max(1, peers), floor = screen ? 5e5 : 3e5, emergency = screen ? 25e4 : 15e4, ceiling = screen ? 35e5 : 15e5, total = screen ? 8e6 : 4e6;
-    let target = Math.max(floor, Math.min(ceiling, Math.round(total / count)));
-    if (available > 0) target = Math.min(target, Math.max(emergency, available * 0.82));
-    return Math.max(emergency, Math.round(target));
+  var SCREEN_BITRATE = 1e8;
+  var CAMERA_BITRATE = 2e7;
+  function videoBudget(screen) {
+    return screen ? SCREEN_BITRATE : CAMERA_BITRATE;
   }
   async function tuneMeetingPeer(peer, screen, peers) {
     if (peer.tuning || peer.pc.signalingState === "closed") return;
-    const bitrate = videoBudget(screen, peers, peer.route?.available), key = screen + ":" + Math.round(bitrate / 1e5);
+    const bitrate = videoBudget(screen, peers), key = String(screen);
     if (peer.tuningKey === key) return;
     peer.tuning = true;
     let complete = true;
@@ -5000,12 +4999,17 @@
           }
           for (const e of p.encodings) {
             if (sender.track.kind === "audio") {
-              e.maxBitrate = 64e3;
+              e.maxBitrate = 128e3;
               if ("priority" in e) e.priority = "high";
               if ("networkPriority" in e) e.networkPriority = "high";
             } else {
               e.maxBitrate = Math.round(bitrate / p.encodings.length);
-              e.maxFramerate = screen ? 30 : 24;
+              e.maxFramerate = 30;
+              e.scaleResolutionDownBy = 1;
+              if (screen) {
+                if ("priority" in e) e.priority = "high";
+                if ("networkPriority" in e) e.networkPriority = "high";
+              }
             }
           }
           if (sender.track.kind === "video") p.degradationPreference = screen ? "maintain-resolution" : "maintain-framerate";
@@ -5017,6 +5021,17 @@
     } finally {
       if (complete) peer.tuningKey = key;
       peer.tuning = false;
+    }
+  }
+  function lowLatencyReceiver(receiver) {
+    if (!receiver || receiver.track?.kind !== "video") return;
+    try {
+      if ("jitterBufferTarget" in receiver) receiver.jitterBufferTarget = 0;
+    } catch {
+    }
+    try {
+      if ("playoutDelayHint" in receiver) receiver.playoutDelayHint = 0;
+    } catch {
     }
   }
 
@@ -5203,6 +5218,7 @@
     }
     const el = (id) => document.getElementById(id);
     const display = meetingWindow({ active: () => !!room, toast: toast2, changed: (full) => {
+      if (!full && room?.focus) unfocusScreen();
       const b = el("meeting-fullscreen");
       if (b) {
         b.classList.toggle("on", full);
@@ -5492,7 +5508,14 @@
       if (!n) {
         n = document.createElement("div");
         n.className = "meeting-tile";
-        n.innerHTML = `<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-sharing-status">正在共享屏幕<br><small>本机不回显共享画面</small></div><div class="meeting-tile-label"></div>`;
+        n.innerHTML = `<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-sharing-status">正在共享屏幕<br><small>本机不回显共享画面</small></div><div class="meeting-tile-label"></div><button class="meeting-tile-full" title="全屏观看共享屏幕">${icon2("maximize")}<span>全屏</span></button>`;
+        n.querySelector(".meeting-tile-full").onclick = (e) => {
+          e.stopPropagation();
+          toggleScreenFocus(id);
+        };
+        n.ondblclick = () => {
+          if (n.classList.contains("is-screen") && !n.classList.contains("meeting-self")) toggleScreenFocus(id);
+        };
         room.tiles.set(id, n);
         el("meeting-grid").append(n);
         n.classList.toggle("meeting-self", self);
@@ -5514,6 +5537,45 @@
       n.querySelector(".meeting-tile-label").textContent = (self ? "我 · " : "") + name;
       return n;
     }
+    function applyScreenFocus() {
+      if (!room) return;
+      for (const [id, n] of room.tiles) {
+        const on = id === room.focus;
+        n.classList.toggle("meeting-focus", on);
+        const b = n.querySelector(".meeting-tile-full");
+        if (b) {
+          b.querySelector("span").textContent = on ? "退出全屏" : "全屏";
+          b.title = on ? "退出全屏（Esc）" : "全屏观看共享屏幕";
+        }
+      }
+      root().classList.toggle("screen-focus", !!room.focus);
+    }
+    function unfocusScreen() {
+      if (!room) return;
+      room.focus = "";
+      room.focusFull = false;
+      applyScreenFocus();
+    }
+    async function toggleScreenFocus(id) {
+      const active = room;
+      if (!active) return;
+      if (active.focus === id) {
+        const leave2 = active.focusFull;
+        unfocusScreen();
+        if (leave2 && display.full()) await display.exit();
+        return;
+      }
+      active.focus = id;
+      applyScreenFocus();
+      active.focusFull = !display.full();
+      if (active.focusFull) await display.toggle();
+    }
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && room?.focus && !display.full()) {
+        e.preventDefault();
+        unfocusScreen();
+      }
+    });
     function renderMembers() {
       if (!room) return;
       el("meeting-count").textContent = room.states.size;
@@ -5528,6 +5590,11 @@
           n.classList.toggle("is-screen", !!p.screen);
           n.classList.toggle("sharing-local", id === room.id && !!p.screen);
         }
+      }
+      if (room.focus && !room.states.get(room.focus)?.screen) {
+        unfocusScreen();
+        display.exit().catch(() => {
+        });
       }
       el("meeting-recording").classList.toggle("hidden", ![...room.states.values()].some((p) => p.recording));
       el("meeting-members-list").onclick = (e) => {
@@ -5577,6 +5644,7 @@
         if (e.candidate && room === active) send({ type: "signal", to: id, signal: "candidate", candidate: JSON.stringify(e.candidate.toJSON()) });
       };
       pc.ontrack = (e) => {
+        lowLatencyReceiver(e.receiver);
         if (room !== active) return;
         const p = room.states.get(id);
         let stream = e.streams[0];
@@ -5805,7 +5873,9 @@
       active.sharePending = true;
       el("meeting-share").disabled = true;
       try {
-        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 } }, audio: false, selfBrowserSurface: "exclude" });
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 }, resizeMode: "none" }, audio: false, selfBrowserSurface: "exclude" });
+        const shared = screen.getVideoTracks()[0];
+        if (shared && "contentHint" in shared) shared.contentHint = "text";
         if (room !== active || active.id !== active.host) {
           screen.getTracks().forEach((t) => t.stop());
           return;
@@ -7286,7 +7356,17 @@
   function remoteFrameLoop() {
     const token = ++remoteFrameLoopToken, canvas = $("#remote-image");
     if (!canvas) return;
-    runRemoteFrames(canvas, () => token === remoteFrameLoopToken && !!S.remote && canvas.isConnected, () => $("#remote-loading")?.classList.add("hidden"), (error) => toast(error.message));
+    runRemoteFrames(canvas, () => token === remoteFrameLoopToken && !!S.remote && canvas.isConnected, () => {
+      $("#remote-loading")?.classList.add("hidden");
+      fitRemoteActual();
+    }, (error) => toast(error.message));
+  }
+  function fitRemoteActual() {
+    const c = $("#remote-image"), wrap = c?.parentElement;
+    if (!wrap) return;
+    const on = wrap.classList.contains("actual-size"), dpr = window.devicePixelRatio || 1, w = on ? c.width / dpr + "px" : "", h = on ? c.height / dpr + "px" : "";
+    if (c.style.width !== w) c.style.width = w;
+    if (c.style.height !== h) c.style.height = h;
   }
   async function remoteTick() {
     if (remoteTickBusy || !S.remote) return;
@@ -7295,7 +7375,7 @@
       const state = await api("/local/remote/state");
       S.remoteLocal = state;
       const status = $("#remote-status");
-      if (status) status.textContent = state.status === "connected" ? `${state.path === "p2p" ? "P2P 直连" : "加密中转"} · ${state.rtt} ms · ${state.width}×${state.height}` : state.error || "正在建立加密连接…";
+      if (status) status.textContent = state.status === "connected" ? `${state.path === "p2p" ? "P2P 直连" : "加密中转"} · ${state.rtt} ms · 原画 ${state.width}×${state.height}` : state.error || "正在建立加密连接…";
       if (state.status === "ended") {
         const error = state.error;
         await stopRemote();
@@ -7339,7 +7419,7 @@
     const node = document.createElement("section");
     node.className = "remote-screen";
     const remotePeer = S.friends.find((u) => u.id === S.remote?.host) || activeConversation()?.peer;
-    node.innerHTML = `<header class="remote-toolbar">${icon("monitor")}<b>远程协助${remotePeer ? " · " + esc(remotePeer.remark || remotePeer.name) : ""}</b><span class="remote-mode">${S.remote?.mode === "control" ? "可控制" : "仅观看"}</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>${S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : ""}<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><canvas id="remote-image" tabindex="0" role="img" aria-label="远程设备屏幕"></canvas></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>`;
+    node.innerHTML = `<header class="remote-toolbar">${icon("monitor")}<b>远程协助${remotePeer ? " · " + esc(remotePeer.remark || remotePeer.name) : ""}</b><span class="remote-mode">${S.remote?.mode === "control" ? "可控制" : "仅观看"}</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-actual" aria-pressed="false" title="按原始像素 1:1 显示">1:1</button><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>${S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : ""}<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><canvas id="remote-image" tabindex="0" role="img" aria-label="远程设备屏幕"></canvas></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>`;
     document.body.append(node);
     remoteFrameLoop();
     const img = $("#remote-image");
@@ -7721,6 +7801,13 @@
         case "remote-fullscreen":
           await RemoteDisplay.toggle();
           break;
+        case "remote-actual": {
+          const on = $(".remote-canvas")?.classList.toggle("actual-size");
+          b.setAttribute("aria-pressed", String(!!on));
+          b.classList.toggle("on", !!on);
+          fitRemoteActual();
+          break;
+        }
         case "remote-minimize":
           await RemoteDisplay.minimize();
           break;

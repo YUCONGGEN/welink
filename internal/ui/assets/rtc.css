@@ -224,3 +224,19 @@ body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#
 #meeting-layer.call-mode.meeting-minimized .meeting-top b{color:var(--rtc-ink)}
 #meeting-layer.call-mode.meeting-minimized #meeting-copy{display:none}
 @media(max-width:700px){#meeting-layer.call-mode.meeting-minimized .meeting-room{inset:auto 12px calc(84px + env(safe-area-inset-bottom)) auto;width:calc(100vw - 24px)}}
+
+/* 1:1 remote pixels: no scaling, scroll when larger than the window */
+.remote-screen .remote-canvas.actual-size{display:block;overflow:auto;text-align:center}
+.remote-screen .remote-canvas.actual-size canvas{display:inline-block;max-width:none;max-height:none;margin:auto;vertical-align:top}
+.remote-screen .remote-canvas canvas{image-rendering:auto}
+body .remote-screen .remote-toolbar button.on{border-color:#3d8bff;background:#1d3a5f;color:#cfe4ff}
+
+/* Viewers enlarge the presenter's shared screen: the tile fills the window */
+#meeting-layer .meeting-tile-full{position:absolute;top:10px;right:10px;z-index:3;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;background:rgba(10,14,20,.62);color:#fff;font-size:12px;backdrop-filter:blur(6px)}
+#meeting-layer .meeting-tile-full svg{width:16px;height:16px}
+#meeting-layer .meeting-tile-full:hover{background:rgba(10,14,20,.82)}
+#meeting-layer .meeting-tile.is-screen.has-video:not(.meeting-self) .meeting-tile-full{display:inline-flex}
+#meeting-layer .meeting-tile.is-screen.has-video:not(.meeting-self){cursor:zoom-in}
+#meeting-layer.screen-focus .meeting-tile.meeting-focus{position:fixed;inset:0;z-index:90;border:0;border-radius:0;background:#000;cursor:zoom-out}
+#meeting-layer.screen-focus .meeting-tile.meeting-focus video{object-fit:contain}
+#meeting-layer.screen-focus .meeting-tile.meeting-focus .meeting-tile-full{top:14px;right:14px}

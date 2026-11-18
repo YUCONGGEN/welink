@@ -1,5 +1,5 @@
 import {APP_NAME} from './branding.js';
-import {tuneMeetingPeer} from './meeting-tuning.js';
+import {tuneMeetingPeer,lowLatencyReceiver} from './meeting-tuning.js';
 import {meetingWindow} from './meeting-window.js';
 // WebRTC mesh, signaling shape, track replacement and host succession adapted
 // from YuDesk internal/viewerapp/ui/dashboard.js (conference implementation).
@@ -12,7 +12,7 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  function personUser(id){if(!room)return null;if(id===S.user?.id)return S.user;if(room.call?.peer?.id===id)return room.call.peer;return (S.friends||[]).find(u=>u.id===id)||(S.conversations||[]).find(c=>c.peer?.id===id)?.peer||null}
  function personHTML(id,name){const u=personUser(id);return u&&av?av(u,'large'):'<span class="meeting-initial">'+esc((name||'M').slice(0,1))+'</span>'}
  const el=id=>document.getElementById(id);
- const display=meetingWindow({active:()=>!!room,toast,changed:full=>{const b=el('meeting-fullscreen');if(b){b.classList.toggle('on',full);b.querySelector('span').textContent=full?'退出全屏':'全屏';b.setAttribute('aria-pressed',String(full))}}});
+ const display=meetingWindow({active:()=>!!room,toast,changed:full=>{if(!full&&room?.focus)unfocusScreen();const b=el('meeting-fullscreen');if(b){b.classList.toggle('on',full);b.querySelector('span').textContent=full?'退出全屏':'全屏';b.setAttribute('aria-pressed',String(full))}}});
  async function minimize(){if(!room)return;try{await display.exit();if(room){root().classList.add('meeting-minimized');toast(room.call?'通话继续进行，点击“返回通话”恢复':'会议继续进行，点击“返回会议”恢复')}}catch{toast('暂时无法最小化，请先退出全屏')}}
  const root=()=>{let n=el('meeting-layer');if(!n){n=document.createElement('div');n.id='meeting-layer';document.body.append(n)}return n};
  function invitationText(code){return '邀请你加入 '+APP_NAME+' 会议\n会议号：'+grouped(code)+'\n会议链接：'+S.config.server.replace(/\/$/,'')+'/join/'+code}
@@ -49,9 +49,16 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  }
  function startMicrophoneMeter(active){if(room!==active)return;const track=active.stream.getAudioTracks()[0];if(active.microphoneMeter?.track===track)return;active.microphoneMeter?.close();active.microphoneMeter=microphoneMeter(track,el('meeting-mic-level'))}
  function show(){if(room)root().classList.remove('meeting-minimized');else openJoin()}
- function tile(id,name,stream,self=false){let n=room.tiles.get(id);if(!n){n=document.createElement('div');n.className='meeting-tile';n.innerHTML=`<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-sharing-status">正在共享屏幕<br><small>本机不回显共享画面</small></div><div class="meeting-tile-label"></div>`;room.tiles.set(id,n);el('meeting-grid').append(n);n.classList.toggle('meeting-self',self)};const v=n.querySelector('video');v.muted=self;if(stream&&v.srcObject!==stream){v.srcObject=stream;v.play().catch(()=>{})};const person=n.querySelector('.meeting-person'),key=id+'|'+(name||'');if(person.dataset.key!==key){person.dataset.key=key;person.innerHTML=personHTML(id,name)}n.querySelector('.meeting-tile-label').textContent=(self?'我 · ':'')+name;return n}
+ function tile(id,name,stream,self=false){let n=room.tiles.get(id);if(!n){n=document.createElement('div');n.className='meeting-tile';n.innerHTML=`<video autoplay playsinline></video><div class="meeting-person"></div><div class="meeting-sharing-status">正在共享屏幕<br><small>本机不回显共享画面</small></div><div class="meeting-tile-label"></div><button class="meeting-tile-full" title="全屏观看共享屏幕">${icon('maximize')}<span>全屏</span></button>`;n.querySelector('.meeting-tile-full').onclick=e=>{e.stopPropagation();toggleScreenFocus(id)};n.ondblclick=()=>{if(n.classList.contains('is-screen')&&!n.classList.contains('meeting-self'))toggleScreenFocus(id)};room.tiles.set(id,n);el('meeting-grid').append(n);n.classList.toggle('meeting-self',self)};const v=n.querySelector('video');v.muted=self;if(stream&&v.srcObject!==stream){v.srcObject=stream;v.play().catch(()=>{})};const person=n.querySelector('.meeting-person'),key=id+'|'+(name||'');if(person.dataset.key!==key){person.dataset.key=key;person.innerHTML=personHTML(id,name)}n.querySelector('.meeting-tile-label').textContent=(self?'我 · ':'')+name;return n}
+ // A viewer can enlarge the presenter's shared screen to the whole window (and
+ // the whole display): the video then fills the screen at its own resolution.
+ function applyScreenFocus(){if(!room)return;for(const [id,n] of room.tiles){const on=id===room.focus;n.classList.toggle('meeting-focus',on);const b=n.querySelector('.meeting-tile-full');if(b){b.querySelector('span').textContent=on?'退出全屏':'全屏';b.title=on?'退出全屏（Esc）':'全屏观看共享屏幕'}}root().classList.toggle('screen-focus',!!room.focus)}
+ function unfocusScreen(){if(!room)return;room.focus='';room.focusFull=false;applyScreenFocus()}
+ async function toggleScreenFocus(id){const active=room;if(!active)return;if(active.focus===id){const leave=active.focusFull;unfocusScreen();if(leave&&display.full())await display.exit();return}active.focus=id;applyScreenFocus();active.focusFull=!display.full();if(active.focusFull)await display.toggle()}
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&room?.focus&&!display.full()){e.preventDefault();unfocusScreen()}});
  function renderMembers(){if(!room)return;el('meeting-count').textContent=room.states.size;const columns=room.states.size<=2?room.states.size:room.states.size<=4?2:3;el('meeting-grid').style.gridTemplateColumns=`repeat(${innerWidth<=700?1:columns},minmax(0,1fr))`;el('meeting-grid').style.gridTemplateRows=`repeat(${Math.ceil(room.states.size/(innerWidth<=700?1:columns))},minmax(0,1fr))`;el('meeting-members-list').innerHTML=[...room.states.entries()].map(([id,p])=>`<div class="meeting-member"><b>${esc(p.name)}${id===room.id?'（我）':''}</b><small>${id===room.host?'主持人 · ':''}${p.microphone?'麦克风开启':'已静音'}</small>${room.id===room.host&&id!==room.id?`<div><button data-meeting-mute="${id}">静音</button><button data-meeting-transfer="${id}">设为主持人</button><button data-meeting-kick="${id}">移出</button></div>`:''}</div>`).join('');
   for(const [id,p]of room.states){const n=room.tiles.get(id);if(n){n.classList.toggle('has-video',!(id===room.id&&p.screen)&&(!!p.camera||!!p.screen));n.classList.toggle('is-screen',!!p.screen);n.classList.toggle('sharing-local',id===room.id&&!!p.screen)}}
+  if(room.focus&&!room.states.get(room.focus)?.screen){unfocusScreen();display.exit().catch(()=>{})}
   el('meeting-recording').classList.toggle('hidden',![...room.states.values()].some(p=>p.recording));
   el('meeting-members-list').onclick=e=>{for(const type of ['mute','transfer','kick']){const b=e.target.closest(`[data-meeting-${type}]`);if(b)send({type,to:b.getAttribute(`data-meeting-${type}`)})}};
  }
@@ -60,7 +67,7 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  function peer(id){if(room.peers.has(id))return room.peers.get(id);const active=room,pc=new RTCPeerConnection({iceServers:directIceServers(active.rtc),iceTransportPolicy:'all',bundlePolicy:'max-bundle'}),entry={id,pc,makingOffer:false,queue:[],ignore:false,signals:Promise.resolve(),pendingSignals:0,needsOffer:false,localOffer:null};room.peers.set(id,entry);entry.route=directFirstICE(pc,active.rtc,{alive:()=>room===active&&active.peers.get(id)===entry,changed:()=>renderConnection(active),negotiate:()=>offer(entry)});
   for(const track of room.stream.getAudioTracks())pc.addTrack(track,room.stream);const video=room.screen?.getVideoTracks()[0]||room.stream.getVideoTracks()[0];if(video)pc.addTrack(video,room.screen||room.stream);if(!room.stream.getAudioTracks().length)pc.addTransceiver('audio',{direction:'recvonly'});if(!video)pc.addTransceiver('video',{direction:'recvonly'});
   pc.onicecandidate=e=>{if(e.candidate&&room===active)send({type:'signal',to:id,signal:'candidate',candidate:JSON.stringify(e.candidate.toJSON())})};
-  pc.ontrack=e=>{if(room!==active)return;const p=room.states.get(id);let stream=e.streams[0];if(!stream){stream=new MediaStream();stream.addTrack(e.track)}tile(id,p?.name||'参会者',stream);renderMembers()};
+  pc.ontrack=e=>{lowLatencyReceiver(e.receiver);if(room!==active)return;const p=room.states.get(id);let stream=e.streams[0];if(!stream){stream=new MediaStream();stream.addTrack(e.track)}tile(id,p?.name||'参会者',stream);renderMembers()};
   pc.onnegotiationneeded=()=>offer(entry).catch(e=>toast(e.message));const connectionChanged=()=>{if(room!==active)return;if(active.call&&(pc.connectionState==='connected'||['connected','completed'].includes(pc.iceConnectionState)))send({type:'call-connected'});entry.route.update();renderConnection(active)};pc.onconnectionstatechange=connectionChanged;pc.oniceconnectionstatechange=connectionChanged;return entry;
  }
  async function offer(p){
@@ -110,7 +117,9 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
   const active=room;if(!active||active.id!==active.host||active.sharePending)return;
   if(active.screen){await stopSharing();return}if(!navigator.mediaDevices?.getDisplayMedia)throw Error('当前系统不支持屏幕共享');
   active.sharePending=true;el('meeting-share').disabled=true;
-  try{const screen=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30}},audio:false,selfBrowserSurface:'exclude'});
+  try{const screen=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30},resizeMode:'none'},audio:false,selfBrowserSurface:'exclude'});
+   // Native resolution (no resizing), encoded for text and fine detail.
+   const shared=screen.getVideoTracks()[0];if(shared&&'contentHint'in shared)shared.contentHint='text';
    if(room!==active||active.id!==active.host){screen.getTracks().forEach(t=>t.stop());return}
    active.screen=screen;screen.getVideoTracks()[0].onended=()=>{if(room===active)stopSharing().catch(e=>toast(e.message))};
    try{await replaceVideo(screen.getVideoTracks()[0],screen)}catch(e){await stopSharing();throw e}

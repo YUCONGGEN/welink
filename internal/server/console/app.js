@@ -466,7 +466,7 @@ const sections = [
     ['media.direct_timeout_ms', 'int', '直连超时（毫秒）', '超过后改走中继，1000–30000'],
     ['media.credential_seconds', 'int', '中继凭据有效期（秒）'],
     ['media.max_allocations_per_user', 'int', '每人最多中继连接'],
-    ['media.bytes_per_second', 'kb', '每路中继带宽上限（KB/s）'],
+    ['media.bytes_per_second', 'kb', '每人中继带宽上限（KB/s）', '0 表示不限制（默认）'],
     ['media.realm', 'text', '中继域（realm）'],
     ['media.secret_file', 'text', '中继密钥文件', '在“凭据与密钥”中生成后会自动填写', true],
     ['media.allowed_peer_cidrs', 'list', '允许中继的内网网段', '每行一个 CIDR，留空则只允许公网地址', true],

@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -90,10 +91,18 @@ func (h *tileHub) publish(f stream.TileFrame, data []byte, legacy bool) error {
 	return nil
 }
 
-// publishJPEG wraps one complete JPEG picture as a reset frame.
+// imageMIME tells PNG (Android's lossless still frame) from JPEG.
+func imageMIME(data []byte) string {
+	if bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) {
+		return "image/png"
+	}
+	return "image/jpeg"
+}
+
+// publishJPEG wraps one complete JPEG (or PNG) picture as a reset frame.
 func (h *tileHub) publishJPEG(data []byte, width, height int) error {
 	f := stream.TileFrame{Width: width, Height: height, SourceWidth: width, SourceHeight: height, Reset: true,
-		Tiles: []stream.Tile{{X: 0, Y: 0, Width: width, Height: height, Size: len(data), MIME: "image/jpeg"}}}
+		Tiles: []stream.Tile{{X: 0, Y: 0, Width: width, Height: height, Size: len(data), MIME: imageMIME(data)}}}
 	return h.publish(f, data, true)
 }
 

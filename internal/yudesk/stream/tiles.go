@@ -89,7 +89,9 @@ func (f TileFrame) Validate(data []byte) error {
 }
 
 type TileEncoder struct {
-	GridSize     int // negotiated 128 grid; large surfaces fall back to 256 to bound tile count
+	GridSize int // negotiated 128 grid; large surfaces fall back to 256 to bound tile count
+	// Lossless encodes photo tiles as PNG too, so every pixel arrives exact.
+	Lossless     bool
 	previousGrid int
 	previous     *image.RGBA
 	pngBuffers   tilePNGBufferPool
@@ -175,7 +177,7 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 		indexed := palette.index(img, r)
 		// Include neighboring pixels when classifying a boundary glyph: its
 		// antialiasing must not become JPEG merely because a stem crosses tiles.
-		photo := indexed == nil && photographic(img, r) && !fineDetail(img, classification)
+		photo := !e.Lossless && indexed == nil && photographic(img, r) && !fineDetail(img, classification)
 		if !photo {
 			var pixels image.Image = img.SubImage(r)
 			if indexed != nil {

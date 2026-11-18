@@ -38,7 +38,7 @@ type MediaSettings struct {
 }
 
 func defaultMediaSettings() MediaSettings {
-	return MediaSettings{Listen: ":8252", PublicAddress: "www.yucg.cn", URLs: []string{"turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"}, Realm: "welink", CredentialSeconds: 21600, DirectTimeoutMS: 15000, RelayMinPort: 8260, RelayMaxPort: 8359, MaxAllocationsPerUser: 32, BytesPerSecond: 4 << 20}
+	return MediaSettings{Listen: ":8252", PublicAddress: "www.yucg.cn", URLs: []string{"turn:www.yucg.cn:8252?transport=udp", "turn:www.yucg.cn:8252?transport=tcp"}, Realm: "welink", CredentialSeconds: 21600, DirectTimeoutMS: 15000, RelayMinPort: 8260, RelayMaxPort: 8359, MaxAllocationsPerUser: 32}
 }
 func (m MediaSettings) validate() error {
 	if m.DirectTimeoutMS < 1000 || m.DirectTimeoutMS > 30000 {
@@ -47,7 +47,7 @@ func (m MediaSettings) validate() error {
 	if !m.Enabled {
 		return nil
 	}
-	if m.Listen == "" || m.PublicAddress == "" || m.SecretFile == "" || m.Realm == "" || len(m.URLs) == 0 || len(m.URLs) > 8 || m.CredentialSeconds < 900 || m.CredentialSeconds > 86400 || m.RelayMinPort < 1024 || m.RelayMaxPort > 65534 || m.RelayMinPort > m.RelayMaxPort || m.MaxAllocationsPerUser < 1 || m.MaxAllocationsPerUser > 256 || m.BytesPerSecond < 65536 || m.BytesPerSecond > 1<<30 {
+	if m.Listen == "" || m.PublicAddress == "" || m.SecretFile == "" || m.Realm == "" || len(m.URLs) == 0 || len(m.URLs) > 8 || m.CredentialSeconds < 900 || m.CredentialSeconds > 86400 || m.RelayMinPort < 1024 || m.RelayMaxPort > 65534 || m.RelayMinPort > m.RelayMaxPort || m.MaxAllocationsPerUser < 1 || m.MaxAllocationsPerUser > 256 || (m.BytesPerSecond != 0 && m.BytesPerSecond < 65536) || m.BytesPerSecond > 1<<30 {
 		return errors.New("invalid media relay settings")
 	}
 	_, p, err := net.SplitHostPort(m.Listen)
@@ -237,6 +237,15 @@ func (m *mediaRelay) permission(_ net.Addr, ip net.IP) bool {
 	cgnat := v4 != nil && v4[0] == 100 && (v4[1]&192) == 64
 	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.Equal(net.IPv4bcast) && !cgnat
 }
+
+// relayLimiter caps one user's relayed media; 0 (the default) means no
+// cap, so screen sharing and HD video are limited only by the network.
+func relayLimiter(bytesPerSecond int) *rate.Limiter {
+	if bytesPerSecond <= 0 {
+		return rate.NewLimiter(rate.Inf, 0)
+	}
+	return rate.NewLimiter(rate.Limit(bytesPerSecond), bytesPerSecond)
+}
 func (m *mediaRelay) Validate() error { return m.generator.Validate() }
 func (m *mediaRelay) AllocatePacketConn(conf turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
 	user, _, valid := m.identity(conf.UserID)
@@ -249,7 +258,7 @@ func (m *mediaRelay) AllocatePacketConn(conf turn.AllocateListenerConfig) (net.P
 	m.mu.Lock()
 	state := m.users[user]
 	if state == nil {
-		state = &mediaUser{limiter: rate.NewLimiter(rate.Limit(m.settings.BytesPerSecond), m.settings.BytesPerSecond)}
+		state = &mediaUser{limiter: relayLimiter(m.settings.BytesPerSecond)}
 		m.users[user] = state
 	}
 	if m.closing || state.count >= m.settings.MaxAllocationsPerUser {

@@ -75,7 +75,7 @@
     "relay_min_port": 20000,
     "relay_max_port": 20127,
     "max_allocations_per_user": 32,
-    "bytes_per_second": 4194304,
+    "bytes_per_second": 0,
     "allowed_peer_cidrs": []
   },
   "meetings": {
