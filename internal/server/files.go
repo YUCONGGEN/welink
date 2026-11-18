@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"welink/internal/aiagent"
 	"welink/internal/publicweb"
 )
 
@@ -261,6 +262,22 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 		case "WeLink-Android.apk":
 			name = "LinkMe-Android.apk"
 		}
+		// linkme-AIdex (Me's local task component): the signed manifest and
+		// archives, fetched by desktop clients; see aiagent.InstallAIdex.
+		if rest, isTool := strings.CutPrefix(name, "tools/"); isTool {
+			if !aiagent.AIdexFile(rest) {
+				http.NotFound(w, r)
+				return
+			}
+			if rest == aiagent.AIdexManifest {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-cache")
+			} else {
+				w.Header().Set("Content-Type", "application/zstd")
+			}
+			http.ServeFile(w, r, filepath.Join(s.downloads, "tools", rest))
+			return
+		}
 		if rest, isServer := strings.CutPrefix(name, "server/"); isServer {
 			if !serverDownloadPattern.MatchString(rest) {
 				http.NotFound(w, r)
@@ -272,7 +289,11 @@ func (s *Server) landing(w http.ResponseWriter, r *http.Request) {
 			http.ServeFile(w, r, filepath.Join(s.downloads, "server", rest))
 			return
 		}
-		if name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" {
+		if name == appManifest {
+			// Signed client update manifest (see release_mirror.go).
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-cache")
+		} else if name != "LinkMe-Android.apk" && name != "LinkMe-Setup.exe" && name != "LinkMe-macOS-arm64.zip" && name != "SHA256SUMS.txt" {
 			http.NotFound(w, r)
 			return
 		}

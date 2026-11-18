@@ -56,6 +56,8 @@ type Client struct {
 	transport      *http.Transport
 	notifications  notificationState
 	ai             localAIState
+	codex          codexInstall
+	update         appUpdate
 }
 
 func New(o Options) (*Client, error) {
@@ -118,6 +120,7 @@ func New(o Options) (*Client, error) {
 	}
 	c.srv = &http.Server{Handler: http.HandlerFunc(c.serve), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second}
 	go c.srv.Serve(ln)
+	c.startUpdateLoop()
 	return c, nil
 }
 func (c *Client) URL() string { return "http://" + c.host + "/?access_token=" + c.key }
@@ -184,6 +187,12 @@ func (c *Client) serve(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" && subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("access_token")), []byte(c.key)) == 1 {
 		http.SetCookie(w, &http.Cookie{Name: "welink_local", Value: c.key, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// linkme-AIdex's tool bridge has no browser cookie; it carries a key
+	// that is valid only for the running Me task (see tools.go).
+	if r.URL.Path == "/local/ai/tools" {
+		c.serveTools(w, r)
 		return
 	}
 	cookie, err := r.Cookie("welink_local")
@@ -298,6 +307,12 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 		switch path {
 		case "/local/config":
 			localJSON(w, c.Config())
+		case "/local/update":
+			if r.URL.Query().Get("check") == "1" {
+				go c.checkAppUpdate()
+				time.Sleep(300 * time.Millisecond)
+			}
+			localJSON(w, c.appUpdateStatus())
 		case "/local/remote/state":
 			localJSON(w, c.Remote.State())
 		case "/local/remote/tiles":
@@ -458,6 +473,13 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		localJSON(w, map[string]bool{"ok": true})
+	case "/local/update/apply":
+		result, err := c.applyAppUpdate()
+		if err != nil {
+			localError(w, 400, err.Error())
+			return
+		}
+		localJSON(w, result)
 	case "/local/remote/release":
 		c.Remote.ReleaseInput()
 		localJSON(w, map[string]bool{"ok": true})

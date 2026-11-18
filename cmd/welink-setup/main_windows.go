@@ -17,7 +17,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"welink/internal/nativeinit"
+	"welink/internal/version"
 )
 
 //go:embed payload/WeLink-Windows.exe payload/icon.svg
@@ -27,9 +29,27 @@ var u32 = syscall.NewLazyDLL("user32.dll")
 func main() {
 	silent := flag.Bool("silent", false, "install without opening the installer UI")
 	directory := flag.String("dir", "", "installation directory")
+	update := flag.Bool("update", false, "self-update: wait for the running LinkMe to exit, install silently, then start it")
 	flag.Parse()
 	if *directory == "" {
 		*directory = filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "WeLink")
+	}
+	if *update {
+		// Started by LinkMe itself with a verified installer; the old
+		// program is still exiting, so retry until its file is free.
+		var err error
+		for end := time.Now().Add(90 * time.Second); time.Now().Before(end); time.Sleep(500 * time.Millisecond) {
+			if err = install(*directory); err == nil {
+				break
+			}
+		}
+		if err != nil {
+			os.Exit(1)
+		}
+		cmd := exec.Command(filepath.Join(*directory, "WeLink-Windows.exe"))
+		cmd.Dir = *directory
+		_ = cmd.Start()
+		return
 	}
 	if *silent {
 		if err := install(*directory); err != nil {
@@ -124,7 +144,7 @@ func install(directory string) error {
 	if err = os.WriteFile(uninstallPath, []byte("\xef\xbb\xbf"+uninstallScript), 0600); err != nil {
 		return err
 	}
-	for k, v := range map[string]string{"DisplayName": "LinkMe", "DisplayVersion": "0.1.18", "Publisher": "LinkMe", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
+	for k, v := range map[string]string{"DisplayName": "LinkMe", "DisplayVersion": version.App, "Publisher": "LinkMe", "InstallLocation": dir, "DisplayIcon": target, "UninstallString": `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "` + uninstallPath + `"`} {
 		if err = key.SetStringValue(k, v); err != nil {
 			return err
 		}

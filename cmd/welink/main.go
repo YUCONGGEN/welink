@@ -8,10 +8,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"welink/internal/aiagent"
 	"welink/internal/client"
 )
 
 func main() {
+	// linkme-AIdex starts LinkMe again as its tool bridge (MCP over stdio).
+	if len(os.Args) == 2 && os.Args[1] == aiagent.ToolBridgeFlag {
+		os.Exit(aiagent.RunToolBridge())
+	}
 	headless := flag.Bool("headless", false, "run the local client without a native window")
 	startup := flag.Bool("startup", false, "started by the current user's login startup entry")
 	listen := flag.String("listen", "127.0.0.1:18746", "local client address")

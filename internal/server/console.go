@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"welink/internal/version"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -168,6 +169,8 @@ func (s *Server) consoleHandler(prefix string) http.Handler {
 		"POST /api/restart": s.consoleRestart,
 		"GET /api/branding": s.consoleBranding, "PUT /api/branding": s.consoleSaveBranding, "PUT /api/branding/icon": s.consoleUploadBrandIcon, "DELETE /api/branding/icon": s.consoleDeleteBrandIcon,
 		"GET /api/ai": s.consoleAI, "PUT /api/ai": s.consoleSaveAI, "POST /api/ai/test": s.consoleTestAI,
+		"GET /api/aidex": s.consoleMirrorStatus(aidexMirror), "POST /api/aidex/update": s.consoleMirrorUpdate(aidexMirror, "update-aidex"),
+		"GET /api/app-release": s.consoleMirrorStatus(appMirror), "POST /api/app-release/update": s.consoleMirrorUpdate(appMirror, "update-app-release"),
 	} {
 		mux.Handle(pattern, s.consoleAuth(h))
 	}
@@ -350,7 +353,7 @@ func (s *Server) consoleLogout(w http.ResponseWriter, r *http.Request, a console
 }
 
 func (s *Server) consoleMe(w http.ResponseWriter, r *http.Request, a consoleActor) {
-	ok(w, map[string]any{"id": a.ID, "username": a.Username, "version": "0.1.18", "supervised": s.supervised})
+	ok(w, map[string]any{"id": a.ID, "username": a.Username, "version": version.App, "supervised": s.supervised})
 }
 
 func (s *Server) consoleChangePassword(w http.ResponseWriter, r *http.Request, a consoleActor) {

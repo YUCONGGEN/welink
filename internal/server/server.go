@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"welink/internal/version"
 )
 
 type Config struct {
@@ -31,6 +32,7 @@ type Config struct {
 type Server struct {
 	db                   *sql.DB
 	dir, downloads       string
+	aidex, appRelease    releaseJob
 	mux                  *http.ServeMux
 	mu                   sync.Mutex
 	clients              map[string]map[*socket]bool
@@ -46,6 +48,7 @@ type Server struct {
 	storage              string
 	uploadSlots          chan struct{}
 	storageDone          chan struct{}
+	schedulesDone        chan struct{}
 	media                *mediaRelay
 	emailSender          emailSender
 	ai                   *aiService
@@ -125,6 +128,7 @@ func New(cfg Config) (*Server, error) {
 	s.qrLogins.items = map[string]*qrLogin{}
 	s.startCalls()
 	s.startStorageCleanup()
+	s.startSchedules()
 	return s, nil
 }
 func (s *Server) Close() error {
@@ -135,7 +139,7 @@ func (s *Server) Close() error {
 	if s.media != nil {
 		s.media.close()
 	}
-	s.callsClose.Do(func() { close(s.callsStop); <-s.callsDone; <-s.storageDone })
+	s.callsClose.Do(func() { close(s.callsStop); <-s.callsDone; <-s.storageDone; <-s.schedulesDone })
 	s.meetings.Lock()
 	if records, e := s.activeCallRecords(); e == nil {
 		for _, c := range records {
@@ -193,7 +197,7 @@ func (s *Server) routes() {
 			fail(w, 503, "数据库不可用")
 			return
 		}
-		ok(w, map[string]any{"ok": true, "version": "0.1.18", "time": now()})
+		ok(w, map[string]any{"ok": true, "version": version.App, "time": now()})
 	})
 	s.mux.HandleFunc("POST /api/auth/register", s.register)
 	s.mux.HandleFunc("POST /api/auth/login", s.login)
@@ -227,6 +231,7 @@ func (s *Server) routes() {
 		"POST /api/meetings": s.createMeeting, "GET /api/meetings": s.listMeetings, "POST /api/meetings/{code}/invite": s.inviteMeeting, "POST /api/meetings/{code}/end": s.endMeeting, "GET /api/meetings/{code}/ws": s.meetingSocket,
 		"POST /api/auth/logout": s.logout, "GET /api/me": s.me, "PATCH /api/me": s.updateMe,
 		"GET /api/users": s.users, "GET /api/friends": s.friends, "GET /api/requests": s.requests, "POST /api/requests": s.addRequest, "POST /api/requests/{id}": s.resolveRequest,
+		"GET /api/schedules": s.listSchedules, "POST /api/schedules": s.createSchedule, "DELETE /api/schedules/{id}": s.deleteSchedule,
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
 		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
 		"GET /api/messages/{id}/notification": s.messageNotification,

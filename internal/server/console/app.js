@@ -139,7 +139,7 @@ function renderLogin(message) {
 // ---------- shell and routing ----------
 const pages = [
   ['overview', '概览', 'home'], ['users', '用户管理', 'users'], ['admins', '后台管理员', 'shield'],
-  ['settings', '系统设置', 'sliders'], ['brand', '品牌与图标', 'image'], ['ai', 'AI 模型', 'spark'], ['credentials', '凭据与密钥', 'key'], ['packages', '客户端安装包', 'box'], ['audit', '操作日志', 'list'],
+  ['settings', '系统设置', 'sliders'], ['brand', '品牌与图标', 'image'], ['ai', 'AI 模型', 'spark'], ['aidex', 'linkme-AIdex', 'box'], ['credentials', '凭据与密钥', 'key'], ['packages', '客户端安装包', 'box'], ['audit', '操作日志', 'list'],
 ];
 function shell() {
   if ($('.shell')) return;
@@ -168,7 +168,7 @@ function route() {
   const main = $('#main');
   main.onclick = main.onchange = null;
   main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  const views = { overview, users, user: () => userDetail(id), admins, settings, brand: branding, ai: aiModel, credentials, packages, audit };
+  const views = { overview, users, user: () => userDetail(id), admins, settings, brand: branding, ai: aiModel, aidex: aidexPage, credentials, packages, audit };
   (views[page] || overview)().catch(e => { if (e.status !== 401) main.innerHTML = `<div class="card card-body empty">${esc(e.message)}</div>`; });
   window.scrollTo(0, 0);
 }
@@ -704,11 +704,12 @@ const packageInfo = {
 };
 async function packages() {
   const res = await api('/downloads');
-  $('#main').innerHTML = head('客户端安装包', `员工在 <a href="${esc(res.url)}" target="_blank" rel="noopener">下载页</a> 获取客户端。上传新版本会立即替换，并自动更新校验文件 SHA256SUMS.txt。`) +
-   `<div class="card">${res.items.map(p => { const [ic, label, ext] = packageInfo[p.name]; return `<div class="package"><div class="icon">${icon(ic)}</div><div class="info"><b>${label}</b>
+  $('#main').innerHTML = head('客户端安装包', `员工在 <a href="${esc(res.url)}" target="_blank" rel="noopener">下载页</a> 获取客户端。已安装的客户端会从本服务器<b>自动更新</b>到“从官网更新”取得的官方版本；手动上传的安装包可供下载，但不会推送自动更新。`) +
+   `<div class="card" id="release-card"></div><div class="card">${res.items.map(p => { const [ic, label, ext] = packageInfo[p.name]; return `<div class="package"><div class="icon">${icon(ic)}</div><div class="info"><b>${label}</b>
      <small>${p.exists ? `${fmtBytes(p.size)} · 更新于 ${fmtTime(p.modified)}` : '尚未上传'}</small>${p.sha256 ? `<small class="path">SHA-256 ${esc(p.sha256)}</small>` : ''}<div class="progress hidden"><i></i></div></div>
      <input type="file" class="hidden" accept="${ext}" data-file="${p.name}"><button class="btn" data-upload="${p.name}">${icon('upload')}${p.exists ? '上传新版本' : '上传'}</button>${p.exists ? `<button class="btn danger small" data-remove="${p.name}">删除</button>` : ''}</div>`; }).join('')}</div>
    <p class="help">目录：<span class="path">${esc(res.dir)}</span></p>`;
+  releaseCard($('#release-card'), 'app-release', '客户端', 'packages');
   $('#main').onclick = async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.upload) $(`[data-file="${b.dataset.upload}"]`).click();
@@ -732,11 +733,43 @@ function uploadPackage(name, file, row) {
   xhr.send(file);
 }
 
+// ---------- official releases (linkme-AIdex, client apps) ----------
+// The server mirrors signed official releases; clients download and update
+// only from this server. Both pages share this card.
+const platformNames = { 'windows/amd64': 'Windows', 'darwin/arm64': 'macOS（Apple 芯片）', 'android/arm64': 'Android' };
+let releaseTimer;
+async function releaseCard(box, kind, label, page, check) {
+  clearTimeout(releaseTimer);
+  let res;
+  try { res = await api('/' + kind + (check ? '?check=1' : '')); } catch (e) { if (!check) throw e; toast(e.message, true); res = await api('/' + kind); }
+  if (location.hash !== '#/' + page || !document.body.contains(box)) return;
+  const updating = res.state === 'updating', pct = res.total ? Math.floor(res.done * 100 / res.total) : 0;
+  const newer = res.official && res.official !== res.version;
+  box.innerHTML = `<div class="package"><div class="icon">${icon('box')}</div><div class="info"><b>本服务器发布的官方版本：${res.published ? esc(res.version) : '暂无'}</b>
+     <small>${res.published ? res.platforms.map(p => `${platformNames[p.platform] || esc(p.platform)} ${fmtBytes(p.size)}${p.ready ? '' : '（文件缺失）'}`).join(' · ') : '客户端暂时无法从本服务器' + (kind === 'aidex' ? '下载 ' + label : '自动更新') + '，请从官网更新。'}</small>
+     <small>官网最新：${res.official ? esc(res.official) + (newer ? '（可更新）' : '（已是最新）') : '未检查'}</small>
+     ${updating ? `<div class="progress"><i style="width:${pct}%"></i></div><small>正在从官网下载… ${fmtBytes(res.done)} / ${fmtBytes(res.total)}</small>` : ''}
+     ${res.state === 'failed' ? `<small class="error-text">更新失败：${esc(res.error)}</small>` : res.state === 'done' ? '<small>已更新，客户端会自动获取新版本。</small>' : ''}</div>
+     <button class="btn" data-release="check" ${updating ? 'disabled' : ''}>${icon('refresh')}检查官网版本</button>
+     <button class="btn primary" data-release="update" ${updating ? 'disabled' : ''}>${icon('upload')}从官网更新</button></div>`;
+  box.onclick = e => {
+    const b = e.target.closest('[data-release]'); if (!b) return; e.stopPropagation();
+    if (b.dataset.release === 'check') busy(b, () => releaseCard(box, kind, label, page, true));
+    else busy(b, async () => { await api('/' + kind + '/update', { method: 'POST' }); toast('开始从官网更新'); releaseCard(box, kind, label, page); });
+  };
+  if (updating) releaseTimer = setTimeout(() => releaseCard(box, kind, label, page), 1000);
+}
+async function aidexPage() {
+  $('#main').innerHTML = head('linkme-AIdex', 'Me 处理本机文件和任务的组件。桌面客户端首次使用时从<b>本服务器</b>下载，之后本服务器有新版本时会<b>自动更新</b>；客户端不会访问官网。') +
+    '<div class="card" id="release-card"></div><p class="help">官网发布的文件带有 LinkMe 签名，服务器和客户端都会校验签名与 SHA-256，校验不通过不会使用。</p>';
+  await releaseCard($('#release-card'), 'aidex', 'linkme-AIdex', 'aidex');
+}
+
 // ---------- audit ----------
 const actionNames = {
   'login': '登录后台', 'logout': '退出后台', 'change-own-password': '修改自己的密码', 'reset-admin-password': '重置管理员密码', 'create-admin': '添加管理员',
   'enable-admin': '启用管理员', 'disable-admin': '停用管理员', 'delete-admin': '删除管理员', 'cli-create-admin': '命令行创建管理员', 'cli-reset-password': '命令行重置管理员密码',
-  'create-user': '新建用户', 'update-user': '修改用户资料', 'reset-password': '重置用户密码', 'disable-user': '停用用户', 'enable-user': '启用用户',
+  'update-aidex': '从官网更新 linkme-AIdex', 'update-app-release': '从官网更新客户端', 'create-user': '新建用户', 'update-user': '修改用户资料', 'reset-password': '重置用户密码', 'disable-user': '停用用户', 'enable-user': '启用用户',
   'sign-out-user': '用户全部下线', 'revoke-device': '下线用户设备', 'reset-avatar': '重置用户头像', 'delete-user': '删除用户',
   'save-settings': '保存系统设置', 'save-credentials': '更新凭据', 'upload-package': '上传安装包', 'delete-package': '删除安装包', 'restart': '重启服务', 'save-ai': '修改 AI 模型', 'save-brand-name': '修改软件名称', 'upload-brand-icon': '上传软件图标', 'reset-brand-icon': '恢复默认图标',
 };

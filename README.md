@@ -2,7 +2,7 @@
 
 面向企业员工的即时通讯应用，服务端和客户端内核使用 Go，提供 Windows、Apple Silicon macOS 与 Android 客户端。支持单聊、群聊、文件传输、音视频通话、多人会议、远程协助、5 GB 个人网盘和 AI 助手 Me。
 
-Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。目前为 **0.1.18-preview** 预览版本。
+Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。当前为 **0.1.19** 正式版。
 
 ## 下载
 
@@ -14,7 +14,7 @@ Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon
 
 [下载页](http://www.yucg.cn:8251/) · [SHA-256 校验值](http://www.yucg.cn:8251/downloads/SHA256SUMS.txt) · [本次更新](docs/LINKME_RELEASE_0.1.18.md)
 
-macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 LinkMe 界面；首次打开未签名预览版时，在 Finder 里按住 Control 点击应用并选“打开”。
+macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 LinkMe 界面；首次打开未签名的应用时，在 Finder 里按住 Control 点击应用并选“打开”。
 
 ## 主要功能
 
@@ -65,7 +65,7 @@ macOS 下载包包含 `LinkMe.app`，双击后会在默认浏览器打开本机 
 - 下载页：<http://www.yucg.cn:8251/>
 - 默认服务：`http://www.yucg.cn:8250`
 - Windows：运行 `LinkMe-Setup.exe` 安装。需要 Microsoft Edge WebView2 Runtime。
-- macOS：解压 `LinkMe-macOS-arm64.zip`，将 `LinkMe.app` 放入“应用程序”后打开。预览版尚未做 Apple 公证；首次打开时在 Finder 中按住 Control 点击应用并选择“打开”。界面使用系统默认浏览器，本机 Go 客户端在浏览器关闭前保持运行。
+- macOS：解压 `LinkMe-macOS-arm64.zip`，将 `LinkMe.app` 放入“应用程序”后打开。应用尚未做 Apple 公证；首次打开时在 Finder 中按住 Control 点击应用并选择“打开”。界面使用系统默认浏览器，本机 Go 客户端在浏览器关闭前保持运行。
 - 设置中的“消息提示音”可独立开启 / 关闭，保留通知与未读，各设备分别保存。Windows 默认关闭后留在系统托盘继续接收消息；双击托盘图标或再次打开 LinkMe 恢复窗口，右键托盘可完全退出。“设置 → Windows 桌面设置”可修改关闭行为和后台新消息提醒。免打扰群保留 @提醒，隐藏中的当前聊天不会自动标为已读。
 - Windows 桌面设置可选登录系统后启动、最小化到托盘和全局快捷键；默认 Ctrl+Alt+W 显示主窗口，Ctrl+Alt+A 截图，冲突时可修改。原生框选后支持画笔、矩形、箭头、文字、马赛克、撤销，确认后复制、保存或发送到指定聊天。桌面偏好写入客户端资料目录的 `desktop.json`。
 - Android：安装 `LinkMe-Android.apk`，支持 Android 8.0+ 的 64 位 ARM 手机（arm64-v8a），不再包含 32 位 ARM 与 x86。当前为直接安装的预览 APK。

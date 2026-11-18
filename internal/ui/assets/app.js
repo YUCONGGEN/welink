@@ -1,8 +1,8 @@
 (() => {
   // internal/ui/src/me-ai.js
-  function createMe({ S: S2, api: api2, action: action2, esc: esc2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2 }) {
+  function createMe({ S: S2, api: api2, action: action2, esc: esc2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2, remote }) {
     const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform) && config?.localTasks !== false;
-    let config = null, local = { workspace: "", available: false }, generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
+    let config = null, local = { workspace: "", available: false, linkmeTools: false }, handledLinkMe = /* @__PURE__ */ new Set(), generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
     const active = () => S2.conversations.find((c) => c.id === S2.active), live = (g) => g === generation && S2.user && !S2.signingOut;
     async function start() {
       stop();
@@ -47,7 +47,10 @@
       panel.querySelector("[data-me-workspace]").textContent = config?.localTasks === false ? "对话模式 · 当前模型不支持本机任务" : localDesktop() ? local.workspace ? "本机：" + local.workspace : "对话模式 · 选择目录后可处理本机任务" : "记住本会话上下文 · 本机任务请在桌面端执行";
       panel.querySelector("[data-me-workspace-button]").classList.toggle("hidden", !localDesktop());
       const current = task?.conversationId === S2.active ? task : null, busy = starting || current?.state === "running";
-      panel.querySelector("[data-me-status]").textContent = starting ? "正在交给 Me…" : current?.error || (current?.state === "running" ? "Me 正在处理…" : current?.state === "completed" ? "已完成" : current?.state === "cancelled" ? "已停止" : "");
+      panel.querySelector("[data-me-status]").textContent = starting ? "正在交给 Me…" : current?.error || (current?.state === "running" ? (() => {
+        const e = [...current.events || []].reverse().find((e2) => e2.type === "tool" && e2.details?.type === "linkmeTool");
+        return e ? "Me 正在操作 LinkMe：" + (toolNames[e.details.tool] || e.details.tool) : "Me 正在处理…";
+      })() : current?.state === "completed" ? "已完成" : current?.state === "cancelled" ? "已停止" : "");
       panel.querySelector("[data-me-cancel]").classList.toggle("hidden", !current || !busy);
       const area = $2("#messages"), near = area && area.scrollHeight - area.clientHeight - area.scrollTop < 100;
       let stream = $2("#me-stream");
@@ -90,7 +93,10 @@
           }
         } else if (localDesktop()) {
           const result = await api2("/local/ai/status");
-          if (live(g) && result.id) task = { ...result, mode: "local" };
+          if (live(g) && result.id) {
+            task = { ...result, mode: "local" };
+            linkmeActions(task);
+          }
         }
         if (live(g)) render();
       } catch {
@@ -98,6 +104,14 @@
         if (live(g)) timer = setTimeout(poll, task?.state === "running" ? 700 : 3e3);
       }
     }
+    function linkmeActions(t) {
+      for (const e of t.events || []) {
+        if (e.type !== "linkme" || handledLinkMe.has(e.id)) continue;
+        handledLinkMe.add(e.id);
+        if (e.method === "remote" && remote) remote(e.details || {}).catch((err) => toast2(err.message));
+      }
+    }
+    const toolNames = { linkme_send_message: "发送消息", linkme_send_file: "发送文件", linkme_schedule_message: "设置定时消息", linkme_cancel_schedule: "取消定时消息", linkme_read_messages: "查看聊天", linkme_list_contacts: "查看联系人", linkme_list_schedules: "查看定时消息", linkme_remote_assist: "发起远程协助" };
     async function onSent(message) {
       if (!config?.enabled || message.sender !== S2.user?.id || seen.has(message.id)) return;
       const c = S2.conversations.find((c2) => c2.id === message.conversationId);
@@ -110,7 +124,7 @@
       try {
         let result;
         if (localDesktop() && local.workspace) {
-          if (!local.available) throw Error("本机未检测到 Codex CLI，请先安装 Codex CLI；普通对话仍可使用。");
+          if (!local.available) throw Error("本机任务组件未下载，请点“工作目录”下载；普通对话仍可使用。");
           result = await action2("/local/ai/start", { messageId: message.id });
           if (live(g)) task = { ...result, state: "running", mode: "local" };
         } else {
@@ -132,15 +146,13 @@
       }
     }
     async function workspace() {
-      if (!local.available) {
-        toast2("本机未检测到 Codex CLI，请先安装 Codex CLI；普通对话仍可使用。");
-        return;
-      }
-      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc2(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
+      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc2(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p><label class="me-allow"><input type="checkbox" id="me-linkme-tools" ' + (local.linkmeTools ? "checked" : "") + '><span><b>允许 linkme-AIdex 代我操作 LinkMe</b><small>以你的身份查看好友和聊天、发消息、发送工作目录中的文件和图片、设置定时消息、发起远程协助邀请（对方仍需接受）。定时消息可在“设置 → 定时消息”中查看和取消。</small></span></label><div class="me-codex" id="me-codex" aria-live="polite"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
+      codexRow();
       $2("#me-save-workspace").onclick = async () => {
         try {
-          const value = await action2("/local/ai/config", { workspace: $2("#me-workspace").value.trim() });
+          const value = await action2("/local/ai/config", { workspace: $2("#me-workspace").value.trim(), linkmeTools: $2("#me-linkme-tools").checked });
           local.workspace = value.workspace;
+          local.linkmeTools = !!value.linkmeTools;
           closeModal2();
           render();
         } catch (error) {
@@ -148,6 +160,47 @@
         }
       };
     }
+    const mb = (n) => (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + " MB";
+    let codexTimer;
+    async function codexRow() {
+      clearTimeout(codexTimer);
+      const row = $2("#me-codex");
+      if (!row) return;
+      let st;
+      try {
+        st = await api2("/local/ai/codex");
+      } catch {
+        row.innerHTML = "";
+        return;
+      }
+      if (!$2("#me-codex")) return;
+      if (st.installed && !local.available) {
+        local.available = true;
+        render();
+      }
+      let html = "<b>本机任务组件</b>";
+      if (!st.supported) html += "<p>当前系统暂不支持本机任务，普通对话仍可使用。</p>";
+      else if (st.state === "downloading") {
+        const pct = st.total ? Math.floor(st.done * 100 / st.total) : 0;
+        html += "<p>正在下载 linkme-AIdex " + esc2(st.version) + "… " + mb(st.done) + " / " + mb(st.total) + '</p><progress max="100" value="' + pct + '"></progress><button class="text-btn" data-me-codex="cancel">取消下载</button>';
+      } else if (st.state === "installed") html += "<p>已就绪" + (st.source === "downloaded" ? " · linkme-AIdex " + esc2(st.current) : " · 使用本机已安装的组件") + "</p>";
+      else if (st.state === "unavailable") html += "<p>" + esc2(st.error || "服务器尚未提供 linkme-AIdex") + "</p>";
+      else if (st.state === "outdated") html += "<p>已安装 linkme-AIdex " + esc2(st.current) + "，可更新到 " + esc2(st.version) + "（" + mb(st.size) + '）</p><button class="secondary" data-me-codex="install">更新</button>';
+      else html += "<p>" + (st.state === "failed" ? esc2(st.error || "下载失败") : "处理本机文件需要先下载 linkme-AIdex " + esc2(st.version) + "（约 " + mb(st.size) + "），之后自动更新。") + '</p><button class="secondary" data-me-codex="install">' + (st.state === "failed" ? "重试" : "下载") + "</button>";
+      row.innerHTML = html;
+      if (st.state === "downloading") codexTimer = setTimeout(codexRow, 500);
+    }
+    document.addEventListener("click", async (e) => {
+      const c = e.target.closest("[data-me-codex]");
+      if (!c) return;
+      c.disabled = true;
+      try {
+        await action2("/local/ai/codex/" + c.dataset.meCodex, {});
+      } catch (error) {
+        toast2(error.message);
+      }
+      codexRow();
+    });
     document.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-me-open],[data-me-workspace-button],[data-me-cancel],[data-me-approve],[data-me-deny]");
       if (!b) return;
@@ -397,7 +450,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.18-preview";
+  var CLIENT_VERSION = "0.1.19";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {
@@ -6217,6 +6270,97 @@
     } };
   }
 
+  // internal/ui/src/updates.js
+  function createUpdates({ S: S2, api: api2, action: action2, esc: esc2, toast: toast2 }) {
+    let timer, shown = "";
+    const supported = () => ["windows", "darwin", "android"].includes(S2.config?.platform);
+    async function poll() {
+      clearTimeout(timer);
+      if (!S2.user || !supported()) return;
+      try {
+        render(await api2("/local/update"));
+      } catch {
+      }
+      timer = setTimeout(poll, 10 * 60 * 1e3);
+    }
+    function render(st) {
+      let bar = document.getElementById("update-banner");
+      if (st.state !== "ready" || !st.latest) {
+        bar?.remove();
+        shown = "";
+        return;
+      }
+      if (shown === st.latest && bar) return;
+      shown = st.latest;
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.id = "update-banner";
+        bar.setAttribute("role", "status");
+        document.body.append(bar);
+      }
+      bar.innerHTML = "<span>新版本 " + esc2(st.latest) + " 已下载" + (S2.config.platform === "android" ? "" : "，重启后完成更新") + '</span><button data-update-apply>立即更新</button><button class="dismiss" data-update-later aria-label="稍后">稍后</button>';
+    }
+    async function apply() {
+      const result = await action2("/local/update/apply", {});
+      if (result.apk) {
+        if (!window.WeLinkAndroid?.installUpdate) throw Error("当前版本不支持应用内安装，请从下载页安装");
+        window.WeLinkAndroid.installUpdate(result.apk);
+        return;
+      }
+      if (result.exit) {
+        toast2("正在更新，LinkMe 将自动重新打开");
+        setTimeout(() => {
+          if (window.welinkDesktopExit) window.welinkDesktopExit();
+        }, 600);
+      }
+    }
+    async function check(button) {
+      if (!supported()) {
+        toast2("当前设备不支持自动更新");
+        return;
+      }
+      button && (button.disabled = true);
+      try {
+        let st = await api2("/local/update?check=1");
+        for (let i = 0; i < 20 && st.state === "checking"; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          st = await api2("/local/update");
+        }
+        if (st.state === "downloading") toast2("正在下载新版本 " + st.latest + "，完成后会提示你更新");
+        else if (st.state === "ready") render(st);
+        else if (st.state === "failed") toast2(st.error || "检查更新失败");
+        else toast2("已是最新版本");
+        if (st.state === "downloading") setTimeout(poll, 15e3);
+      } catch (e) {
+        toast2(e.message);
+      } finally {
+        button && (button.disabled = false);
+      }
+    }
+    document.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-update-apply],[data-update-later],[data-update-check]");
+      if (!b) return;
+      try {
+        if (b.hasAttribute("data-update-later")) document.getElementById("update-banner")?.remove();
+        else if (b.hasAttribute("data-update-check")) await check(b);
+        else {
+          b.disabled = true;
+          await apply();
+        }
+      } catch (err) {
+        toast2(err.message);
+        b.disabled = false;
+      }
+    });
+    return { start() {
+      timer = setTimeout(poll, 30 * 1e3);
+    }, stop() {
+      clearTimeout(timer);
+      document.getElementById("update-banner")?.remove();
+      shown = "";
+    }, check };
+  }
+
   // internal/ui/src/app.js
   var randomID = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
   var $ = (s, r = document) => r.querySelector(s);
@@ -6775,6 +6919,7 @@
     renderShell();
     Me.start().catch(() => {
     });
+    Updates.start();
     await NativeNotifications.start().catch(() => toast("消息通知连接暂不可用，正在重试"));
     connectEvents(true);
     Calls.start();
@@ -6916,6 +7061,7 @@
     S.signingOut = true;
     Calls.stop();
     Me.stop();
+    Updates.stop();
     Outbox.stop();
     Transfers.stop();
     Cloud.reset();
@@ -7083,7 +7229,7 @@
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION.replace("-preview", "")} 预览版</span></div><div class="prefs-row"><span>服务器</span><span>${esc(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
+    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>定时消息</span><button class="secondary" data-action="schedules">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION} 正式版 <button class="text-btn" data-update-check>检查更新</button></span></div><div class="prefs-row"><span>服务器</span><span>${esc(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -7279,6 +7425,19 @@
       throw Error("屏幕共享未获授权");
     }
     return api("/local/remote/state");
+  }
+  async function schedules() {
+    const list = await api("/api/schedules");
+    const name = (id) => {
+      const c = S.conversations.find((c2) => c2.id === id);
+      return c ? c.kind === "direct" ? c.peer?.remark || c.peer?.name || c.name : c.name : "会话";
+    };
+    const repeat = { once: "一次", daily: "每天", weekdays: "工作日" };
+    const fmt = (ms) => {
+      const d = new Date(ms);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    };
+    modal("定时消息", list.length ? '<div class="schedule-list">' + list.map((s) => '<div class="schedule-row"><div><b>' + esc(name(s.conversationId)) + "</b><small>" + fmt(s.nextRun) + " · " + (repeat[s.repeat] || s.repeat) + (s.lastError ? " · 上次失败：" + esc(s.lastError) : "") + "</small><p>" + (s.kind === "text" ? esc(s.text) : s.kind === "image" ? "[图片]" : "[文件]") + '</p></div><button class="secondary danger" data-action="cancel-schedule" data-id="' + esc(s.id) + '">取消</button></div>').join("") + "</div>" : '<p class="hint">暂无定时消息。可以让 Me 帮你设置，例如“每天 9 点给项目群发早安”。</p>', '<button class="primary" data-action="close-modal">完成</button>', true);
   }
   async function inviteRemote(mode, direction) {
     const local = direction === "share" ? await ensureSharing() : await api("/local/remote/state");
@@ -7788,6 +7947,14 @@
         case "remote":
           remoteChoices();
           break;
+        case "schedules":
+          await schedules();
+          break;
+        case "cancel-schedule":
+          await api("/api/schedules/" + b.dataset.id, { method: "DELETE" });
+          toast("已取消");
+          await schedules();
+          break;
         case "accept-remote":
           b.disabled = true;
           await acceptRemote(true);
@@ -7881,7 +8048,12 @@
   var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc, upload });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc, av, toast, jump: jumpMessage });
-  var Me = createMe({ S, api, action, esc, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar });
+  var Me = createMe({ S, api, action, esc, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar, remote: async (d) => {
+    if (!d.conversationId) return;
+    await selectConversation(d.conversationId);
+    await inviteRemote(d.mode === "control" ? "control" : "view", d.direction === "share" ? "share" : "request");
+  } });
+  var Updates = createUpdates({ S, api, action, esc, toast });
   var Outbox = createOutbox({ onSent: (message) => Me.onSent(message), sendLarge: Transfers.chat, S, api, toast, esc, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
   var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
   var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });

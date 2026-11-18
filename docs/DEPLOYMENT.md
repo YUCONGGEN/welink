@@ -83,6 +83,31 @@ curl -fsSL http://www.yucg.cn:8251/downloads/server/install.sh | sudo sh -s -- -
 
 在开发机运行 `node scripts/build-server.mjs`，它会为 5 个平台（linux、darwin × amd64/arm64，windows/amd64）编译服务端，在 `dist/server/` 生成各平台安装包、Docker 安装包 `linkme-server-docker.tar.gz`、`install.sh`、`install.ps1` 和 `SHA256SUMS.txt`。把这些文件复制到服务器的 `<下载目录>/server/`，即可通过上面的在线命令安装。
 
+## 客户端自动更新与 linkme-AIdex
+
+客户端只从自己连接的服务器获取更新，不会访问官网：
+
+- **客户端程序**：服务器在下载目录发布 `app.json`（官方签名的版本清单）和各平台安装包。客户端启动后和每 6 小时检查一次，有新版本就在后台下载、校验，然后提示“立即更新”。Windows 和 macOS 重启后完成更新，Android 打开系统安装界面。
+- **linkme-AIdex**（Me 处理本机文件和任务的组件，不在安装包里）：服务器在 `<下载目录>/tools/` 发布 `aidex.json` 和各平台压缩包。桌面客户端第一次使用本机任务时下载，之后服务器有新版本就自动更新。
+
+维护人员在管理后台把官网的新版本同步到本服务器：
+
+- “客户端安装包”页的“从官网更新”；
+- “linkme-AIdex”页的“从官网更新”。
+
+服务器和客户端都会用内置公钥核对官方签名和每个文件的 SHA-256，校验不通过不会发布，也不会安装。手动上传的安装包可以照常下载，但上传后服务器会停止发布 `app.json`，客户端不再从这台服务器自动更新，直到下一次“从官网更新”。
+
+官方发布（只在持有签名私钥的发布机上进行，私钥不进代码仓库）：
+
+```bash
+# linkme-AIdex：用官方 codex-app-server-package-*.tar.zst 生成压缩包和 aidex.json
+go run ./cmd/aidex-pack -key ~/.linkme/aidex-signing.key -version 0.169.1 -windows <Windows 包> -mac <macOS 包> -out dist/tools
+# 客户端：为已构建的安装包生成 app.json（每次发布先提升 internal/version 的版本号）
+go run ./cmd/release-sign -key ~/.linkme/aidex-signing.key -name linkme-app -version 0.1.19 -out dist/app.json windows/amd64=dist/LinkMe-Setup.exe darwin/arm64=dist/LinkMe-macOS-arm64.zip android/arm64=dist/LinkMe-Android.apk
+```
+
+然后把 `dist/tools/*` 放到官网的 `<下载目录>/tools/`，把 `dist/app.json` 和安装包放到官网的 `<下载目录>/`。
+
 ## 客户端连接到你的服务器
 
 员工在客户端登录页点击“服务器 … 切换”（或“连接设置”），填写服务器的 IP 或域名即可；`http://` 和默认 API 端口 8250 会自动补全，保存前客户端会检查能否连通并说明失败原因。之后用 **6 位 LinkMe 号或邮箱** 加密码登录，两种方式都可以，与服务器是否开启“邮箱登录”无关。账号在管理后台“用户管理”中创建；创建时填写邮箱，员工就可以用邮箱登录。

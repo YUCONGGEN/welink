@@ -24,10 +24,11 @@ import (
 	"syscall"
 	"time"
 	"welink/internal/server"
+	"welink/internal/version"
 )
 
 // Version is printed by -version and reported by /health.
-const Version = "0.1.18"
+const Version = version.App
 
 // exitRestart tells a supervising service manager (systemd, launchd, the
 // Windows SCM or Docker) that the console asked for a restart.

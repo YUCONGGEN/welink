@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"welink/internal/version"
 
 	"welink/internal/emailauth"
 )
@@ -65,7 +66,7 @@ func (s *Server) consoleOverview(w http.ResponseWriter, r *http.Request, _ conso
 	}
 	dataFree, _ := storageFree(s.dir)
 	ok(w, map[string]any{
-		"version": "0.1.18", "started": s.started.UnixMilli(), "counts": counts, "volumes": volumes,
+		"version": version.App, "started": s.started.UnixMilli(), "counts": counts, "volumes": volumes,
 		"dataDir": s.dir, "dataFree": dataFree, "downloadsDir": s.downloads, "configPath": s.configPath,
 		"supervised": s.supervised, "restartPending": s.settingsChangedOnDisk(),
 		"publicURL": s.settings.PublicURL, "downloadURL": s.settings.DownloadURL, "listen": s.settings.Listen,
@@ -531,6 +532,12 @@ func (s *Server) consoleUploadDownload(w http.ResponseWriter, r *http.Request, a
 	if err == nil {
 		err = s.writeSums()
 	}
+	if err == nil {
+		// A hand-uploaded package is not part of the signed official
+		// release, so clients stop self-updating from this server until the
+		// next "从官网更新".
+		err = s.withdrawAppRelease()
+	}
 	if err != nil {
 		s.dbError(w, err)
 		return
@@ -567,6 +574,7 @@ func (s *Server) consoleDeleteDownload(w http.ResponseWriter, r *http.Request, a
 		fail(w, 404, "文件不存在")
 		return
 	}
+	_ = s.withdrawAppRelease()
 	err := os.Remove(filepath.Join(s.downloads, name))
 	if err != nil && !os.IsNotExist(err) {
 		s.dbError(w, err)

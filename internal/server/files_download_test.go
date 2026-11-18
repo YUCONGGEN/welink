@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"welink/internal/version"
 )
 
 func TestLandingServesLinkMeDownloadsAndLegacyAliases(t *testing.T) {
@@ -55,7 +56,7 @@ func TestHealthReportsCurrentRelease(t *testing.T) {
 		Version string `json:"version"`
 	}
 	f.request("GET", "/health", "", nil, http.StatusOK, &result)
-	if !result.OK || result.Version != "0.1.18" {
+	if !result.OK || result.Version != version.App {
 		t.Fatalf("unexpected health response: %+v", result)
 	}
 }
