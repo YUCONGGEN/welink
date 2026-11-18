@@ -147,13 +147,14 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 			var config struct {
 				Workspace   string `json:"workspace"`
 				LinkMeTools bool   `json:"linkmeTools"`
+				SystemProxy bool   `json:"systemProxy"`
 			}
 			raw, _ := os.ReadFile(path)
 			_ = json.Unmarshal(raw, &config)
 			// Opening Me also lets a downloaded linkme-AIdex follow the server.
 			go c.codexStatus()
 			platform := c.Config().Platform
-			localJSON(w, map[string]any{"workspace": config.Workspace, "linkmeTools": config.LinkMeTools, "available": (platform == "windows" || platform == "darwin") && aiagent.FindBinary(c.codexRoot()) != ""})
+			localJSON(w, map[string]any{"workspace": config.Workspace, "linkmeTools": config.LinkMeTools, "systemProxy": config.SystemProxy, "available": (platform == "windows" || platform == "darwin") && aiagent.FindBinary(c.codexRoot()) != ""})
 			return
 		}
 		if r.Method != "POST" {
@@ -163,6 +164,7 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 		var p struct {
 			Workspace   string `json:"workspace"`
 			LinkMeTools bool   `json:"linkmeTools"`
+			SystemProxy bool   `json:"systemProxy"`
 		}
 		if !localDecode(w, r, &p) {
 			return
@@ -220,6 +222,7 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 		var prefs struct {
 			Workspace   string
 			LinkMeTools bool
+			SystemProxy bool
 		}
 		raw, _ := os.ReadFile(c.aiPreferencesPath(owner))
 		_ = json.Unmarshal(raw, &prefs)
@@ -269,7 +272,7 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 		}
 		history, _ := json.Marshal(job.History)
 		prompt := job.Instructions + "\n\n当前用户与 Me 的聊天上下文（只属于这一段对话；最后一条是本轮请求）：\n" + string(history)
-		options := aiagent.Options{Binary: binary, Home: filepath.Join(c.dir, "me", owner, "runtime"), Workspace: prefs.Workspace, Model: job.Model, Effort: job.Effort, ProviderURL: strings.TrimRight(c.Config().Server, "/") + "/api/ai/v1", Grant: job.Grant, Prompt: prompt}
+		options := aiagent.Options{Binary: binary, Home: filepath.Join(c.dir, "me", owner, "runtime"), Workspace: prefs.Workspace, Model: job.Model, Effort: job.Effort, ProviderURL: strings.TrimRight(c.Config().Server, "/") + "/api/ai/v1", Grant: job.Grant, Prompt: prompt, SystemProxy: prefs.SystemProxy}
 		if task.toolsKey != "" {
 			if exe, err := os.Executable(); err == nil {
 				options.Tools = &aiagent.ToolServer{Command: exe, Env: map[string]string{"LINKME_TOOLS_URL": "http://" + c.host + "/local/ai/tools", "LINKME_TOOLS_KEY": task.toolsKey}}

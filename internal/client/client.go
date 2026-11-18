@@ -512,7 +512,8 @@ func checkServer(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return errors.New("地址格式不正确")
 	}
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint), Proxy: http.ProxyFromEnvironment}}
+	// Same as the real connection (newUpstream): straight to the server.
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint), Proxy: nil}}
 	resp, err := client.Do(req)
 	if err != nil {
 		var netErr net.Error

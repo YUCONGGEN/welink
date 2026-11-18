@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,9 @@ type Options struct {
 	Binary, Home, Workspace, Model, Effort, ProviderURL, Grant, Prompt string
 	// Tools, when set, lets linkme-AIdex act in LinkMe as the user.
 	Tools *ToolServer
+	// SystemProxy lets linkme-AIdex reach the LinkMe server through the
+	// system proxy; by default it connects directly, as LinkMe does.
+	SystemProxy bool
 }
 type Event struct {
 	Type    string          `json:"type"`
@@ -100,6 +104,12 @@ func Start(ctx context.Context, o Options, events func(Event)) (*Session, error)
 		}
 	}
 	cmd.Env = append(cmd.Env, "CODEX_HOME="+o.Home, "LINKME_AI_TOKEN="+o.Grant)
+	// LinkMe talks to its server directly; linkme-AIdex must too. Otherwise
+	// it follows the Windows/macOS system proxy (Clash and the like), which
+	// cannot reach a LAN server and answers 502.
+	if bypass := directHosts(o.ProviderURL); bypass != "" && !o.SystemProxy {
+		cmd.Env = append(cmd.Env, "NO_PROXY="+bypass, "no_proxy="+bypass)
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -409,4 +419,29 @@ func FindBinary(downloaded string) string {
 		return path
 	}
 	return ""
+}
+
+// directHosts is the NO_PROXY list for linkme-AIdex: whatever the user
+// already had, plus the LinkMe server and loopback.
+func directHosts(providerURL string) string {
+	hosts := []string{}
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		for _, h := range strings.Split(os.Getenv(name), ",") {
+			if h = strings.TrimSpace(h); h != "" {
+				hosts = append(hosts, h)
+			}
+		}
+	}
+	if u, err := url.Parse(providerURL); err == nil && u.Hostname() != "" {
+		hosts = append(hosts, u.Hostname())
+	}
+	hosts = append(hosts, "localhost", "127.0.0.1", "::1")
+	seen, out := map[string]bool{}, []string{}
+	for _, h := range hosts {
+		if key := strings.ToLower(h); !seen[key] {
+			seen[key] = true
+			out = append(out, h)
+		}
+	}
+	return strings.Join(out, ",")
 }

@@ -2,7 +2,7 @@
   // internal/ui/src/me-ai.js
   function createMe({ S: S2, api: api2, action: action2, esc: esc2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2, remote }) {
     const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform) && config?.localTasks !== false;
-    let config = null, local = { workspace: "", available: false, linkmeTools: false }, handledLinkMe = /* @__PURE__ */ new Set(), generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
+    let config = null, local = { workspace: "", available: false, linkmeTools: false, systemProxy: false }, handledLinkMe = /* @__PURE__ */ new Set(), generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
     const active = () => S2.conversations.find((c) => c.id === S2.active), live = (g) => g === generation && S2.user && !S2.signingOut;
     async function start() {
       stop();
@@ -146,11 +146,12 @@
       }
     }
     async function workspace() {
-      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc2(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p><label class="me-allow"><input type="checkbox" id="me-linkme-tools" ' + (local.linkmeTools ? "checked" : "") + '><span><b>允许 linkme-AIdex 代我操作 LinkMe</b><small>以你的身份查看好友和聊天、发消息、发送工作目录中的文件和图片、设置定时消息、发起远程协助邀请（对方仍需接受）。定时消息可在“设置 → 定时消息”中查看和取消。</small></span></label><div class="me-codex" id="me-codex" aria-live="polite"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
+      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc2(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p><label class="me-allow"><input type="checkbox" id="me-linkme-tools" ' + (local.linkmeTools ? "checked" : "") + '><span><b>允许 linkme-AIdex 代我操作 LinkMe</b><small>以你的身份查看好友和聊天、发消息、发送工作目录中的文件和图片、设置定时消息、发起远程协助邀请（对方仍需接受）。定时消息可在“设置 → 定时消息”中查看和取消。</small></span></label><div class="me-codex" id="me-codex" aria-live="polite"></div><label class="me-allow me-proxy"><input type="checkbox" id="me-system-proxy" ' + (local.systemProxy ? "checked" : "") + "><span><b>linkme-AIdex 通过系统代理连接服务器</b><small>默认直接连接服务器，开不开系统代理（如 127.0.0.1:7897）都能用。只有服务器必须经代理才能访问时才勾选。</small></span></label>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
       codexRow();
       $2("#me-save-workspace").onclick = async () => {
         try {
-          const value = await action2("/local/ai/config", { workspace: $2("#me-workspace").value.trim(), linkmeTools: $2("#me-linkme-tools").checked });
+          const value = await action2("/local/ai/config", { workspace: $2("#me-workspace").value.trim(), linkmeTools: $2("#me-linkme-tools").checked, systemProxy: $2("#me-system-proxy").checked });
+          local.systemProxy = !!value.systemProxy;
           local.workspace = value.workspace;
           local.linkmeTools = !!value.linkmeTools;
           closeModal2();
@@ -450,7 +451,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.19";
+  var CLIENT_VERSION = "0.1.20";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {

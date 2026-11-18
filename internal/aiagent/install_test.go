@@ -110,3 +110,13 @@ func TestAIdexFileNames(t *testing.T) {
 		}
 	}
 }
+
+func TestAIdexBypassesProxyForTheLinkMeServer(t *testing.T) {
+	t.Setenv("NO_PROXY", "corp.local")
+	got := directHosts("http://192.168.77.57:8250/api/ai/v1")
+	for _, want := range []string{"corp.local", "192.168.77.57", "127.0.0.1"} {
+		if !strings.Contains(","+got+",", ","+want+",") {
+			t.Fatalf("NO_PROXY %q lacks %s", got, want)
+		}
+	}
+}

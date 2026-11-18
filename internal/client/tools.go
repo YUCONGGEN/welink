@@ -254,7 +254,7 @@ func (c *Client) upload(ctx context.Context, token, cid, path string) (id, mime 
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", form.FormDataContentType())
-	resp, err := (&http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: tlsConfig(cfg.Fingerprint)}}).Do(req)
+	resp, err := (&http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig(cfg.Fingerprint)}}).Do(req)
 	if err != nil {
 		return "", "", errors.New("上传失败：无法连接服务器")
 	}

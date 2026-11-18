@@ -1,4 +1,4 @@
-export const CLIENT_VERSION='0.1.19';
+export const CLIENT_VERSION='0.1.20';
 // The server's product name and icon (console → 品牌与图标). Live bindings:
 // modules that import APP_NAME see updates after setBrand().
 export let APP_NAME='LinkMe';

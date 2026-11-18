@@ -29,7 +29,9 @@ func (c *Client) codexRoot() string { return filepath.Join(c.dir, "tools") }
 
 func (c *Client) toolsHTTP() *http.Client {
 	cfg := c.Config()
-	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: tlsConfig(cfg.Fingerprint)}}
+	// Straight to the user's server, like every other LinkMe connection: a
+	// system/env proxy usually cannot reach a LAN server.
+	return &http.Client{Transport: &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig(cfg.Fingerprint)}}
 }
 
 // aidexManifest returns the server's verified manifest, cached briefly.
