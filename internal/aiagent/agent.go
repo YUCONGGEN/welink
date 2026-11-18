@@ -284,10 +284,21 @@ func (s *Session) read(reader io.Reader) {
 				s.mu.Unlock()
 				if p.Method == "item/completed" && item.Type == "agentMessage" {
 					s.emit(Event{Type: "message", Text: item.Text, Details: v.Item})
-				} else if item.Type == "commandExecution" || item.Type == "fileChange" {
-					s.emit(Event{Type: "tool", Details: v.Item})
+				} else if step := stepOf(v.Item); step != nil {
+					s.emit(Event{Type: "step", ID: item.ID, Details: step})
+				} else if item.Type == "reasoning" && p.Method == "item/started" {
+					s.emit(Event{Type: "thinking"})
 				}
 			}
+		case "item/reasoning/summaryTextDelta":
+			var v struct {
+				Delta string `json:"delta"`
+			}
+			if json.Unmarshal(p.Params, &v) == nil && v.Delta != "" {
+				s.emit(Event{Type: "thinking", Text: v.Delta})
+			}
+		case "turn/plan/updated":
+			s.emit(Event{Type: "plan", Details: p.Params})
 		case "turn/completed":
 			select {
 			case s.turn <- p:
@@ -306,7 +317,69 @@ func (s *Session) read(reader io.Reader) {
 	s.terminal = err
 	s.mu.Unlock()
 }
-func (s *Session) Approve(id string, accept bool, answers json.RawMessage) error {
+
+// stepOf turns a Codex item into a small progress step for the UI (what Me
+// is doing: commands, file edits, web searches, tools), or nil for items
+// that are not steps. Command output is left out: it can be large.
+func stepOf(raw json.RawMessage) json.RawMessage {
+	var item map[string]any
+	if json.Unmarshal(raw, &item) != nil {
+		return nil
+	}
+	kind, _ := item["type"].(string)
+	short := func(v any, n int) string {
+		var s string
+		switch t := v.(type) {
+		case string:
+			s = t
+		case []any:
+			parts := make([]string, 0, len(t))
+			for _, p := range t {
+				parts = append(parts, fmt.Sprint(p))
+			}
+			s = strings.Join(parts, " ")
+		}
+		if r := []rune(strings.TrimSpace(s)); len(r) > n {
+			return string(r[:n]) + "…"
+		}
+		return strings.TrimSpace(s)
+	}
+	step := map[string]any{"kind": kind, "status": item["status"]}
+	switch kind {
+	case "commandExecution":
+		step["command"] = short(item["command"], 300)
+		step["exitCode"] = item["exitCode"]
+		step["durationMs"] = item["durationMs"]
+	case "fileChange":
+		var files []string
+		changes, _ := item["changes"].([]any)
+		for _, c := range changes {
+			if m, ok := c.(map[string]any); ok && len(files) < 12 {
+				files = append(files, short(m["path"], 200))
+			}
+		}
+		step["files"] = files
+		step["count"] = len(changes)
+	case "webSearch":
+		step["query"] = short(item["query"], 200)
+	case "mcpToolCall", "dynamicToolCall":
+		if item["server"] == "linkme" {
+			return nil // shown from the approval request, with its parameters
+		}
+		step["tool"] = short(item["tool"], 100)
+	case "imageView":
+		step["path"] = short(item["path"], 200)
+	case "contextCompaction":
+	default:
+		return nil
+	}
+	out, _ := json.Marshal(step)
+	return out
+}
+
+// Approve answers a pending request. always (commands and file changes)
+// allows the same kind of request for the rest of this task.
+func (s *Session) Approve(id string, accept bool, answers json.RawMessage, always ...bool) error {
 	s.mu.Lock()
 	method, ok := s.approvals[id]
 	params := s.approvalParams[id]
@@ -317,6 +390,9 @@ func (s *Session) Approve(id string, accept bool, answers json.RawMessage) error
 	decision := "decline"
 	if accept {
 		decision = "accept"
+		if len(always) > 0 && always[0] && (method == "item/commandExecution/requestApproval" || method == "item/fileChange/requestApproval") {
+			decision = "acceptForSession"
+		}
 	}
 	result := map[string]any{"decision": decision}
 	if method == "item/permissions/requestApproval" {

@@ -8,17 +8,61 @@ export function createMe({S,api,action,esc,icon,modal,closeModal,toast,refresh,s
   if(!panel.querySelector('.me-config'))panel.innerHTML='<div class="me-config"><span class="ai-label">AI</span><span data-me-workspace></span><button class="text-btn" data-me-workspace-button>工作目录</button></div><div class="me-progress" role="status"><span data-me-status></span><button class="text-btn hidden" data-me-cancel>停止</button></div><div class="me-approvals"></div>';
   panel.querySelector('[data-me-workspace]').textContent=config?.localTasks===false?'对话模式 · 当前模型不支持本机任务':localDesktop()?(local.workspace?'本机：'+local.workspace:'对话模式 · 选择目录后可处理本机任务'):'记住本会话上下文 · 本机任务请在桌面端执行';
   panel.querySelector('[data-me-workspace-button]').classList.toggle('hidden',!localDesktop());
-  const current=task?.conversationId===S.active?task:null,busy=starting||current?.state==='running';panel.querySelector('[data-me-status]').textContent=starting?'正在交给 Me…':current?.error||(current?.state==='running'?(()=>{const e=[...(current.events||[])].reverse().find(e=>e.type==='tool'&&e.details?.type==='linkmeTool');return e?'Me 正在操作 LinkMe：'+(toolNames[e.details.tool]||e.details.tool):'Me 正在处理…'})():current?.state==='completed'?'已完成':current?.state==='cancelled'?'已停止':'');
-  panel.querySelector('[data-me-cancel]').classList.toggle('hidden',!current||!busy);
-  const area=$('#messages'),near=area&&area.scrollHeight-area.clientHeight-area.scrollTop<100;let stream=$('#me-stream');if(current?.state==='running'&&current.text&&area){if(!stream){stream=document.createElement('article');stream.id='me-stream';stream.className='message me-stream';stream.innerHTML='<span class="avatar me-avatar">M</span><div class="message-body"><span class="message-name">Me · AI</span><div class="bubble"></div></div>';area.append(stream)}stream.querySelector('.bubble').textContent=current.text;if(near)area.scrollTop=area.scrollHeight}else stream?.remove();
-  const approvals=panel.querySelector('.me-approvals'),pending=(current?.events||[]).filter(e=>e.type==='approval');
-  for(const node of approvals.children)if(!pending.some(e=>e.id===node.dataset.approvalId))node.remove();
-  for(const e of pending){if([...approvals.children].some(n=>n.dataset.approvalId===e.id))continue;const d=e.details||{},node=document.createElement('section');node.className='me-approval';node.dataset.approvalId=e.id;const question=e.method==='item/tool/requestUserInput';
-   node.innerHTML='<b>'+esc(question?'Me 需要补充信息':'Me 请求执行操作')+'</b><p>'+esc(d.reason||'请查看以下内容后决定')+'</p>'+(question?(d.questions||[]).map(q=>'<label>'+esc(q.question||q.header)+'<textarea data-me-answer="'+esc(q.id)+'" maxlength="4000" placeholder="'+esc((q.options||[]).map(o=>o.label).join(' / '))+'"></textarea></label>').join(''):'<pre>'+esc(d.command||JSON.stringify(d.item||d.permissions||d,null,2)).slice(0,8000)+'</pre>')+'<div><button class="primary" data-me-approve>'+ (question?'提交回答':'允许这一次')+'</button><button class="secondary" data-me-deny>拒绝</button></div>';
-   approvals.append(node);
-  }
+  const current=task?.conversationId===S.active?task:null,running=current?.state==='running',busy=starting||running,events=current?.events||[];
+  const pending=events.filter(e=>e.type==='approval'),steps=events.map(stepView).filter(Boolean);
+  panel.querySelector('[data-me-status]').textContent=starting||running?'':current?.error||(current?.state==='completed'?'已完成'+summary(current,steps):current?.state==='cancelled'?'已停止':'');
+  panel.querySelector('[data-me-cancel]').classList.add('hidden'); // the live bubble has its own
+  // While Me works, a live bubble in the chat shows what it is doing:
+  // current activity and elapsed time, its plan, recent steps, the reply.
+  const area=$('#messages'),near=area&&area.scrollHeight-area.clientHeight-area.scrollTop<120;let stream=$('#me-stream');
+  if((starting||running)&&area){if(!stream){stream=document.createElement('article');stream.id='me-stream';stream.className='message me-stream';stream.innerHTML='<span class="avatar me-avatar">M</span><div class="message-body"><span class="message-name">Me · AI</span><div class="bubble me-live"><div class="me-live-head"><span class="me-dots"><i></i><i></i><i></i></span><span data-live-status></span><time data-live-time></time><button class="text-btn" data-me-cancel>停止</button></div><div class="me-thinking"></div><ol class="me-plan"></ol><ul class="me-steps"></ul><div class="me-approvals"></div><div class="me-reply"></div></div></div>';area.append(stream)}
+   if(!current?.started&&running&&!current._t0)current._t0=Date.now();if(starting&&!startedAt)startedAt=Date.now();
+   const t0=current?.started||current?._t0||startedAt,live=steps.filter(s=>s.status==='inProgress').pop(),text=current?.text||'',thinking=lastLine(current?.thinking);
+   stream.querySelector('[data-live-status]').textContent=starting&&!running?'正在交给 Me…':pending.length?'等待你确认':live?live.text:text?'正在回复':'正在思考';
+   stream.querySelector('[data-live-time]').textContent=t0?fmtTime(Date.now()-t0):'';
+   const thinkingNode=stream.querySelector('.me-thinking');thinkingNode.textContent=text?'':thinking;thinkingNode.hidden=!thinkingNode.textContent;
+   const plan=(events.find(e=>e.type==='plan')?.details?.plan)||[],planNode=stream.querySelector('.me-plan');planNode.hidden=!plan.length;planNode.innerHTML=plan.map(p=>'<li class="'+esc(p.status||'pending')+'">'+esc(p.step||'')+'</li>').join('');
+   const shown=steps.slice(-6),stepsNode=stream.querySelector('.me-steps');stepsNode.hidden=!steps.length;stepsNode.innerHTML=(steps.length>shown.length?'<li class="more">前面还有 '+(steps.length-shown.length)+' 步</li>':'')+shown.map(s=>'<li class="'+esc(s.status||'completed')+'"><span>'+esc(s.text)+'</span>'+(s.code?'<code>'+esc(s.code)+'</code>':'')+(s.note?'<small>'+esc(s.note)+'</small>':'')+'</li>').join('');
+   const reply=stream.querySelector('.me-reply');reply.textContent=text;reply.hidden=!text;
+   stream.querySelector('[data-me-cancel]').hidden=!running;
+   // Requests to approve appear in the same bubble, where the user is looking.
+   const approvals=stream.querySelector('.me-approvals');let added=false;
+   for(const node of approvals.children)if(!pending.some(e=>e.id===node.dataset.approvalId))node.remove();
+   for(const e of pending){if([...approvals.children].some(n=>n.dataset.approvalId===e.id))continue;const node=document.createElement('section');node.className='me-approval';node.dataset.approvalId=e.id;node.innerHTML=approvalHTML(e);approvals.append(node);added=true}
+   if(near||added)area.scrollTop=area.scrollHeight;if(added)approvals.querySelector('[data-me-approve]')?.focus({preventScroll:true})}else{stream?.remove();startedAt=0}
  }
- async function poll(){const g=generation;if(!config?.enabled||!live(g))return;try{if(task?.mode==='chat'){const result=await api('/api/ai/runs/'+task.id);if(live(g)){const text=task.text,version=task.version;Object.assign(task,result);if(version>(result.version||0)&&task.state==='running'){task.text=text;task.version=version}}}else if(localDesktop()){const result=await api('/local/ai/status');if(live(g)&&result.id){task={...result,mode:'local'};linkmeActions(task)}}if(live(g))render()}catch{}finally{if(live(g))timer=setTimeout(poll,task?.state==='running'?700:3000)}}
+ // shellCommand shows the command Me runs without the shell wrapper Codex
+ // adds ("powershell.exe -Command '…'", "bash -lc '…'").
+ function shellCommand(c){let s=String(Array.isArray(c)?c.join(' '):c||'').trim();const m=s.match(/^"?[^"\s]*?(?:powershell|pwsh|cmd|bash|zsh|sh)(?:\.exe)?"?\s+(?:-NoProfile\s+|-NoLogo\s+)*(?:-Command|-lc|-c|\/c)\s+([\s\S]+)$/i);if(m){s=m[1].trim();if(s.length>1&&(s[0]==="'"&&s.endsWith("'")))s=s.slice(1,-1).replace(/''/g,"'");else if(s.length>1&&s[0]==='"'&&s.endsWith('"'))s=s.slice(1,-1).replace(/\\"/g,'"')}return s}
+ let startedAt=0;
+ const fmtTime=ms=>{const s=Math.max(0,Math.floor(ms/1000));return s<60?s+' 秒':Math.floor(s/60)+' 分 '+String(s%60).padStart(2,'0')+' 秒'};
+ const base=p=>String(p||'').split(/[\\/]/).pop();
+ // The newest line of the model's reasoning summary, without markdown marks.
+ const lastLine=t=>String(t||'').replace(/\*\*/g,'').split(/\n+/).map(s=>s.trim()).filter(Boolean).pop()||'';
+ // stepView describes one step of a local task for people.
+ function stepView(e){const d=e.details||{};
+  if(e.type==='tool'&&d.type==='linkmeTool'){const p=d.params||{},who=[].concat(p.to||p.chat||[]).join('、');return {text:'LinkMe：'+(toolNames[d.tool]||d.tool)+(who?' → '+who:''),status:'completed',kind:'linkme'}}
+  if(e.type!=='step')return null;
+  const status=d.status==='inProgress'?'inProgress':d.status==='failed'||d.status==='declined'?'failed':'completed';
+  switch(d.kind){
+   case 'commandExecution':return {kind:d.kind,status:status==='completed'&&d.exitCode!=null&&d.exitCode!==0?'failed':status,text:'运行命令',code:shellCommand(d.command),note:d.status==='declined'?'已拒绝':d.exitCode!=null&&d.exitCode!==0?'退出码 '+d.exitCode:d.durationMs>=1000?fmtTime(d.durationMs):''};
+   case 'fileChange':{const files=(d.files||[]).map(base);return {kind:d.kind,status,text:(status==='inProgress'?'正在修改 ':'修改了 ')+files.slice(0,3).join('、')+((d.count||files.length)>3?' 等 '+(d.count||files.length)+' 个文件':''),note:d.status==='declined'?'已拒绝':''}}
+   case 'webSearch':return {kind:d.kind,status,text:'搜索网页'+(d.query?'：'+d.query:'')};
+   case 'imageView':return {kind:d.kind,status,text:'查看图片 '+base(d.path)};
+   case 'contextCompaction':return {kind:d.kind,status,text:'整理对话上下文'};
+   default:return {kind:d.kind,status,text:'使用工具 '+(d.tool||'')}}}
+ function summary(t,steps){const parts=[];const ms=(t.finished||0)-(t.started||0);if(t.started&&ms>0)parts.push('用时 '+fmtTime(ms));const n=k=>steps.filter(s=>s.kind===k).length;if(n('commandExecution'))parts.push('运行 '+n('commandExecution')+' 条命令');const files=steps.filter(s=>s.kind==='fileChange').length;if(files)parts.push('修改 '+files+' 处文件');if(n('linkme'))parts.push('操作 LinkMe '+n('linkme')+' 次');if(n('webSearch'))parts.push('搜索 '+n('webSearch')+' 次');return parts.length?' · '+parts.join(' · '):''}
+ // approvalHTML shows what Me asks to do in plain words, with the details
+ // underneath; commands and file edits can be allowed for the whole task.
+ function approvalHTML(e){const d=e.details||{},item=d.item||{};
+  if(e.method==='item/tool/requestUserInput')return '<b>Me 需要你补充信息</b>'+(d.reason?'<p>'+esc(d.reason)+'</p>':'')+(d.questions||[]).map(q=>'<label>'+esc(q.question||q.header)+'<textarea data-me-answer="'+esc(q.id)+'" maxlength="4000" placeholder="'+esc((q.options||[]).map(o=>o.label).join(' / '))+'"></textarea></label>').join('')+'<div><button class="primary" data-me-approve>提交回答</button><button class="secondary" data-me-deny>不回答</button></div>';
+  let title='Me 请求执行操作',body='';
+  if(e.method==='item/commandExecution/requestApproval'){title='Me 想运行一条命令';const command=d.command||item.command;body='<pre>'+esc(shellCommand(command).slice(0,4000))+'</pre>'+((d.cwd||item.cwd)?'<small>位置：'+esc(d.cwd||item.cwd)+'</small>':'')}
+  else if(e.method==='item/fileChange/requestApproval'){title='Me 想修改文件';const files=(item.changes||[]).map(c=>c.path).filter(Boolean);body=files.length?'<ul class="me-files">'+files.slice(0,12).map(f=>'<li>'+esc(f)+'</li>').join('')+(files.length>12?'<li>等 '+files.length+' 个文件</li>':'')+'</ul>':''}
+  else if(e.method==='item/permissions/requestApproval'){title='Me 需要额外权限';body='<pre>'+esc(JSON.stringify(d.permissions||d,null,2)).slice(0,4000)+'</pre>'}
+  const always=/commandExecution|fileChange/.test(e.method);
+  return '<b>'+esc(title)+'</b>'+(d.reason?'<p>'+esc(d.reason)+'</p>':'')+body+'<div><button class="primary" data-me-approve>允许</button>'+(always?'<button class="secondary" data-me-approve data-me-always title="本次任务中同类操作不再询问">本次任务都允许</button>':'')+'<button class="secondary" data-me-deny>拒绝</button></div>'}
+ async function poll(){const g=generation;if(!config?.enabled||!live(g))return;try{if(task?.mode==='chat'){const result=await api('/api/ai/runs/'+task.id);if(live(g)){const text=task.text,version=task.version;Object.assign(task,result);if(version>(result.version||0)&&task.state==='running'){task.text=text;task.version=version}}}else if(localDesktop()){const result=await api('/local/ai/status');if(live(g)&&result.id){task={...result,mode:'local'};linkmeActions(task)}}if(live(g))render()}catch{}finally{if(live(g))timer=setTimeout(poll,task?.state==='running'?400:3000)}}
  // linkme-AIdex asks the open app to start remote assistance (the remote
  // screen lives in this window); each request is handled once.
  function linkmeActions(t){for(const e of t.events||[]){if(e.type!=='linkme'||handledLinkMe.has(e.id))continue;handledLinkMe.add(e.id);if(e.method==='remote'&&remote)remote(e.details||{}).catch(err=>toast(err.message))}}
@@ -52,8 +96,8 @@ export function createMe({S,api,action,esc,icon,modal,closeModal,toast,refresh,s
   if(b.hasAttribute('data-me-open')){if(!config?.user)return;const c=await action('/api/conversations',{kind:'direct',members:[config.user.id]});await refresh();await selectConversation(c.id)}
   else if(b.hasAttribute('data-me-workspace-button'))await workspace();
   else if(b.hasAttribute('data-me-cancel')&&task){await action(task.mode==='local'?'/local/ai/cancel':'/api/ai/runs/'+task.id+'/cancel');task.state='cancelled';render()}
-  else{const node=b.closest('.me-approval');if(!node||!task)return;const answers={};for(const input of node.querySelectorAll('[data-me-answer]'))answers[input.dataset.meAnswer]={answers:[input.value]};b.disabled=true;await action('/local/ai/approve',{taskId:task.id,id:node.dataset.approvalId,accept:b.hasAttribute('data-me-approve'),answers});node.remove()}
- }catch(error){toast(error.message);b.disabled=false}});
+  else{const node=b.closest('.me-approval');if(!node||!task)return;const answers={};for(const input of node.querySelectorAll('[data-me-answer]'))answers[input.dataset.meAnswer]={answers:[input.value]};for(const x of node.querySelectorAll('button'))x.disabled=true;await action('/local/ai/approve',{taskId:task.id,id:node.dataset.approvalId,accept:b.hasAttribute('data-me-approve'),always:b.hasAttribute('data-me-always'),answers});node.remove();render()}
+ }catch(error){toast(error.message);b.disabled=false;for(const x of b.closest('.me-approval')?.querySelectorAll('button')||[])x.disabled=false}});
  function changed(type,d){if(!config?.enabled||!S.conversations.some(c=>c.id===d.conversationId&&c.peer?.ai))return;if(task?.id!==d.id)task={id:d.id,conversationId:d.conversationId,state:'running',mode:'chat',text:'',version:0};if(type==='ai-delta'){if(d.version<=(task.version||0))return;task.text=(task.text||'')+d.delta;task.version=d.version}else{task.state=d.state;task.error=d.error}render()}
  return {changed,start,stop,sidebar,mount:render,onSent,busy:()=>active()?.peer?.ai&&(starting||task?.state==='running'&&task?.conversationId===S.active)};
 }

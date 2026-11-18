@@ -46,36 +46,129 @@
       if (!panel.querySelector(".me-config")) panel.innerHTML = '<div class="me-config"><span class="ai-label">AI</span><span data-me-workspace></span><button class="text-btn" data-me-workspace-button>工作目录</button></div><div class="me-progress" role="status"><span data-me-status></span><button class="text-btn hidden" data-me-cancel>停止</button></div><div class="me-approvals"></div>';
       panel.querySelector("[data-me-workspace]").textContent = config?.localTasks === false ? "对话模式 · 当前模型不支持本机任务" : localDesktop() ? local.workspace ? "本机：" + local.workspace : "对话模式 · 选择目录后可处理本机任务" : "记住本会话上下文 · 本机任务请在桌面端执行";
       panel.querySelector("[data-me-workspace-button]").classList.toggle("hidden", !localDesktop());
-      const current = task?.conversationId === S2.active ? task : null, busy = starting || current?.state === "running";
-      panel.querySelector("[data-me-status]").textContent = starting ? "正在交给 Me…" : current?.error || (current?.state === "running" ? (() => {
-        const e = [...current.events || []].reverse().find((e2) => e2.type === "tool" && e2.details?.type === "linkmeTool");
-        return e ? "Me 正在操作 LinkMe：" + (toolNames[e.details.tool] || e.details.tool) : "Me 正在处理…";
-      })() : current?.state === "completed" ? "已完成" : current?.state === "cancelled" ? "已停止" : "");
-      panel.querySelector("[data-me-cancel]").classList.toggle("hidden", !current || !busy);
-      const area = $2("#messages"), near = area && area.scrollHeight - area.clientHeight - area.scrollTop < 100;
+      const current = task?.conversationId === S2.active ? task : null, running = current?.state === "running", busy = starting || running, events = current?.events || [];
+      const pending = events.filter((e) => e.type === "approval"), steps = events.map(stepView).filter(Boolean);
+      panel.querySelector("[data-me-status]").textContent = starting || running ? "" : current?.error || (current?.state === "completed" ? "已完成" + summary(current, steps) : current?.state === "cancelled" ? "已停止" : "");
+      panel.querySelector("[data-me-cancel]").classList.add("hidden");
+      const area = $2("#messages"), near = area && area.scrollHeight - area.clientHeight - area.scrollTop < 120;
       let stream = $2("#me-stream");
-      if (current?.state === "running" && current.text && area) {
+      if ((starting || running) && area) {
         if (!stream) {
           stream = document.createElement("article");
           stream.id = "me-stream";
           stream.className = "message me-stream";
-          stream.innerHTML = '<span class="avatar me-avatar">M</span><div class="message-body"><span class="message-name">Me · AI</span><div class="bubble"></div></div>';
+          stream.innerHTML = '<span class="avatar me-avatar">M</span><div class="message-body"><span class="message-name">Me · AI</span><div class="bubble me-live"><div class="me-live-head"><span class="me-dots"><i></i><i></i><i></i></span><span data-live-status></span><time data-live-time></time><button class="text-btn" data-me-cancel>停止</button></div><div class="me-thinking"></div><ol class="me-plan"></ol><ul class="me-steps"></ul><div class="me-approvals"></div><div class="me-reply"></div></div></div>';
           area.append(stream);
         }
-        stream.querySelector(".bubble").textContent = current.text;
-        if (near) area.scrollTop = area.scrollHeight;
-      } else stream?.remove();
-      const approvals = panel.querySelector(".me-approvals"), pending = (current?.events || []).filter((e) => e.type === "approval");
-      for (const node of approvals.children) if (!pending.some((e) => e.id === node.dataset.approvalId)) node.remove();
-      for (const e of pending) {
-        if ([...approvals.children].some((n) => n.dataset.approvalId === e.id)) continue;
-        const d = e.details || {}, node = document.createElement("section");
-        node.className = "me-approval";
-        node.dataset.approvalId = e.id;
-        const question = e.method === "item/tool/requestUserInput";
-        node.innerHTML = "<b>" + esc2(question ? "Me 需要补充信息" : "Me 请求执行操作") + "</b><p>" + esc2(d.reason || "请查看以下内容后决定") + "</p>" + (question ? (d.questions || []).map((q) => "<label>" + esc2(q.question || q.header) + '<textarea data-me-answer="' + esc2(q.id) + '" maxlength="4000" placeholder="' + esc2((q.options || []).map((o) => o.label).join(" / ")) + '"></textarea></label>').join("") : "<pre>" + esc2(d.command || JSON.stringify(d.item || d.permissions || d, null, 2)).slice(0, 8e3) + "</pre>") + '<div><button class="primary" data-me-approve>' + (question ? "提交回答" : "允许这一次") + '</button><button class="secondary" data-me-deny>拒绝</button></div>';
-        approvals.append(node);
+        if (!current?.started && running && !current._t0) current._t0 = Date.now();
+        if (starting && !startedAt) startedAt = Date.now();
+        const t0 = current?.started || current?._t0 || startedAt, live2 = steps.filter((s) => s.status === "inProgress").pop(), text = current?.text || "", thinking = lastLine(current?.thinking);
+        stream.querySelector("[data-live-status]").textContent = starting && !running ? "正在交给 Me…" : pending.length ? "等待你确认" : live2 ? live2.text : text ? "正在回复" : "正在思考";
+        stream.querySelector("[data-live-time]").textContent = t0 ? fmtTime(Date.now() - t0) : "";
+        const thinkingNode = stream.querySelector(".me-thinking");
+        thinkingNode.textContent = text ? "" : thinking;
+        thinkingNode.hidden = !thinkingNode.textContent;
+        const plan = events.find((e) => e.type === "plan")?.details?.plan || [], planNode = stream.querySelector(".me-plan");
+        planNode.hidden = !plan.length;
+        planNode.innerHTML = plan.map((p) => '<li class="' + esc2(p.status || "pending") + '">' + esc2(p.step || "") + "</li>").join("");
+        const shown = steps.slice(-6), stepsNode = stream.querySelector(".me-steps");
+        stepsNode.hidden = !steps.length;
+        stepsNode.innerHTML = (steps.length > shown.length ? '<li class="more">前面还有 ' + (steps.length - shown.length) + " 步</li>" : "") + shown.map((s) => '<li class="' + esc2(s.status || "completed") + '"><span>' + esc2(s.text) + "</span>" + (s.code ? "<code>" + esc2(s.code) + "</code>" : "") + (s.note ? "<small>" + esc2(s.note) + "</small>" : "") + "</li>").join("");
+        const reply = stream.querySelector(".me-reply");
+        reply.textContent = text;
+        reply.hidden = !text;
+        stream.querySelector("[data-me-cancel]").hidden = !running;
+        const approvals = stream.querySelector(".me-approvals");
+        let added = false;
+        for (const node of approvals.children) if (!pending.some((e) => e.id === node.dataset.approvalId)) node.remove();
+        for (const e of pending) {
+          if ([...approvals.children].some((n) => n.dataset.approvalId === e.id)) continue;
+          const node = document.createElement("section");
+          node.className = "me-approval";
+          node.dataset.approvalId = e.id;
+          node.innerHTML = approvalHTML(e);
+          approvals.append(node);
+          added = true;
+        }
+        if (near || added) area.scrollTop = area.scrollHeight;
+        if (added) approvals.querySelector("[data-me-approve]")?.focus({ preventScroll: true });
+      } else {
+        stream?.remove();
+        startedAt = 0;
       }
+    }
+    function shellCommand(c) {
+      let s = String(Array.isArray(c) ? c.join(" ") : c || "").trim();
+      const m = s.match(/^"?[^"\s]*?(?:powershell|pwsh|cmd|bash|zsh|sh)(?:\.exe)?"?\s+(?:-NoProfile\s+|-NoLogo\s+)*(?:-Command|-lc|-c|\/c)\s+([\s\S]+)$/i);
+      if (m) {
+        s = m[1].trim();
+        if (s.length > 1 && (s[0] === "'" && s.endsWith("'"))) s = s.slice(1, -1).replace(/''/g, "'");
+        else if (s.length > 1 && s[0] === '"' && s.endsWith('"')) s = s.slice(1, -1).replace(/\\"/g, '"');
+      }
+      return s;
+    }
+    let startedAt = 0;
+    const fmtTime = (ms) => {
+      const s = Math.max(0, Math.floor(ms / 1e3));
+      return s < 60 ? s + " 秒" : Math.floor(s / 60) + " 分 " + String(s % 60).padStart(2, "0") + " 秒";
+    };
+    const base = (p) => String(p || "").split(/[\\/]/).pop();
+    const lastLine = (t) => String(t || "").replace(/\*\*/g, "").split(/\n+/).map((s) => s.trim()).filter(Boolean).pop() || "";
+    function stepView(e) {
+      const d = e.details || {};
+      if (e.type === "tool" && d.type === "linkmeTool") {
+        const p = d.params || {}, who = [].concat(p.to || p.chat || []).join("、");
+        return { text: "LinkMe：" + (toolNames[d.tool] || d.tool) + (who ? " → " + who : ""), status: "completed", kind: "linkme" };
+      }
+      if (e.type !== "step") return null;
+      const status = d.status === "inProgress" ? "inProgress" : d.status === "failed" || d.status === "declined" ? "failed" : "completed";
+      switch (d.kind) {
+        case "commandExecution":
+          return { kind: d.kind, status: status === "completed" && d.exitCode != null && d.exitCode !== 0 ? "failed" : status, text: "运行命令", code: shellCommand(d.command), note: d.status === "declined" ? "已拒绝" : d.exitCode != null && d.exitCode !== 0 ? "退出码 " + d.exitCode : d.durationMs >= 1e3 ? fmtTime(d.durationMs) : "" };
+        case "fileChange": {
+          const files = (d.files || []).map(base);
+          return { kind: d.kind, status, text: (status === "inProgress" ? "正在修改 " : "修改了 ") + files.slice(0, 3).join("、") + ((d.count || files.length) > 3 ? " 等 " + (d.count || files.length) + " 个文件" : ""), note: d.status === "declined" ? "已拒绝" : "" };
+        }
+        case "webSearch":
+          return { kind: d.kind, status, text: "搜索网页" + (d.query ? "：" + d.query : "") };
+        case "imageView":
+          return { kind: d.kind, status, text: "查看图片 " + base(d.path) };
+        case "contextCompaction":
+          return { kind: d.kind, status, text: "整理对话上下文" };
+        default:
+          return { kind: d.kind, status, text: "使用工具 " + (d.tool || "") };
+      }
+    }
+    function summary(t, steps) {
+      const parts = [];
+      const ms = (t.finished || 0) - (t.started || 0);
+      if (t.started && ms > 0) parts.push("用时 " + fmtTime(ms));
+      const n = (k) => steps.filter((s) => s.kind === k).length;
+      if (n("commandExecution")) parts.push("运行 " + n("commandExecution") + " 条命令");
+      const files = steps.filter((s) => s.kind === "fileChange").length;
+      if (files) parts.push("修改 " + files + " 处文件");
+      if (n("linkme")) parts.push("操作 LinkMe " + n("linkme") + " 次");
+      if (n("webSearch")) parts.push("搜索 " + n("webSearch") + " 次");
+      return parts.length ? " · " + parts.join(" · ") : "";
+    }
+    function approvalHTML(e) {
+      const d = e.details || {}, item = d.item || {};
+      if (e.method === "item/tool/requestUserInput") return "<b>Me 需要你补充信息</b>" + (d.reason ? "<p>" + esc2(d.reason) + "</p>" : "") + (d.questions || []).map((q) => "<label>" + esc2(q.question || q.header) + '<textarea data-me-answer="' + esc2(q.id) + '" maxlength="4000" placeholder="' + esc2((q.options || []).map((o) => o.label).join(" / ")) + '"></textarea></label>').join("") + '<div><button class="primary" data-me-approve>提交回答</button><button class="secondary" data-me-deny>不回答</button></div>';
+      let title = "Me 请求执行操作", body = "";
+      if (e.method === "item/commandExecution/requestApproval") {
+        title = "Me 想运行一条命令";
+        const command = d.command || item.command;
+        body = "<pre>" + esc2(shellCommand(command).slice(0, 4e3)) + "</pre>" + (d.cwd || item.cwd ? "<small>位置：" + esc2(d.cwd || item.cwd) + "</small>" : "");
+      } else if (e.method === "item/fileChange/requestApproval") {
+        title = "Me 想修改文件";
+        const files = (item.changes || []).map((c) => c.path).filter(Boolean);
+        body = files.length ? '<ul class="me-files">' + files.slice(0, 12).map((f) => "<li>" + esc2(f) + "</li>").join("") + (files.length > 12 ? "<li>等 " + files.length + " 个文件</li>" : "") + "</ul>" : "";
+      } else if (e.method === "item/permissions/requestApproval") {
+        title = "Me 需要额外权限";
+        body = "<pre>" + esc2(JSON.stringify(d.permissions || d, null, 2)).slice(0, 4e3) + "</pre>";
+      }
+      const always = /commandExecution|fileChange/.test(e.method);
+      return "<b>" + esc2(title) + "</b>" + (d.reason ? "<p>" + esc2(d.reason) + "</p>" : "") + body + '<div><button class="primary" data-me-approve>允许</button>' + (always ? '<button class="secondary" data-me-approve data-me-always title="本次任务中同类操作不再询问">本次任务都允许</button>' : "") + '<button class="secondary" data-me-deny>拒绝</button></div>';
     }
     async function poll() {
       const g = generation;
@@ -101,7 +194,7 @@
         if (live(g)) render();
       } catch {
       } finally {
-        if (live(g)) timer = setTimeout(poll, task?.state === "running" ? 700 : 3e3);
+        if (live(g)) timer = setTimeout(poll, task?.state === "running" ? 400 : 3e3);
       }
     }
     function linkmeActions(t) {
@@ -221,13 +314,15 @@
           if (!node || !task) return;
           const answers = {};
           for (const input of node.querySelectorAll("[data-me-answer]")) answers[input.dataset.meAnswer] = { answers: [input.value] };
-          b.disabled = true;
-          await action2("/local/ai/approve", { taskId: task.id, id: node.dataset.approvalId, accept: b.hasAttribute("data-me-approve"), answers });
+          for (const x of node.querySelectorAll("button")) x.disabled = true;
+          await action2("/local/ai/approve", { taskId: task.id, id: node.dataset.approvalId, accept: b.hasAttribute("data-me-approve"), always: b.hasAttribute("data-me-always"), answers });
           node.remove();
+          render();
         }
       } catch (error) {
         toast2(error.message);
         b.disabled = false;
+        for (const x of b.closest(".me-approval")?.querySelectorAll("button") || []) x.disabled = false;
       }
     });
     function changed(type, d) {
@@ -451,7 +546,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.20";
+  var CLIENT_VERSION = "0.1.22";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {
@@ -7292,8 +7387,10 @@
     n.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + "px";
     n.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
   }
-  function messageMenu(m, x, y) {
-    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button>${m.kind === "voice" ? "" : `<button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>`}${m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 12e4 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
+  var menuSelection = "";
+  function messageMenu(m, x, y, selection = "") {
+    menuSelection = selection;
+    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button>${m.kind === "voice" ? "" : `<button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>`}${selection ? `<button data-action="copy-selection">${icon("copy")}复制</button>` : m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 12e4 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
   }
   function emojis() {
     const old = $(".popup");
@@ -7886,6 +7983,9 @@
         case "copy-message":
           await copyMessage(S.messages.find((m) => m.id === b.dataset.mid)?.text || "");
           break;
+        case "copy-selection":
+          await copyMessage(menuSelection);
+          break;
         case "delete-chat-file":
           deleteChatFile(b);
           break;
@@ -7994,13 +8094,37 @@
   document.addEventListener("click", (e) => {
     if (e.target.classList.contains("modal-backdrop") && (!S.remote || S.remote.state === "pending")) Navigation.back();
   });
+  var selectionIn = (el) => {
+    const s = getSelection();
+    if (!s || s.isCollapsed || !String(s).trim()) return "";
+    for (let i = 0; i < s.rangeCount; i++) if (s.getRangeAt(i).intersectsNode(el)) return String(s);
+    return "";
+  };
+  var rightDownSelection = null;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 2) return;
+    const el = e.target.closest?.("[data-message]");
+    rightDownSelection = el ? selectionIn(el) : null;
+  }, true);
   document.addEventListener("contextmenu", (e) => {
     const el = e.target.closest("[data-message]");
     if (el) {
       e.preventDefault();
       const m = S.messages.find((x) => x.id === el.dataset.message);
-      if (m) messageMenu(m, e.clientX, e.clientY);
+      const selection = rightDownSelection ?? selectionIn(el);
+      rightDownSelection = null;
+      if (m) messageMenu(m, e.clientX, e.clientY, selection);
     }
+  });
+  addEventListener("contextmenu", (e) => {
+    if (window.WeLinkAndroid || e.defaultPrevented) return;
+    const t = e.target instanceof Element ? e.target : e.target?.parentElement;
+    const field = t?.closest("textarea,input");
+    const editable = field ? !field.disabled && !/^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/i.test(field.type || "") : !!t?.isContentEditable;
+    const sel = getSelection();
+    let selected = false;
+    if (sel && !sel.isCollapsed && String(sel).trim()) for (let i = 0; i < sel.rangeCount; i++) selected ||= sel.getRangeAt(i).intersectsNode(e.target);
+    if (!editable && !selected) e.preventDefault();
   });
   bindLongPress("[data-message]", (node, x, y) => {
     const message = S.messages.find((m) => m.id === node.dataset.message);

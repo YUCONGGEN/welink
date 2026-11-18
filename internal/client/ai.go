@@ -28,7 +28,11 @@ type localAITask struct {
 	State          string          `json:"state"`
 	Error          string          `json:"error,omitempty"`
 	Text           string          `json:"text,omitempty"`
+	Thinking       string          `json:"thinking,omitempty"` // latest reasoning summary
+	Started        int64           `json:"started"`            // unix ms
+	Finished       int64           `json:"finished,omitempty"`
 	Events         []aiagent.Event `json:"events"`
+	textDone       bool            // the last reply part finished; the next one replaces it
 	token          string
 	toolsKey       string // LinkMe tools for this task, when allowed
 	workspace      string
@@ -241,7 +245,7 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 			localError(w, 409, "Me 正在执行本地任务")
 			return
 		}
-		task := &localAITask{State: "running", token: token, workspace: prefs.Workspace, Events: []aiagent.Event{}}
+		task := &localAITask{State: "running", token: token, workspace: prefs.Workspace, Events: []aiagent.Event{}, Started: time.Now().UnixMilli()}
 		if prefs.LinkMeTools {
 			task.toolsKey = newToolsKey()
 		}
@@ -287,9 +291,9 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var p struct {
-			TaskID, ID string
-			Accept     bool
-			Answers    json.RawMessage
+			TaskID, ID     string
+			Accept, Always bool
+			Answers        json.RawMessage
 		}
 		if !localDecode(w, r, &p) {
 			return
@@ -305,7 +309,7 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 			localError(w, 409, "当前任务不可审批")
 			return
 		}
-		if err := session.Approve(p.ID, p.Accept, p.Answers); err != nil {
+		if err := session.Approve(p.ID, p.Accept, p.Answers, p.Always); err != nil {
 			localError(w, 400, err.Error())
 			return
 		}
@@ -341,23 +345,42 @@ func (c *Client) runAI(ctx context.Context, task *localAITask, options aiagent.O
 		if c.ai.task != task {
 			return
 		}
-		if event.Type == "delta" {
+		switch event.Type {
+		case "delta":
+			if task.textDone {
+				task.Text, task.textDone = "", false
+			}
 			task.Text += event.Text
 			if len(task.Text) > 128<<10 {
 				task.Text = task.Text[len(task.Text)-(128<<10):]
 			}
 			return
-		}
-		if event.Type == "message" {
+		case "message":
 			final = event.Text
-			task.Text = event.Text
-		}
-		if event.Type != "message" {
-			if len(task.Events) >= 200 {
-				task.Events = task.Events[1:]
+			task.Text, task.textDone = event.Text, true
+			return
+		case "thinking":
+			// A new reasoning item starts with an empty event.
+			if event.Text == "" {
+				task.Thinking = ""
+			} else if task.Thinking += event.Text; len(task.Thinking) > 2000 {
+				task.Thinking = task.Thinking[len(task.Thinking)-2000:]
 			}
-			task.Events = append(task.Events, event)
+			return
+		case "step", "plan":
+			// Steps update in place (started, then completed); only the
+			// latest plan is kept.
+			for i := range task.Events {
+				if task.Events[i].Type == event.Type && (event.Type == "plan" || task.Events[i].ID == event.ID) {
+					task.Events[i] = event
+					return
+				}
+			}
 		}
+		if len(task.Events) >= 200 {
+			task.Events = task.Events[1:]
+		}
+		task.Events = append(task.Events, event)
 	})
 	if err == nil {
 		c.ai.mu.Lock()
@@ -368,6 +391,7 @@ func (c *Client) runAI(ctx context.Context, task *localAITask, options aiagent.O
 	}
 	c.ai.mu.Lock()
 	task.session = nil
+	task.Finished = time.Now().UnixMilli()
 	task.State = "completed"
 	errorText := ""
 	if err != nil {

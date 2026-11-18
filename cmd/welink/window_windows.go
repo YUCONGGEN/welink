@@ -36,7 +36,7 @@ func newWindow(address, dir string) (windowHost, error) {
 	if dpi == 0 {
 		dpi = 96
 	}
-	v := webview.NewWithOptions(webview.WebViewOptions{Debug: os.Getenv("WELINK_DEBUG") == "1", DataPath: filepath.Join(dir, "webview"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "LinkMe", Width: uint(1100 * dpi / 96), Height: uint(740 * dpi / 96), IconId: windowsIconResource, Center: true}})
+	v := webview.NewWithOptions(webview.WebViewOptions{Debug: os.Getenv("WELINK_DEBUG") == "1", ContextMenus: true, DataPath: filepath.Join(dir, "webview"), AutoFocus: true, WindowOptions: webview.WindowOptions{Title: "LinkMe", Width: uint(1100 * dpi / 96), Height: uint(740 * dpi / 96), IconId: windowsIconResource, Center: true}})
 	if v == nil {
 		return nil, errors.New("无法启动 WebView2，请安装 Microsoft Edge WebView2 Runtime")
 	}

@@ -70,6 +70,11 @@ type WebViewOptions struct {
 	Window unsafe.Pointer
 	Debug  bool
 
+	// ContextMenus enables the browser's own right-click menu (cut, copy,
+	// paste) without enabling developer tools. The page decides where it
+	// appears by cancelling contextmenu events elsewhere.
+	ContextMenus bool
+
 	// DataPath specifies the datapath for the WebView2 runtime to use for the
 	// browser instance.
 	DataPath string
@@ -115,7 +120,7 @@ func NewWithOptions(options WebViewOptions) WebView {
 		log.Fatal(err)
 	}
 	// disable context menu
-	err = settings.PutAreDefaultContextMenusEnabled(options.Debug)
+	err = settings.PutAreDefaultContextMenusEnabled(options.Debug || options.ContextMenus)
 	if err != nil {
 		log.Fatal(err)
 	}
