@@ -4,4 +4,4 @@
 // publishes a signed app manifest with a newer version.
 package version
 
-const App = "0.1.22"
+const App = "0.1.24"

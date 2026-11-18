@@ -91,11 +91,23 @@ func (f TileFrame) Validate(data []byte) error {
 type TileEncoder struct {
 	GridSize int // negotiated 128 grid; large surfaces fall back to 256 to bound tile count
 	// Lossless encodes photo tiles as PNG too, so every pixel arrives exact.
-	Lossless     bool
-	previousGrid int
-	previous     *image.RGBA
-	pngBuffers   tilePNGBufferPool
-	palettes     sync.Pool
+	Lossless bool
+	// Motion (with Lossless) keeps large changes fast: when an update
+	// touches more than Motion tiles (scrolling, dragging, video, a new
+	// page), true-color tiles go out as JPEG at MotionQuality instead of
+	// multi-megabyte PNG. Palette tiles (text, flat UI) stay exact. Refine
+	// later resends those JPEG tiles losslessly once they have been still for
+	// RefineDelay, so a still picture is pixel-exact again. 0 disables it.
+	Motion        int
+	MotionQuality int
+	RefineDelay   time.Duration
+	previousGrid  int
+	previous      *image.RGBA
+	// lossy[i] is when tile i was last sent as motion JPEG; zero means the
+	// viewer holds the exact pixels of the reference picture for that tile.
+	lossy      []time.Time
+	pngBuffers tilePNGBufferPool
+	palettes   sync.Pool
 }
 
 // A PNG compressor owns roughly a megabyte of scratch storage even for a
@@ -147,10 +159,12 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 	f.Tiles = make([]Tile, tasks)
 	encoded := make([][]byte, tasks)
 	errs := make([]error, tasks)
-	encode := func(i int) {
+	// Compare first, so the whole update's size decides how it is encoded.
+	changedTiles := make([]bool, tasks)
+	var changedCount atomic.Int32
+	e.forTiles(tasks, columns, grid, f.Width, f.Height, cpus, func(i int) {
 		x, y := i%columns*grid, i/columns*grid
 		r := image.Rect(x, y, min(x+grid, f.Width), min(y+grid, f.Height))
-		classification := r.Inset(-3).Intersect(img.Rect)
 		// The detector itself reads up to three pixels beyond its scan area.
 		comparison := r.Inset(-6).Intersect(img.Rect)
 		changed := f.Reset
@@ -160,9 +174,27 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 			a, b := img.PixOffset(comparison.Min.X, row), e.previous.PixOffset(comparison.Min.X, row)
 			changed = !bytes.Equal(img.Pix[a:a+comparison.Dx()*4], e.previous.Pix[b:b+comparison.Dx()*4])
 		}
-		if !changed {
+		if changed {
+			changedTiles[i] = true
+			changedCount.Add(1)
+		}
+	})
+	if f.Reset || len(e.lossy) != tasks {
+		e.lossy = make([]time.Time, tasks)
+	}
+	motion := e.Lossless && e.Motion > 0 && int(changedCount.Load()) > e.Motion
+	motionQuality := e.MotionQuality
+	if motionQuality < 1 || motionQuality > 100 {
+		motionQuality = 80
+	}
+	now := time.Now()
+	encode := func(i int) {
+		if !changedTiles[i] {
 			return
 		}
+		x, y := i%columns*grid, i/columns*grid
+		r := image.Rect(x, y, min(x+grid, f.Width), min(y+grid, f.Height))
+		classification := r.Inset(-3).Intersect(img.Rect)
 		encoder := png.Encoder{CompressionLevel: png.BestSpeed, BufferPool: &e.pngBuffers}
 		var out bytes.Buffer
 		mime := "image/png"
@@ -177,7 +209,9 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 		indexed := palette.index(img, r)
 		// Include neighboring pixels when classifying a boundary glyph: its
 		// antialiasing must not become JPEG merely because a stem crosses tiles.
-		photo := !e.Lossless && indexed == nil && photographic(img, r) && !fineDetail(img, classification)
+		// During motion every true-color tile is JPEG; Refine restores it.
+		lossy := motion && indexed == nil
+		photo := lossy || (!e.Lossless && indexed == nil && photographic(img, r) && !fineDetail(img, classification))
 		if !photo {
 			var pixels image.Image = img.SubImage(r)
 			if indexed != nil {
@@ -189,8 +223,17 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 		// Its byte count must never silently turn lossless text into JPEG.
 		if photo && errs[i] == nil {
 			out.Reset()
-			errs[i] = jpeg.Encode(&out, img.SubImage(r), &jpeg.Options{Quality: quality})
+			q := quality
+			if lossy {
+				q = motionQuality
+			}
+			errs[i] = jpeg.Encode(&out, img.SubImage(r), &jpeg.Options{Quality: q})
 			mime = "image/jpeg"
+		}
+		if lossy {
+			e.lossy[i] = now
+		} else {
+			e.lossy[i] = time.Time{}
 		}
 		encoded[i] = out.Bytes()
 		f.Tiles[i] = Tile{X: r.Min.X, Y: r.Min.Y, Width: r.Dx(), Height: r.Dy(), Size: out.Len(), MIME: mime}
@@ -200,52 +243,7 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 			f.Tiles[i].Solid = &value
 		}
 	}
-	// Keep the audio handoff budget per source pixel, not per tile: four
-	// 128px tiles must not introduce four times as many scheduler parks.
-	yieldScreen := func(processed *int, i int) {
-		x, y := i%columns*grid, i/columns*grid
-		*processed += min(grid, f.Width-x) * min(grid, f.Height-y)
-		if *processed >= TileSize*TileSize {
-			if mediabudget.AudioActive() {
-				time.Sleep(100 * time.Microsecond)
-			}
-			*processed = 0
-		}
-	}
-	workers := tileWorkerCount(tasks, cpus)
-	if workers <= 1 {
-		leaveScheduling := mediabudget.FrameWorker()
-		defer leaveScheduling()
-		// Small surfaces and single-core hosts avoid goroutine handoff.
-		processed := 0
-		for i := range tasks {
-			encode(i)
-			yieldScreen(&processed, i)
-		}
-	} else {
-		// Claim work directly: neither dirty-pixel comparisons nor dispatching
-		// every tile through one unbuffered channel serializes a large frame.
-		var next atomic.Int32
-		var wg sync.WaitGroup
-		for range workers {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				leaveScheduling := mediabudget.FrameWorker()
-				defer leaveScheduling()
-				processed := 0
-				for {
-					i := int(next.Add(1)) - 1
-					if i >= tasks {
-						return
-					}
-					encode(i)
-					yieldScreen(&processed, i)
-				}
-			}()
-		}
-		wg.Wait()
-	}
+	e.forTiles(tasks, columns, grid, f.Width, f.Height, cpus, encode)
 	size := 0
 	for _, b := range encoded {
 		size += len(b)
@@ -265,6 +263,133 @@ func (e *TileEncoder) encode(img *image.RGBA, quality int, force bool, cpus int)
 	// Capture returns an owned immutable image. Retain it until the next frame.
 	e.previous = img
 	e.previousGrid = grid
+	return f, data, nil
+}
+
+// forTiles runs fn for every tile index on up to tileWorkerCount workers.
+func (e *TileEncoder) forTiles(tasks, columns, grid, width, height, cpus int, fn func(int)) {
+	// Keep the audio handoff budget per source pixel, not per tile: four
+	// 128px tiles must not introduce four times as many scheduler parks.
+	yieldScreen := func(processed *int, i int) {
+		x, y := i%columns*grid, i/columns*grid
+		*processed += min(grid, width-x) * min(grid, height-y)
+		if *processed >= TileSize*TileSize {
+			if mediabudget.AudioActive() {
+				time.Sleep(100 * time.Microsecond)
+			}
+			*processed = 0
+		}
+	}
+	workers := tileWorkerCount(tasks, cpus)
+	if workers <= 1 {
+		leaveScheduling := mediabudget.FrameWorker()
+		defer leaveScheduling()
+		// Small surfaces and single-core hosts avoid goroutine handoff.
+		processed := 0
+		for i := range tasks {
+			fn(i)
+			yieldScreen(&processed, i)
+		}
+		return
+	}
+	// Claim work directly: neither dirty-pixel comparisons nor dispatching
+	// every tile through one unbuffered channel serializes a large frame.
+	var next atomic.Int32
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			leaveScheduling := mediabudget.FrameWorker()
+			defer leaveScheduling()
+			processed := 0
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= tasks {
+					return
+				}
+				fn(i)
+				yieldScreen(&processed, i)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func (e *TileEncoder) refineDelay() time.Duration {
+	if e.RefineDelay > 0 {
+		return e.RefineDelay
+	}
+	return 250 * time.Millisecond
+}
+
+// RefineDue reports how long until the next motion JPEG tile is due to be
+// resent losslessly (0 when one is due now). ok is false when every tile the
+// viewer holds is already exact.
+func (e *TileEncoder) RefineDue(now time.Time) (wait time.Duration, ok bool) {
+	for _, at := range e.lossy {
+		if at.IsZero() {
+			continue
+		}
+		d := max(0, at.Add(e.refineDelay()).Sub(now))
+		if !ok || d < wait {
+			wait, ok = d, true
+		}
+	}
+	return wait, ok
+}
+
+// Refine resends up to limit due motion JPEG tiles of the current reference
+// picture as exact PNG, top to bottom. The picture itself is unchanged, so
+// the update is small enough to stay out of the way of the next interaction.
+func (e *TileEncoder) Refine(now time.Time, limit int) (TileFrame, []byte, error) {
+	img := e.previous
+	if img == nil || limit < 1 {
+		return TileFrame{}, nil, nil
+	}
+	f := TileFrame{Width: img.Rect.Dx(), Height: img.Rect.Dy()}
+	grid := e.previousGrid
+	if grid == 128 {
+		f.TileSize = 128
+	}
+	columns := (f.Width + grid - 1) / grid
+	if len(e.lossy) != columns*((f.Height+grid-1)/grid) {
+		e.lossy = nil
+		return f, nil, nil
+	}
+	var due []int
+	for i, at := range e.lossy {
+		if !at.IsZero() && !now.Before(at.Add(e.refineDelay())) {
+			due = append(due, i)
+			if len(due) == limit {
+				break
+			}
+		}
+	}
+	if len(due) == 0 {
+		return f, nil, nil
+	}
+	f.Tiles = make([]Tile, len(due))
+	encoded := make([][]byte, len(due))
+	errs := make([]error, len(due))
+	e.forTiles(len(due), len(due), 1, len(due), 1, mediabudget.CPUsForScreen(runtime.GOMAXPROCS(0)), func(k int) {
+		i := due[k]
+		x, y := i%columns*grid, i/columns*grid
+		r := image.Rect(x, y, min(x+grid, f.Width), min(y+grid, f.Height))
+		encoder := png.Encoder{CompressionLevel: png.BestSpeed, BufferPool: &e.pngBuffers}
+		var out bytes.Buffer
+		errs[k] = encoder.Encode(&out, img.SubImage(r))
+		encoded[k] = out.Bytes()
+		f.Tiles[k] = Tile{X: r.Min.X, Y: r.Min.Y, Width: r.Dx(), Height: r.Dy(), Size: out.Len(), MIME: "image/png"}
+	})
+	var data []byte
+	for k, b := range encoded {
+		if errs[k] != nil {
+			return TileFrame{}, nil, errs[k]
+		}
+		data = append(data, b...)
+		e.lossy[due[k]] = time.Time{}
+	}
 	return f, data, nil
 }
 

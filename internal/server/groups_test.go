@@ -233,3 +233,43 @@ func TestGroupMigrationKeepsNumbersAndDissolutionEndsMeeting(t *testing.T) {
 		t.Fatal("unauthenticated search")
 	}
 }
+
+func TestOwnerChangesGroupNumber(t *testing.T) {
+	f := setup(t)
+	a, b, c := f.register("number_owner"), f.register("number_admin"), f.register("number_seeker")
+	cid := f.group(a, b)
+	other := f.group(a, c)
+	f.request("PATCH", "/api/groups/"+cid+"/members/"+b.User.ID, a.Token, map[string]bool{"admin": true}, 200, nil)
+	f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]any{"discoverable": true}, 200, nil)
+	old := f.groupInfo(cid, a).Number
+	// Only the owner, only 5–8 digits without a leading zero.
+	f.request("PATCH", "/api/groups/"+cid, b.Token, map[string]string{"number": "88888"}, 403, nil)
+	for _, bad := range []string{"1234", "012345", "123456789", "12a45", ""} {
+		f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]string{"number": bad}, 400, nil)
+	}
+	// Never another group's number or a LinkMe account number.
+	f.request("PATCH", "/api/groups/"+other, a.Token, map[string]string{"number": "777777"}, 200, nil)
+	f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]string{"number": "777777"}, 409, nil)
+	f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]string{"number": c.User.Number}, 409, nil)
+	f.request("PATCH", "/api/groups/"+cid, a.Token, map[string]string{"number": "88888"}, 200, nil)
+	if g := f.groupInfo(cid, b); g.Number != "88888" {
+		t.Fatalf("number not changed: %+v", g)
+	}
+	// Keeping the current number alongside other settings is not a change.
+	f.request("PATCH", "/api/groups/"+cid, b.Token, map[string]string{"number": "88888", "description": "管理员仍可保存"}, 200, nil)
+	var found []map[string]any
+	f.request("GET", "/api/groups?q=88888", c.Token, nil, 200, &found)
+	if len(found) != 1 || found[0]["id"] != cid {
+		t.Fatalf("new number not searchable: %v", found)
+	}
+	f.request("GET", "/api/groups?q="+old, c.Token, nil, 200, &found)
+	if len(found) != 0 {
+		t.Fatal("old number still finds the group")
+	}
+	// New groups still get automatic numbers after the old sequence.
+	var third map[string]string
+	f.request("POST", "/api/conversations", a.Token, map[string]any{"kind": "group", "name": "第三个群", "members": []string{c.User.ID}}, 200, &third)
+	if n := f.groupInfo(third["id"], a).Number; n != "200000003" {
+		t.Fatalf("automatic number after a custom one: %s", n)
+	}
+}

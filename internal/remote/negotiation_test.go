@@ -32,7 +32,7 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 				options.STUNURLs = []string{"invalid:stun"}
 			}
 			var wg sync.WaitGroup
-			var tiles [2]bool
+			var features [2]transportFeatures
 			for i := 0; i < 2; i++ {
 				wg.Add(1)
 				go func(i int) {
@@ -41,7 +41,7 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 					if i == 1 {
 						role = "viewer"
 					}
-					pc[i], info[i], tiles[i], errs[i] = negotiateTransport(ctx, protocol.NewConn(raw[i]), role, options)
+					pc[i], info[i], features[i], errs[i] = negotiateTransport(ctx, protocol.NewConn(raw[i]), role, options)
 				}(i)
 			}
 			wg.Wait()
@@ -49,8 +49,8 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 				if errs[i] != nil {
 					t.Fatal(errs[i])
 				}
-				if !tiles[i] {
-					t.Fatal("both current endpoints must agree on tile updates")
+				if !features[i].Tiles || !features[i].Ack {
+					t.Fatal("both current endpoints must agree on tile updates and acks")
 				}
 				defer pc[i].Close()
 				pc[i].EnableInterleaving()
@@ -71,6 +71,22 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 			}
 			if m.Method != "input" {
 				t.Fatalf("lost keyboard input: %+v", m)
+			}
+			if err = <-sent; err != nil {
+				t.Fatal(err)
+			}
+			// A picture update is acknowledged on the input lane with its ID.
+			go func() {
+				sent <- pc[0].WriteMessage(protocol.Message{Kind: "event", Method: "tiles", ID: "7", Params: []byte("{}"), Data: make([]byte, 200<<10)})
+			}()
+			m, err = pc[1].ReadMessage()
+			if err != nil || m.Method != "tiles" || m.ID != "7" {
+				t.Fatalf("tiles: %+v %v", m.Method, err)
+			}
+			// The engine reads on its own goroutine; an unbuffered pipe needs it.
+			go acknowledge(pc[1], features[1], m)
+			if m, err = pc[0].ReadMessage(); err != nil || m.Method != "frame_ack" || m.ID != "7" {
+				t.Fatalf("ack: %+v %v", m, err)
 			}
 			if err = <-sent; err != nil {
 				t.Fatal(err)

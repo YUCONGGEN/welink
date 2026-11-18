@@ -546,7 +546,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.22";
+  var CLIENT_VERSION = "0.1.24";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {
@@ -3716,7 +3716,7 @@
       ;
       banner.innerHTML = blocked ? `<span>当前无法私聊，请检查黑名单或账号状态。</span><button data-contact="edit" data-user="${c.peer.id}">查看联系人</button>` : "";
       if (blocked || was) $2("#composer").disabled = blocked;
-      if (c?.kind === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + badge(c.peer) + `<small id="typing-status">${c.peer?.online ? "在线" : "离线"}</small>`;
+      if (c?.kind === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc2(c.name) + badge(c.peer) + `<small id="typing-status" data-presence="${c.peer?.ai ? "" : c.peer?.online ? "on" : "off"}">${c.peer?.online ? "在线" : "离线"}</small>`;
     }
     function menu(id, x, y) {
       const u = S2.friends.find((u2) => u2.id === id);
@@ -3833,8 +3833,10 @@
     const manager = (g) => g?.role === "owner" || g?.role === "admin";
     const error = (e) => {
       const n = $2("#modal-error");
-      if (n) n.textContent = e.message;
-      else toast2(e.message);
+      if (n) {
+        n.textContent = e.message;
+        n.scrollIntoView?.({ block: "nearest" });
+      } else toast2(e.message);
     };
     function bind(id, fn) {
       const b = $2("#" + id);
@@ -3908,9 +3910,10 @@
       detailState = c;
       const g = c.group;
       if (!manager(g)) throw Error("你已没有群管理权限");
-      modal2("群管理", `<label for="group-edit-name">群名称</label><input id="group-edit-name" value="${esc2(c.name)}" maxlength="60"><label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">${esc2(g.description)}</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ${g.discoverable ? "checked" : ""}></label><label for="group-join-mode">搜索入群方式</label><select id="group-join-mode">${Object.entries(modes).map(([v, t]) => `<option value="${v}" ${g.joinMode === v ? "selected" : ""}>${t}</option>`).join("")}</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ${g.membersInvite ? "checked" : ""}></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ${g.allMuted ? "checked" : ""}></label><p class="hint">全员禁言时，群主和管理员仍可发言。成员邀请会直接拉人入群，不需要再次申请。</p>${row("设置管理员", "在成员资料中设置，最多 10 人", "members")}${g.role === "owner" ? row("转让群主", "", "transfer") : ""}`, '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
+      modal2("群管理", `<label for="group-edit-name">群名称</label><input id="group-edit-name" value="${esc2(c.name)}" maxlength="60">${g.role === "owner" ? `<label for="group-edit-number">群号</label><input id="group-edit-number" value="${esc2(g.number)}" inputmode="numeric" maxlength="9" autocomplete="off"><p class="hint">群主可改为 5–8 位数字（不能以 0 开头），不能与其他群或账号重复。</p>` : ""}<label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">${esc2(g.description)}</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ${g.discoverable ? "checked" : ""}></label><label for="group-join-mode">搜索入群方式</label><select id="group-join-mode">${Object.entries(modes).map(([v, t]) => `<option value="${v}" ${g.joinMode === v ? "selected" : ""}>${t}</option>`).join("")}</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ${g.membersInvite ? "checked" : ""}></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ${g.allMuted ? "checked" : ""}></label><p class="hint">全员禁言时，群主和管理员仍可发言。成员邀请会直接拉人入群，不需要再次申请。</p>${row("设置管理员", "在成员资料中设置，最多 10 人", "members")}${g.role === "owner" ? row("转让群主", "", "transfer") : ""}`, '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
       bind("group-manage-save", async () => {
-        await api2("/api/groups/" + c.id, { method: "PATCH", body: { name: $2("#group-edit-name").value, description: $2("#group-description").value, discoverable: $2("#group-discoverable").checked, joinMode: $2("#group-join-mode").value, membersInvite: $2("#group-members-invite").checked, allMuted: $2("#group-all-muted").checked } });
+        const number = $2("#group-edit-number")?.value.trim();
+        await api2("/api/groups/" + c.id, { method: "PATCH", body: { name: $2("#group-edit-name").value, description: $2("#group-description").value, discoverable: $2("#group-discoverable").checked, joinMode: $2("#group-join-mode").value, membersInvite: $2("#group-members-invite").checked, allMuted: $2("#group-all-muted").checked, ...number && number !== g.number ? { number } : {} } });
         await refresh2();
         toast2("群管理设置已保存");
         await detail(c.id);
@@ -6711,7 +6714,34 @@
     list.innerHTML = Me.sidebar() + result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc(u.remark || u.name) + '</b></div><div class="row-preview">' + esc(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
   }
   function conversationRow(c) {
-    return `<div class="conversation-item"><button class="conversation-row ${S.active === c.id ? "selected" : ""} ${c.pinned ? "pinned" : ""}" data-conversation="${c.id}">${av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c)}<div class="row-text"><div class="row-title"><b>${esc(c.name)}</b>${c.peer?.ai ? '<em class="ai-label">AI</em>' : ""}${c.kind === "direct" ? Contacts.badge(c.peer) : ""}<time>${c.last ? shortTime(c.last.created) : ""}</time></div><div class="row-preview"><span>${c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : ""}${esc(c.kind === "group" && c.last && !c.last.recalled ? `${c.last.name}：` : "")}${esc(preview(c.last))}</span>${c.muted ? icon("mute") : ""}${c.unread ? `<i class="badge">${c.unread > 99 ? "99+" : c.unread}</i>` : ""}</div></div></button><button type="button" class="conversation-more" data-conversation-menu="${c.id}" aria-label="${esc(c.name)}的会话操作" title="会话操作">${icon("more")}</button></div>`;
+    return `<div class="conversation-item"><button class="conversation-row ${S.active === c.id ? "selected" : ""} ${c.pinned ? "pinned" : ""}" data-conversation="${c.id}">${av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c, "", c.kind === "direct" && !c.peer?.ai)}<div class="row-text"><div class="row-title"><b>${esc(c.name)}</b>${c.peer?.ai ? '<em class="ai-label">AI</em>' : ""}${c.kind === "direct" ? Contacts.badge(c.peer) : ""}<time>${c.last ? shortTime(c.last.created) : ""}</time></div><div class="row-preview"><span>${c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : ""}${esc(c.kind === "group" && c.last && !c.last.recalled ? `${c.last.name}：` : "")}${esc(preview(c.last))}</span>${c.muted ? icon("mute") : ""}${c.unread ? `<i class="badge">${c.unread > 99 ? "99+" : c.unread}</i>` : ""}</div></div></button><button type="button" class="conversation-more" data-conversation-menu="${c.id}" aria-label="${esc(c.name)}的会话操作" title="会话操作">${icon("more")}</button></div>`;
+  }
+  var typingTimer = 0;
+  function presenceState(c) {
+    return c?.kind === "direct" && !c.peer?.ai ? c.peer?.online ? "on" : "off" : "";
+  }
+  function presenceLabel(c) {
+    return c?.kind === "direct" ? c.peer?.online ? "在线" : "离线" : "群聊";
+  }
+  function showPresence() {
+    const c = activeConversation(), el = $("#typing-status");
+    if (!c || !el) return;
+    if (c.kind !== "direct") {
+      Groups.syncComposer();
+      return;
+    }
+    el.textContent = presenceLabel(c);
+    el.dataset.presence = presenceState(c);
+  }
+  function applyPresence(d) {
+    if (!d?.userId) return;
+    const online = !!d.online;
+    for (const u of S.friends || []) if (u.id === d.userId) u.online = online;
+    for (const c of S.conversations || []) if (c.kind === "direct" && c.peer?.id === d.userId) c.peer.online = online;
+    if (S.profile?.id === d.userId) S.profile.online = online;
+    renderSidebar();
+    showPresence();
+    if (S.tab === "contacts" && S.profile?.id === d.userId) renderMain();
   }
   function activeConversation() {
     return S.conversations.find((c) => c.id === S.active);
@@ -6759,7 +6789,7 @@
       return;
     }
     ;
-    main.innerHTML = `<header class="chat-head">${btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"')}<h2>${esc(c.name)}<small id="typing-status">${c.kind === "direct" ? c.peer?.online ? "在线" : "离线" : "群聊"}</small></h2><div class="chat-actions">${c.peer?.ai ? "" : c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")}${c.kind === "direct" && !c.peer?.ai ? btn("monitor", "远程协助", "remote") : ""}${btn("search", "搜索聊天记录", "search-history")}${btn("more", "聊天设置", "chat-detail")}</div></header><div id="sharing-banner"></div><div id="me-panel" class="hidden"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">${Media.tools()}${Mentions.tool()}${btn("emoji", "表情", "emoji")}${btn("image", "发送图片", "image")}<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">${icon("video")}</button>${btn("folder", "发送文件", "file")}${btn("scissors", "截图", "screenshot")}<span class="spacer"></span></div><textarea id="composer" rows="1" placeholder="" aria-label="输入消息" maxlength="6000">${esc(S.drafts[c.id] || "")}</textarea>${Media.input()}<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ${S.drafts[c.id]?.trim() ? "" : "disabled"}>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>`;
+    main.innerHTML = `<header class="chat-head">${btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"')}<h2>${esc(c.name)}<small id="typing-status" data-presence="${presenceState(c)}">${presenceLabel(c)}</small></h2><div class="chat-actions">${c.peer?.ai ? "" : c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")}${c.kind === "direct" && !c.peer?.ai ? btn("monitor", "远程协助", "remote") : ""}${btn("search", "搜索聊天记录", "search-history")}${btn("more", "聊天设置", "chat-detail")}</div></header><div id="sharing-banner"></div><div id="me-panel" class="hidden"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft hidden" id="reply-draft"></div><div class="compose-tools">${Media.tools()}${Mentions.tool()}${btn("emoji", "表情", "emoji")}${btn("image", "发送图片", "image")}<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">${icon("video")}</button>${btn("folder", "发送文件", "file")}${btn("scissors", "截图", "screenshot")}<span class="spacer"></span></div><textarea id="composer" rows="1" placeholder="" aria-label="输入消息" maxlength="6000">${esc(S.drafts[c.id] || "")}</textarea>${Media.input()}<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ${S.drafts[c.id]?.trim() ? "" : "disabled"}>发送</button></div><input type="file" id="image-input" class="file-input" accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input"></section>`;
     renderMessages();
     const input = $("#composer");
     fitComposer(input);
@@ -6969,7 +6999,7 @@
       S.requests = requests;
       S.groupRequests = groupRequests;
       S.contactGroups = contactGroups;
-      S.myGroups = myGroups || conversations.filter((c2) => c2.kind === "group").map((c2) => ({ id: c2.id, name: c2.name, ...c2.group, joined: true }));
+      S.myGroups = myGroups || conversations.filter((c) => c.kind === "group").map((c) => ({ id: c.id, name: c.name, ...c.group, joined: true }));
       Directory.changed();
     }
     if (!conversationsOnly && S.profile) {
@@ -6977,7 +7007,7 @@
       S.profile = updated ? { ...S.profile, ...updated } : null;
       if (S.tab === "contacts") renderMain();
     }
-    if (S.active && !conversations.some((c2) => c2.id === S.active)) {
+    if (S.active && !conversations.some((c) => c.id === S.active)) {
       Media.reset();
       Forwarding.reset(false);
       S.active = null;
@@ -6988,8 +7018,7 @@
     }
     renderSidebar();
     updateRail();
-    const c = activeConversation();
-    if (c && $("#typing-status")) $("#typing-status").textContent = c.kind === "direct" ? c.peer?.online ? "在线" : "离线" : "群聊";
+    showPresence();
     Groups.syncComposer();
     Contacts.syncComposer();
   }
@@ -7107,9 +7136,9 @@
       } else if (event.type === "typing") {
         if (d.conversationId === S.active && d.userId !== S.user.id && $("#typing-status")) {
           $("#typing-status").textContent = "对方正在输入…";
-          setTimeout(() => {
-            if ($("#typing-status")) $("#typing-status").textContent = activeConversation()?.peer?.online ? "在线" : "";
-          }, 3200);
+          $("#typing-status").dataset.presence = "";
+          clearTimeout(typingTimer);
+          typingTimer = setTimeout(showPresence, 3200);
         }
       } else if (event.type === "meeting-invite") {
         Meetings.invited(d);
@@ -7117,6 +7146,8 @@
         Meetings.ended(d);
       } else if (event.type === "remote") {
         remoteEvent(d);
+      } else if (event.type === "presence") {
+        applyPresence(d);
       } else {
         queueRefresh();
       }

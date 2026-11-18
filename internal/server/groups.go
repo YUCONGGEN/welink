@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -297,14 +298,18 @@ func (s *Server) resolveGroupRequest(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 	var p struct {
-		Name, Announcement, Description, JoinMode *string
-		Discoverable, MembersInvite, AllMuted     *bool
+		Name, Announcement, Description, JoinMode, Number *string
+		Discoverable, MembersInvite, AllMuted             *bool
 	}
 	if !decode(w, r, &p) {
 		return
 	}
 	if p.Name != nil && (strings.TrimSpace(*p.Name) == "" || !validText(*p.Name, 60)) || p.Announcement != nil && !validText(*p.Announcement, 2000) || p.Description != nil && !validText(*p.Description, 200) || p.JoinMode != nil && *p.JoinMode != "open" && *p.JoinMode != "approval" && *p.JoinMode != "closed" {
 		fail(w, 400, "群资料格式错误")
+		return
+	}
+	if p.Number != nil && !customGroupNumber.MatchString(strings.TrimSpace(*p.Number)) {
+		fail(w, 400, "群号需为 5–8 位数字，且不能以 0 开头")
 		return
 	}
 	cid := r.PathValue("id")
@@ -315,6 +320,11 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		if !g.manager() {
 			return nil, nil, groupFail(403, "只有群主和管理员可以管理群")
+		}
+		if p.Number != nil && strings.TrimSpace(*p.Number) != g.Number {
+			if e = changeGroupNumber(tx, cid, g, strings.TrimSpace(*p.Number)); e != nil {
+				return nil, nil, e
+			}
 		}
 		for _, v := range []struct {
 			table, key string
@@ -342,6 +352,30 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 		return map[string]bool{"ok": true}, ids, e
 	})
 }
+
+// customGroupNumber is the range a group owner may pick: 5 to 8 digits,
+// below the automatically assigned numbers (200000001 and up), so a chosen
+// number never collides with or advances the automatic sequence.
+var customGroupNumber = regexp.MustCompile(`^[1-9][0-9]{4,7}$`)
+
+// changeGroupNumber gives the group a number its owner chose. A number is
+// never shared: not with another group (dissolved groups keep theirs) and not
+// with a LinkMe account, so a search for it finds exactly one thing.
+func changeGroupNumber(tx *sql.Tx, cid string, g groupInfo, number string) error {
+	if g.Role != "owner" {
+		return groupFail(403, "只有群主可以修改群号")
+	}
+	var taken bool
+	if e := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM group_profiles WHERE number=? AND conversation_id<>?) OR EXISTS(SELECT 1 FROM user_numbers WHERE number=?) OR EXISTS(SELECT 1 FROM user_number_aliases WHERE number=?)", number, cid, number, number).Scan(&taken); e != nil {
+		return e
+	}
+	if taken {
+		return groupFail(409, "该群号已被使用，请换一个")
+	}
+	_, e := tx.Exec("UPDATE group_profiles SET number=? WHERE conversation_id=?", number, cid)
+	return e
+}
+
 func (s *Server) updateGroupMember(w http.ResponseWriter, r *http.Request) {
 	var p struct {
 		Admin       *bool

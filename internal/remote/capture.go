@@ -18,6 +18,7 @@ import (
 // changed tiles ("tiles", only when both sides negotiated it).
 type remoteFrame struct {
 	method        string
+	id            string // echoed by the viewer as frame_ack when negotiated
 	params        []byte
 	data          []byte
 	width, height int
@@ -28,11 +29,31 @@ type remoteFrame struct {
 // Tile viewers keep every tile in their hub and need no refresh.
 const idleRefresh = time.Second
 
-// After remote input, capture at the full 30 Hz for this long even when a
-// slower rate is configured, so clicks and typing show up without waiting.
+// After remote input the screen is checked far more often than the steady
+// rate, as in YuDesk: 120 Hz for the first 100 ms, so the first repaint of a
+// click or key is picked up within a few milliseconds, then 60 Hz for the
+// rest of a second to follow menus, scrolling and drags. The DXGI grab only
+// returns when the desktop was presented, so a fast rate costs nothing idle.
 const (
+	inputRush          = 100 * time.Millisecond
+	inputRushInterval  = time.Second / 120
 	inputBurst         = time.Second
-	inputBurstInterval = time.Second / 30
+	inputBurstInterval = time.Second / 60
+)
+
+// An update that changes more than motionTiles 128 px tiles (about two
+// screen-widths of text lines, a scroll, a dragged window, video) sends its
+// true-color tiles as JPEG at motionQuality: a few hundred KB instead of
+// several MB of PNG, encoded several times faster. Text and flat UI tiles
+// stay exact PNG. Those JPEG tiles become exact PNG again once they have been
+// still for refineDelay, refineTiles at a time, only while nothing else is in
+// flight, so a still picture is pixel-exact and refining never delays input.
+var motionTiles = 16 // a variable so the latency test can compare without it
+
+const (
+	motionQuality = 82
+	refineDelay   = 200 * time.Millisecond
+	refineTiles   = 8
 )
 
 // capture runs grab+encode on this goroutine and the network write on
@@ -42,10 +63,22 @@ const (
 // With tiles (ported from YuDesk) only the 128 px tiles that changed are
 // encoded: text/UI losslessly as PNG, photos as JPEG. Typing becomes a few
 // KB instead of a 100 KB full JPEG. Tile updates are deltas, so they are
-// never dropped: capture waits for the sender instead (backpressure bounded
-// by the 96 KiB picture channel). Whole JPEG frames are replaceable, so for
-// older peers a one-slot mailbox keeps only the newest.
-func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
+// never dropped: capture waits for the sender instead. With a viewer that
+// acknowledges updates, capture also waits for the flight window, so at most
+// a couple of updates are ever on the way. Whole JPEG frames are
+// replaceable, so for older peers a one-slot mailbox keeps only the newest.
+// openCapture is replaced by the latency test with a synthetic desktop.
+var openCapture = desktop.OpenCapture
+
+func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, features transportFeatures) {
+	tiles := features.Tiles
+	var flight *flightWindow
+	if features.Ack {
+		flight = newFlightWindow()
+	}
+	e.mu.Lock()
+	e.flight = flight
+	e.mu.Unlock()
 	controller := e.performance.controller()
 	// Never shrink the picture: the viewer rebuilds the desktop pixel for
 	// pixel, and a slow network costs frames, not sharpness.
@@ -55,7 +88,7 @@ func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
 	var writeCost atomic.Int64
 	go e.sendFrames(ctx, pc, mailbox, &writeCost)
 
-	grab, closeGrab := desktop.OpenCapture(ctx)
+	grab, closeGrab := openCapture(ctx)
 	defer closeGrab()
 	sleep := func(d time.Duration) bool {
 		if d <= 0 {
@@ -70,13 +103,14 @@ func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
 			return true
 		}
 	}
-	encoder := &stream.TileEncoder{GridSize: 128, Lossless: true}
+	encoder := &stream.TileEncoder{GridSize: 128, Lossless: true, Motion: motionTiles, MotionQuality: motionQuality, RefineDelay: refineDelay}
 	forceReset := true
 	var previous, spare *image.RGBA
 	var lastQueued, lastStart time.Time
 	var lastFrame remoteFrame
 	lastQuality, lastWidth := -1, -1
 	queue := func(frame remoteFrame) bool {
+		frame.id = flight.add(len(frame.data))
 		if frame.method == "tiles" {
 			select {
 			case mailbox <- frame:
@@ -100,16 +134,36 @@ func (e *Engine) capture(ctx context.Context, pc *protocol.Conn, tiles bool) {
 	}
 	for {
 		interval := budget
-		if time.Since(time.Unix(0, e.lastInput.Load())) < inputBurst {
+		sinceInput := time.Since(time.Unix(0, e.lastInput.Load()))
+		if sinceInput < inputRush {
+			interval = min(budget, inputRushInterval)
+		} else if sinceInput < inputBurst {
 			interval = min(budget, inputBurstInterval)
 		}
 		if !sleep(interval - time.Since(lastStart)) {
+			return
+		}
+		// Grab only when the link can carry the update now, so the picture
+		// that arrives is the current desktop rather than a queued old one.
+		if !flight.wait(ctx) {
 			return
 		}
 		lastStart = time.Now()
 		wait := time.Second
 		if !tiles {
 			wait = max(16*time.Millisecond, min(time.Second, time.Until(lastQueued.Add(idleRefresh))))
+		} else if due, pending := encoder.RefineDue(lastStart); pending {
+			if due <= 0 && flight.idle() && sinceInput > inputRush {
+				f, data, err := encoder.Refine(lastStart, refineTiles)
+				if err == nil && len(f.Tiles) > 0 {
+					params, _ := json.Marshal(f)
+					if !queue(remoteFrame{method: "tiles", params: params, data: data, width: f.Width, height: f.Height}) {
+						return
+					}
+					continue
+				}
+			}
+			wait = min(wait, max(due, 10*time.Millisecond))
 		}
 		shot, err := grab(desktop.CaptureOptions{Quality: controller.Quality, MaxWidth: controller.Width, Raw: true, Buffer: spare, WaitChange: wait})
 		if err != nil {
@@ -199,7 +253,7 @@ func (e *Engine) sendFrames(ctx context.Context, pc *protocol.Conn, mailbox <-ch
 		case frame = <-mailbox:
 		}
 		started := time.Now()
-		if pc.WriteMessageContext(ctx, protocol.Message{Kind: "event", Method: frame.method, Params: frame.params, Data: frame.data}) != nil {
+		if pc.WriteMessageContext(ctx, protocol.Message{Kind: "event", Method: frame.method, ID: frame.id, Params: frame.params, Data: frame.data}) != nil {
 			return
 		}
 		writeCost.Store(int64(time.Since(started)))

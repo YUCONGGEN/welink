@@ -15,22 +15,25 @@ import (
 //
 // Tiles (YuDesk dirty-tile picture updates) are used only when both sides
 // advertise them; older LinkMe versions ignore the field and keep whole JPEG
-// frames, so mixed versions still interoperate.
-func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, options peerpath.Options) (*protocol.Conn, peerpath.Info, bool, error) {
+// frames, so mixed versions still interoperate. Ack works the same way: the
+// viewer acknowledges each picture update so the host never queues more than
+// a couple of updates behind a slow link.
+func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, options peerpath.Options) (*protocol.Conn, peerpath.Info, transportFeatures, error) {
 	type capabilities struct {
 		Version int    `json:"version"`
 		Timeout int    `json:"timeoutMs"`
 		Seed    []byte `json:"laneSeed"`
 		Tiles   bool   `json:"tiles,omitempty"`
+		Ack     bool   `json:"ack,omitempty"`
 	}
 	deadline := time.Now().Add(20 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
 	if err := base.SetDeadline(deadline); err != nil {
-		return nil, peerpath.Info{}, false, err
+		return nil, peerpath.Info{}, transportFeatures{}, err
 	}
-	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond), Tiles: true}
+	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond), Tiles: true, Ack: true}
 	write := func() error {
 		raw, _ := json.Marshal(local)
 		return base.WriteMessageContext(ctx, protocol.Message{Kind: "linkme-transport", Params: raw})
@@ -69,19 +72,23 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 			local.Seed = remote.Seed
 			// The viewer only echoes tiles when the agent offered them.
 			local.Tiles = remote.Tiles
+			local.Ack = remote.Ack
 			err = write()
 		}
 	}
 	if err != nil {
 		_ = base.Close()
-		return nil, peerpath.Info{}, false, err
+		return nil, peerpath.Info{}, transportFeatures{}, err
 	}
 	if err = base.SetDeadline(time.Time{}); err != nil {
-		return nil, peerpath.Info{}, false, err
+		return nil, peerpath.Info{}, transportFeatures{}, err
 	}
-	tiles := local.Tiles && remote.Tiles
+	features := transportFeatures{Tiles: local.Tiles && remote.Tiles, Ack: local.Ack && remote.Ack}
 	options.Timeout = min(options.Timeout, time.Duration(remote.Timeout)*time.Millisecond)
 	options.TrickleICE = true
 	pc, info, err := peerpath.Negotiate(ctx, base, role, nil, options.WithSessionLanes(local.Seed))
-	return pc, info, tiles, err
+	return pc, info, features, err
 }
+
+// transportFeatures are the optional capabilities both sides agreed on.
+type transportFeatures struct{ Tiles, Ack bool }

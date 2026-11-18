@@ -70,6 +70,8 @@ type Engine struct {
 	frameSignal chan struct{}
 	// hub caches the received picture as tiles for the local browser.
 	hub *tileHub
+	// flight counts picture updates the viewer has not acknowledged yet.
+	flight *flightWindow
 }
 
 func New(dir string, mobile bool) (*Engine, error) {
@@ -279,7 +281,7 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 	if inv.Host == user {
 		role = "agent"
 	}
-	pc, info, tiles, err := negotiateTransport(ctx, base, role, peerpath.Options{STUNURLs: e.performance.STUNURLs, Timeout: time.Duration(e.performance.DirectTimeoutMS) * time.Millisecond, PortMapping: e.performance.PortMapping})
+	pc, info, features, err := negotiateTransport(ctx, base, role, peerpath.Options{STUNURLs: e.performance.STUNURLs, Timeout: time.Duration(e.performance.DirectTimeoutMS) * time.Millisecond, PortMapping: e.performance.PortMapping})
 	if err != nil {
 		finalErr = err
 		return
@@ -293,7 +295,7 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 	e.state.Path = info.Mode
 	e.mu.Unlock()
 	if role == "agent" && !e.mobile {
-		go e.capture(ctx, pc, tiles)
+		go e.capture(ctx, pc, features)
 	}
 	go e.ping(ctx, pc)
 	for {
@@ -308,6 +310,7 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 				finalErr = errors.New("unexpected frame")
 				return
 			}
+			acknowledge(pc, features, m)
 			var meta struct{ Width, Height int }
 			_ = json.Unmarshal(m.Params, &meta)
 			if meta.Width < 1 || meta.Height < 1 || meta.Width > 8192 || meta.Height > 8192 {
@@ -325,10 +328,11 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 				_ = hub.publishJPEG(m.Data, meta.Width, meta.Height)
 			}
 		case "tiles":
-			if role != "viewer" || !tiles || len(m.Data) > protocol.MaxDataSize {
+			if role != "viewer" || !features.Tiles || len(m.Data) > protocol.MaxDataSize {
 				finalErr = errors.New("unexpected tiles")
 				return
 			}
+			acknowledge(pc, features, m)
 			var f stream.TileFrame
 			if json.Unmarshal(m.Params, &f) != nil {
 				finalErr = errors.New("invalid tiles")
@@ -377,6 +381,13 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 					_ = pc.WriteMessage(protocol.Message{Kind: "event", Method: "error", Error: err.Error()})
 				}
 			}
+		case "frame_ack":
+			if role == "agent" && features.Ack {
+				e.mu.Lock()
+				flight := e.flight
+				e.mu.Unlock()
+				flight.ack(m.ID)
+			}
 		case "release":
 			if role == "agent" {
 				e.release()
@@ -394,6 +405,14 @@ func (e *Engine) run(ctx context.Context, inv Invitation, user, token, baseURL s
 			e.state.Error = m.Error
 			e.mu.Unlock()
 		}
+	}
+}
+
+// acknowledge tells the host a picture update arrived, opening its window
+// for the next one. Updates without an ID come from hosts that do not wait.
+func acknowledge(pc *protocol.Conn, features transportFeatures, m protocol.Message) {
+	if features.Ack && m.ID != "" {
+		_ = pc.WriteMessage(protocol.Message{Kind: "event", Method: "frame_ack", ID: m.ID})
 	}
 }
 func (e *Engine) ping(ctx context.Context, pc *protocol.Conn) {

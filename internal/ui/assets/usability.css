@@ -90,3 +90,9 @@
 .me-approval>div{flex-wrap:wrap}
 .me-live-head [data-me-cancel]{font-size:12px;padding:0 2px;color:var(--muted)}.me-live-head [data-me-cancel]:hover{color:#eb5757}
 .me-live .me-approval{margin:10px 0 2px;background:rgba(117,97,234,.05)}.me-live .me-approval pre{margin:6px 0 4px;padding:6px 8px;border-radius:6px;background:rgba(127,127,127,.1)}
+/* Peer online status under the chat title: a colored dot and 在线 / 离线. */
+#typing-status[data-presence=on],#typing-status[data-presence=off]{display:inline-flex;align-items:center;gap:5px}
+#typing-status[data-presence=on]::before,#typing-status[data-presence=off]::before{content:"";width:7px;height:7px;border-radius:50%;background:#b9c0c9;flex-shrink:0}
+#typing-status[data-presence=on]{color:#2fb877}
+#typing-status[data-presence=on]::before{background:#3dc887}
+@media(max-width:700px){.chat-head h2 small#typing-status[data-presence]{display:inline-flex;font-size:10px;margin-left:6px}}
