@@ -211,6 +211,21 @@
       if (!c?.peer?.ai) return;
       seen.add(message.id);
       if (seen.size > 200) seen.delete(seen.values().next().value);
+      if (deferred) {
+        clearTimeout(deferred.timer);
+        deferred = null;
+      }
+      if (message.kind !== "text") {
+        deferred = { timer: setTimeout(() => {
+          deferred = null;
+          run(message);
+        }, 2e3) };
+        return;
+      }
+      run(message);
+    }
+    let deferred = null;
+    async function run(message) {
       const g = generation;
       starting = true;
       render();
@@ -546,7 +561,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.25";
+  var CLIENT_VERSION = "0.1.26";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {
@@ -8095,7 +8110,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     function menuItems(m) {
       if (m.recalled) return "";
       const mine = m.sender === me(), recent = Date.now() - m.created < DAY, pinned = (pins.get(m.conversationId) || []).some((p) => p.id === m.id);
-      return `<button data-cx="react-pick" data-mid="${m.id}">${icon2("emoji")}表情回复</button>${m.threadId ? "" : `<button data-cx="thread" data-mid="${m.id}">${icon2("chat")}回复话题</button>`}` + (mine && recent && m.kind === "text" && !/\nlinkme-doc:/.test(m.text) ? `<button data-cx="edit" data-mid="${m.id}">${icon2("notebook")}编辑</button>` : "") + (m.threadId ? "" : `<button data-cx="${pinned ? "unpin" : "pin"}" data-mid="${m.id}">${icon2("pin")}${pinned ? "取消置顶" : "置顶"}</button>`) + (mine && recent ? `<button data-cx="urgent" data-mid="${m.id}">${icon2("bell")}加急</button>` : "") + (m.kind === "text" && aiEnabled ? `<button data-cx="translate" data-mid="${m.id}">${icon2("refresh")}翻译</button>` : "");
+      return (m.kind === "image" ? `<button data-cx="copy-image" data-mid="${m.id}">${icon2("copy")}复制图片</button>` : "") + `<button data-cx="react-pick" data-mid="${m.id}">${icon2("emoji")}表情回复</button>${m.threadId ? "" : `<button data-cx="thread" data-mid="${m.id}">${icon2("chat")}回复话题</button>`}` + (mine && recent && m.kind === "text" && !/\nlinkme-doc:/.test(m.text) ? `<button data-cx="edit" data-mid="${m.id}">${icon2("notebook")}编辑</button>` : "") + (m.threadId ? "" : `<button data-cx="${pinned ? "unpin" : "pin"}" data-mid="${m.id}">${icon2("pin")}${pinned ? "取消置顶" : "置顶"}</button>`) + (mine && recent ? `<button data-cx="urgent" data-mid="${m.id}">${icon2("bell")}加急</button>` : "") + (m.kind === "text" && aiEnabled ? `<button data-cx="translate" data-mid="${m.id}">${icon2("refresh")}翻译</button>` : "");
     }
     function picker(mid, anchor) {
       document.querySelector(".reaction-picker")?.remove();
@@ -8497,8 +8512,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       const d = new Date(Date.now() + 36e5);
       d.setMinutes(0, 0, 0);
-      const pad2 = (n) => String(n).padStart(2, "0");
-      const local = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      const pad3 = (n) => String(n).padStart(2, "0");
+      const local = `${d.getFullYear()}-${pad3(d.getMonth() + 1)}-${pad3(d.getDate())}T${pad3(d.getHours())}:${pad3(d.getMinutes())}`;
       modal2("定时发送", `<div class="poll-form"><p class="schedule-preview">${esc3(text).replace(/\n/g, "<br>")}</p><label>发送时间<input type="datetime-local" id="schedule-at" value="${local}"></label><label>重复<select id="schedule-repeat"><option value="once">不重复</option><option value="daily">每天</option><option value="weekdays">工作日</option></select></label></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="schedule-ok">定时发送</button>');
       $2("#schedule-ok").onclick = async () => {
         const at = new Date($2("#schedule-at").value).getTime();
@@ -8543,6 +8558,29 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         if (pre) pre.textContent = e.message;
       });
       return true;
+    }
+    async function copyImage(m) {
+      try {
+        const blob = await (await fetch(fileURL2(m.attachmentId))).blob();
+        const bitmap = await createImageBitmap(blob);
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0);
+        const png = await new Promise((r) => canvas.toBlob(r, "image/png"));
+        if (typeof window.welinkScreenshotCopy === "function") {
+          const url = await new Promise((r) => {
+            const f = new FileReader();
+            f.onload = () => r(f.result);
+            f.readAsDataURL(png);
+          });
+          await window.welinkScreenshotCopy(url);
+        } else if (navigator.clipboard?.write && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+        else throw Error("此设备暂不支持复制图片，可以长按保存");
+        toast2("图片已复制");
+      } catch (e) {
+        toast2(e.message && !/NotAllowed|denied/i.test(e.message) ? e.message : "复制图片失败");
+      }
     }
     const STATUS_OPTIONS = [["", "无状态"], ["busy", "忙碌"], ["dnd", "请勿打扰"], ["away", "暂时离开"], ["leave", "休假中"]];
     async function loadStatuses() {
@@ -8648,7 +8686,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           break;
         case "pin-jump":
           closeModal2();
-          jumpMessage2(mid);
+          jumpMessage2(S2.active, mid);
           break;
         case "urgent":
           if (m) urgent(m);
@@ -8660,7 +8698,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           const cid = b.dataset.cid;
           ack(mid);
           if (cid && S2.active !== cid) document.querySelector(`[data-conversation="${cid}"]`)?.click();
-          setTimeout(() => jumpMessage2(mid), 600);
+          setTimeout(() => jumpMessage2(cid, mid), 600);
           break;
         }
         case "thread":
@@ -8731,6 +8769,9 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           break;
         case "status":
           statusMenu();
+          break;
+        case "copy-image":
+          if (m) copyImage(m);
           break;
       }
     });
@@ -8849,6 +8890,1171 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         clearInterval(statusTimer);
         autoStatus = "";
         document.querySelector(".urgent-layer")?.remove();
+      }
+    };
+  }
+
+  // internal/ui/src/sidebar-resize.js
+  var KEY = "welink_sidebar_width";
+  var MIN = 220;
+  var MAX = 400;
+  var DEFAULT = 278;
+  function sidebarResize() {
+    const apply = (w) => document.documentElement.style.setProperty("--sidebar-w", w + "px");
+    let saved = DEFAULT;
+    try {
+      saved = +localStorage.getItem(KEY) || DEFAULT;
+    } catch {
+    }
+    apply(Math.min(MAX, Math.max(MIN, saved)));
+    document.addEventListener("mousedown", (e) => {
+      const handle = e.target.closest?.(".sidebar-resizer");
+      if (!handle || e.button !== 0) return;
+      e.preventDefault();
+      const sidebar = handle.closest(".sidebar"), left = sidebar.getBoundingClientRect().left;
+      document.body.classList.add("resizing-sidebar");
+      let width = sidebar.offsetWidth;
+      const move = (ev) => {
+        width = Math.round(Math.min(MAX, Math.max(MIN, ev.clientX - left)));
+        apply(width);
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.classList.remove("resizing-sidebar");
+        try {
+          localStorage.setItem(KEY, String(width));
+        } catch {
+        }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+    document.addEventListener("dblclick", (e) => {
+      if (!e.target.closest?.(".sidebar-resizer")) return;
+      apply(DEFAULT);
+      try {
+        localStorage.removeItem(KEY);
+      } catch {
+      }
+    });
+  }
+
+  // internal/ui/src/work.js
+  var DAY2 = 864e5;
+  var pad2 = (n) => String(n).padStart(2, "0");
+  var localInput = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+  var dayKey = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  };
+  var startOfDay = (t) => {
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  var hm = (t) => {
+    const d = new Date(t);
+    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  };
+  function whenText(t) {
+    if (!t) return "";
+    const d = new Date(t), today = startOfDay(Date.now()), day = startOfDay(t);
+    const label = day === today ? "今天" : day === today + DAY2 ? "明天" : day === today - DAY2 ? "昨天" : `${d.getMonth() + 1}月${d.getDate()}日`;
+    return label + " " + hm(t);
+  }
+  function createWork({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, renderSidebar: renderSidebar2, openMessage: openMessage2, preview: preview2, meetingButton: meetingButton2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let view = "tasks", taskScope = "mine", tasks = null, events = null, flags = null, month = startOfDay(Date.now()), selected = startOfDay(Date.now());
+    const flagged = /* @__PURE__ */ new Set();
+    const me = () => S2.user?.id;
+    const peopleHTML = (list) => list.slice(0, 4).map((p) => `<span class="mini-av" title="${esc3(p.name)}">${av2(p)}</span>`).join("") + (list.length > 4 ? `<span class="mini-more">+${list.length - 4}</span>` : "");
+    async function loadTasks() {
+      try {
+        tasks = await api2("/api/tasks?scope=" + taskScope);
+      } catch (e) {
+        tasks = [];
+        toast2(e.message);
+      }
+      if (S2.tab === "work" && view === "tasks") draw();
+    }
+    async function loadEvents() {
+      const from = startOfDay(month) - 7 * DAY2, to = from + 50 * DAY2;
+      try {
+        events = await api2(`/api/events?from=${Math.min(from, Date.now() - DAY2)}&to=${Math.max(to, Date.now() + 14 * DAY2)}`);
+      } catch (e) {
+        events = [];
+        toast2(e.message);
+      }
+      if (S2.tab === "work" && view === "calendar") draw();
+    }
+    async function loadFlags() {
+      try {
+        flags = await api2("/api/flags");
+        flagged.clear();
+        for (const m of flags) flagged.add(m.id);
+      } catch (e) {
+        flags = [];
+      }
+      if (S2.tab === "work" && view === "flags") draw();
+    }
+    function render() {
+      draw();
+      if (view === "tasks") loadTasks();
+      else if (view === "calendar") loadEvents();
+      else loadFlags();
+    }
+    function draw() {
+      const main = $2("#main-content");
+      if (!main || S2.tab !== "work") return;
+      const tabs = [["tasks", "待办"], ["calendar", "日历"], ["flags", "标记"]];
+      main.innerHTML = `<section class="work-page"><header class="work-head"><h2>工作台</h2><nav class="docs-tabs">${tabs.map(([k, l]) => `<button class="${view === k ? "active" : ""}" data-work-view="${k}">${l}</button>`).join("")}</nav><span class="spacer"></span>${view === "tasks" ? '<button class="primary" data-work="new-task">新建待办</button>' : view === "calendar" ? '<button class="primary" data-work="new-event">新建日程</button>' : ""}</header><div class="work-body">${view === "tasks" ? tasksHTML() : view === "calendar" ? calendarHTML() : flagsHTML()}</div></section>`;
+      const quick = $2("#task-quick");
+      if (quick) quick.onkeydown = (e) => {
+        if (e.key === "Enter" && quick.value.trim() && !e.isComposing) {
+          e.preventDefault();
+          quickTask(quick.value.trim());
+        }
+      };
+    }
+    function tasksHTML() {
+      const list = tasks || [];
+      return `<div class="task-quick"><input id="task-quick" maxlength="200" placeholder="添加待办，按 Enter 保存（可写“明天下午三点”之类的时间，打开详情再调整）"></div>
+   <nav class="work-subtabs">${[["mine", "我负责的"], ["created", "我分配的"], ["done", "已完成"]].map(([k, l]) => `<button class="${taskScope === k ? "active" : ""}" data-task-scope="${k}">${l}</button>`).join("")}</nav>
+   <div class="task-list">${tasks === null ? '<p class="hint">正在加载…</p>' : list.length ? list.map(taskRow).join("") : `<div class="docs-empty"><b>${taskScope === "done" ? "还没有完成的待办" : "没有待办"}</b><p>在聊天里右键消息“转为待办”，或者对 Me 说“提醒我周五交报告”。</p></div>`}</div>`;
+    }
+    function taskRow(t) {
+      const overdue = t.due && !t.done && t.due < Date.now(), soon = t.due && !t.done && !overdue && t.due - Date.now() < DAY2;
+      const from = t.creator.id !== me() ? `${esc3(t.creator.name)} 分配` : t.assignees.length && !(t.assignees.length === 1 && t.assignees[0].id === me()) ? "我分配给 " + esc3(t.assignees.map((a) => a.name).join("、")) : "";
+      return `<div class="task-row${t.done ? " done" : ""}" data-task="${t.id}"><input type="checkbox" class="task-check" data-task-done="${t.id}" ${t.done ? "checked" : ""} aria-label="完成"><div class="task-main"><b>${esc3(t.title)}</b><small>${t.due ? `<span class="${overdue ? "overdue" : soon ? "soon" : ""}">${overdue ? "已逾期 · " : ""}截止 ${whenText(t.due)}</span>` : "无截止时间"}${from ? " · " + from : ""}${t.messageId ? " · 来自聊天" : ""}</small></div><span class="task-people">${peopleHTML(t.assignees)}</span></div>`;
+    }
+    function quickTask(text) {
+      const due = parseWhen(text);
+      api2("/api/tasks", { method: "POST", body: { title: text, due: due || 0, assignees: [] } }).then(() => {
+        toast2(due ? "已添加，截止 " + whenText(due) : "已添加待办");
+        loadTasks();
+      }).catch((e) => toast2(e.message));
+    }
+    function calendarHTML() {
+      const m = new Date(month);
+      m.setDate(1);
+      const first = new Date(m), startDay = new Date(m);
+      startDay.setDate(1 - (first.getDay() + 6) % 7);
+      const byDay = /* @__PURE__ */ new Map();
+      for (const e of events || []) {
+        for (let d = startOfDay(e.start); d <= e.end; d += DAY2) {
+          const k = dayKey(d);
+          if (!byDay.has(k)) byDay.set(k, []);
+          byDay.get(k).push(e);
+          if (byDay.get(k).length > 50) break;
+        }
+      }
+      const cells = [];
+      for (let i = 0; i < 42; i++) {
+        const d = new Date(startDay);
+        d.setDate(startDay.getDate() + i);
+        const t = d.getTime(), k = dayKey(t), n = (byDay.get(k) || []).length;
+        cells.push(`<button class="cal-day${d.getMonth() !== first.getMonth() ? " other" : ""}${k === dayKey(Date.now()) ? " today" : ""}${k === dayKey(selected) ? " selected" : ""}" data-cal-day="${t}">${d.getDate()}${n ? `<i>${n > 3 ? "•••" : "•".repeat(n)}</i>` : ""}</button>`);
+      }
+      const day = (byDay.get(dayKey(selected)) || []).slice().sort((a, b) => a.start - b.start);
+      const upcoming = (events || []).filter((e) => e.end >= Date.now()).sort((a, b) => a.start - b.start).slice(0, 8);
+      return `<div class="cal-wrap"><div class="cal-month"><div class="cal-nav"><button class="icon-btn" data-cal-move="-1" aria-label="上个月">‹</button><b>${first.getFullYear()} 年 ${first.getMonth() + 1} 月</b><button class="icon-btn" data-cal-move="1" aria-label="下个月">›</button><button class="link" data-cal-today>今天</button></div><div class="cal-grid">${["一", "二", "三", "四", "五", "六", "日"].map((w) => `<span class="cal-week">${w}</span>`).join("")}${cells.join("")}</div></div>
+   <div class="cal-agenda"><h4>${whenText(selected).split(" ")[0]} 的日程</h4>${events === null ? '<p class="hint">正在加载…</p>' : day.length ? day.map(eventRow).join("") : `<p class="hint">这天没有日程 · <button class="link" data-work="new-event">新建</button></p>`}<h4>接下来</h4>${upcoming.length ? upcoming.map(eventRow).join("") : '<p class="hint">没有即将开始的日程</p>'}</div></div>`;
+    }
+    function eventRow(e) {
+      const mine = e.creator.id === me(), att = e.attendees.find((a) => a.id === me()), resp = { accept: "已接受", decline: "已拒绝", tentative: "待定", "": "待回复" }[att?.response ?? ""];
+      return `<button class="event-row${att?.response === "decline" ? " declined" : ""}" data-event="${e.id}"><span class="event-time">${e.allDay ? "全天" : hm(e.start) + "–" + hm(e.end)}</span><span class="event-main"><b>${esc3(e.title)}</b><small>${startOfDay(e.start) !== startOfDay(Date.now()) ? whenText(e.start).split(" ")[0] + " · " : ""}${e.location ? esc3(e.location) + " · " : ""}${e.meeting ? "线上会议 · " : ""}${mine ? "我组织" : esc3(e.creator.name) + " 邀请 · " + resp}</small></span></button>`;
+    }
+    function flagsHTML() {
+      if (flags === null) return '<p class="hint">正在加载…</p>';
+      if (!flags.length) return '<div class="docs-empty"><b>没有标记的消息</b><p>在聊天里右键消息选“标记”，稍后在这里集中处理。</p></div>';
+      return `<div class="flag-list">${flags.map((m) => `<div class="flag-row">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<div class="flag-main"><small>${esc3(m.conversationName)} · ${esc3(m.name)} · ${whenText(m.created)}</small><p>${esc3(preview2(m))}</p></div><div class="flag-actions"><button class="secondary" data-flag-open="${m.id}" data-cid="${m.conversationId}">查看</button><button class="secondary" data-flag-task="${m.id}">转为待办</button><button class="secondary" data-flag-done="${m.id}">完成</button></div></div>`).join("")}</div>`;
+    }
+    function peoplePicker(selectedIds, id = "people") {
+      const friends = (S2.friends || []).filter((f) => !f.ai);
+      return `<div class="people-picker" id="${id}"><input class="people-filter" placeholder="搜索好友"><div class="people-list">${friends.map((f) => `<label data-name="${esc3((f.remark || "") + f.name + (f.number || ""))}">${av2(f)}<span>${esc3(f.remark || f.name)}</span><input type="checkbox" value="${f.id}" ${selectedIds.includes(f.id) ? "checked" : ""}></label>`).join("") || '<p class="hint">还没有好友</p>'}</div></div>`;
+    }
+    function bindPicker(id = "people") {
+      const box = document.getElementById(id);
+      if (!box) return;
+      box.querySelector(".people-filter").oninput = (e) => {
+        const q = e.target.value.trim().toLowerCase();
+        box.querySelectorAll("label").forEach((l) => l.classList.toggle("hidden", !!q && !l.dataset.name.toLowerCase().includes(q)));
+      };
+    }
+    const picked = (id = "people") => [...document.querySelectorAll(`#${id} input[type=checkbox]:checked`)].map((i) => i.value);
+    function newTask(prefill = {}) {
+      modal2("新建待办", `<div class="poll-form"><input id="task-title" maxlength="200" placeholder="要做什么" value="${esc3(prefill.title || "")}"><label>截止时间<input type="datetime-local" id="task-due" value="${prefill.due ? localInput(prefill.due) : ""}"></label><label>负责人（不选就是自己）</label>${peoplePicker(prefill.assignees || [])}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明（可选）">${esc3(prefill.note || "")}</textarea></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="task-save">创建</button>');
+      bindPicker();
+      $2("#task-title").focus();
+      $2("#task-save").onclick = async () => {
+        const due = $2("#task-due").value ? new Date($2("#task-due").value).getTime() : 0;
+        try {
+          await api2("/api/tasks", { method: "POST", body: { title: $2("#task-title").value, note: $2("#task-note").value, due, assignees: picked(), messageId: prefill.messageId || "" } });
+          closeModal2();
+          toast2("已创建待办");
+          if (S2.tab === "work") loadTasks();
+        } catch (e) {
+          toast2(e.message);
+        }
+      };
+    }
+    async function openTask(id) {
+      let list = tasks || [];
+      let t = list.find((x) => x.id === id);
+      if (!t) {
+        try {
+          t = (await api2("/api/tasks?scope=all")).find((x) => x.id === id);
+        } catch {
+        }
+      }
+      if (!t) {
+        toast2("待办不存在");
+        return;
+      }
+      const mine = t.creator.id === me();
+      modal2(
+        mine ? "编辑待办" : "待办详情",
+        `<div class="poll-form">${mine ? `<input id="task-title" maxlength="200" value="${esc3(t.title)}"><label>截止时间<input type="datetime-local" id="task-due" value="${t.due ? localInput(t.due) : ""}"></label><label>负责人</label>${peoplePicker(t.assignees.map((a) => a.id))}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明">${esc3(t.note)}</textarea>` : `<h3>${esc3(t.title)}</h3><p class="hint">${esc3(t.creator.name)} 分配 · ${t.due ? "截止 " + whenText(t.due) : "无截止时间"}</p>${t.note ? `<p>${esc3(t.note).replace(/\n/g, "<br>")}</p>` : ""}<p>负责人：${esc3(t.assignees.map((a) => a.name).join("、") || "—")}</p>`}${t.messageId ? `<button class="link" data-task-message="${t.messageId}" data-cid="${t.conversationId}">查看原消息</button>` : ""}</div>`,
+        `${mine ? '<button class="secondary danger" id="task-delete">删除</button>' : ""}<button class="secondary" id="task-toggle">${t.done ? "标为未完成" : "完成"}</button>${mine ? '<button class="primary" id="task-update">保存</button>' : ""}`
+      );
+      if (mine) {
+        bindPicker();
+        $2("#task-update").onclick = async () => {
+          try {
+            await api2("/api/tasks/" + id, { method: "PATCH", body: { title: $2("#task-title").value, note: $2("#task-note").value, due: $2("#task-due").value ? new Date($2("#task-due").value).getTime() : 0, assignees: picked() } });
+            closeModal2();
+            loadTasks();
+          } catch (e) {
+            toast2(e.message);
+          }
+        };
+        $2("#task-delete").onclick = async () => {
+          if (!confirm("删除这个待办？")) return;
+          try {
+            await api2("/api/tasks/" + id, { method: "DELETE" });
+            closeModal2();
+            loadTasks();
+          } catch (e) {
+            toast2(e.message);
+          }
+        };
+      }
+      $2("#task-toggle").onclick = async () => {
+        try {
+          await api2("/api/tasks/" + id, { method: "PATCH", body: { done: !t.done } });
+          closeModal2();
+          loadTasks();
+        } catch (e) {
+          toast2(e.message);
+        }
+      };
+    }
+    function newEvent(prefill = {}) {
+      const start = prefill.start || (() => {
+        const d = new Date(Math.max(selected, startOfDay(Date.now())));
+        const n = /* @__PURE__ */ new Date();
+        d.setHours(Math.max(9, n.getHours() + 1), 0, 0, 0);
+        return d.getTime();
+      })();
+      const end = prefill.end || start + 36e5;
+      modal2("新建日程", eventForm({ title: prefill.title || "", start, end, location: "", note: "", meeting: !!prefill.meeting, remind: 15, attendees: (prefill.attendees || []).map((id) => ({ id })) }), '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="event-save">创建</button>');
+      bindPicker("event-people");
+      $2("#event-title").focus();
+      $2("#event-save").onclick = async () => {
+        try {
+          await api2("/api/events", { method: "POST", body: eventValues() });
+          closeModal2();
+          toast2("已创建日程，已通知参与人");
+          loadEvents();
+        } catch (e) {
+          toast2(e.message);
+        }
+      };
+    }
+    function eventForm(e) {
+      return `<div class="poll-form"><input id="event-title" maxlength="200" placeholder="日程主题" value="${esc3(e.title)}"><div class="form-row"><label>开始<input type="datetime-local" id="event-start" value="${localInput(e.start)}"></label><label>结束<input type="datetime-local" id="event-end" value="${localInput(e.end)}"></label></div><div class="form-row"><label>地点<input id="event-location" maxlength="200" value="${esc3(e.location)}" placeholder="会议室或地址"></label><label>提醒<select id="event-remind">${[[0, "不提醒"], [5, "提前 5 分钟"], [15, "提前 15 分钟"], [30, "提前 30 分钟"], [60, "提前 1 小时"], [1440, "提前 1 天"]].map(([v, l]) => `<option value="${v}" ${e.remind === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div><label class="check-row"><input type="checkbox" id="event-meeting" ${e.meeting ? "checked" : ""}> 线上会议（到时一键发起）</label><label>参与人</label>${peoplePicker(e.attendees.map((a) => a.id), "event-people")}<textarea id="event-note" rows="2" maxlength="2000" placeholder="说明（可选）">${esc3(e.note)}</textarea></div>`;
+    }
+    const eventValues = () => ({ title: $2("#event-title").value, start: new Date($2("#event-start").value).getTime(), end: new Date($2("#event-end").value).getTime(), location: $2("#event-location").value, note: $2("#event-note").value, meeting: $2("#event-meeting").checked, remind: +$2("#event-remind").value, attendees: picked("event-people") });
+    async function openEvent(id) {
+      let e = (events || []).find((x) => x.id === id);
+      if (!e) {
+        try {
+          e = (await api2(`/api/events?from=${Date.now() - 60 * DAY2}&to=${Date.now() + 300 * DAY2}`)).find((x) => x.id === id);
+        } catch {
+        }
+      }
+      if (!e) {
+        toast2("日程不存在或已取消");
+        return;
+      }
+      const mine = e.creator.id === me(), att = e.attendees.find((a) => a.id === me());
+      const live = e.meeting && Date.now() > e.start - 15 * 6e4 && Date.now() < e.end;
+      modal2(
+        mine ? "编辑日程" : "日程详情",
+        mine ? eventForm(e) : `<div class="event-detail"><h3>${esc3(e.title)}</h3><p>${e.allDay ? "全天" : whenText(e.start) + " – " + hm(e.end)}</p>${e.location ? `<p>地点：${esc3(e.location)}</p>` : ""}${e.meeting ? "<p>线上会议</p>" : ""}<p>组织者：${esc3(e.creator.name)}</p>${e.note ? `<p>${esc3(e.note).replace(/\n/g, "<br>")}</p>` : ""}</div><div class="event-people"><b>参与人</b>${e.attendees.map((a) => `<span>${av2(a)}${esc3(a.name)}<small>${{ accept: "接受", decline: "拒绝", tentative: "待定", "": "未回复" }[a.response]}</small></span>`).join("") || '<span class="hint">只有组织者</span>'}</div>`,
+        (mine ? '<button class="secondary danger" id="event-delete">取消日程</button>' : att ? ["accept", "tentative", "decline"].map((r) => `<button class="${att.response === r ? "primary" : "secondary"}" data-event-response="${r}">${{ accept: "接受", tentative: "待定", decline: "拒绝" }[r]}</button>`).join("") : "") + (e.meeting ? `<button class="${live ? "primary" : "secondary"}" id="event-meet">${live ? "发起 / 加入会议" : "发起会议"}</button>` : "") + (mine ? '<button class="primary" id="event-update">保存</button>' : "")
+      );
+      if (mine) {
+        bindPicker("event-people");
+        $2("#event-update").onclick = async () => {
+          try {
+            await api2("/api/events/" + id, { method: "PATCH", body: eventValues() });
+            closeModal2();
+            loadEvents();
+          } catch (err) {
+            toast2(err.message);
+          }
+        };
+        $2("#event-delete").onclick = async () => {
+          if (!confirm("取消这个日程？参与人会收到通知。")) return;
+          try {
+            await api2("/api/events/" + id, { method: "DELETE" });
+            closeModal2();
+            loadEvents();
+          } catch (err) {
+            toast2(err.message);
+          }
+        };
+      }
+      document.querySelectorAll("[data-event-response]").forEach((b) => b.onclick = async () => {
+        try {
+          await api2("/api/events/" + id, { method: "PATCH", body: { response: b.dataset.eventResponse } });
+          closeModal2();
+          loadEvents();
+        } catch (err) {
+          toast2(err.message);
+        }
+      });
+      const meet = $2("#event-meet");
+      if (meet) meet.onclick = async () => {
+        closeModal2();
+        try {
+          const room = await api2("/api/meetings", { method: "POST", body: { title: e.title.slice(0, 60), members: [e.creator.id, ...e.attendees.map((a) => a.id)].filter((x) => x !== me()) } });
+          meetingButton2(room.code);
+        } catch (err) {
+          toast2(err.message);
+        }
+      };
+    }
+    function parseWhen(text) {
+      const now = /* @__PURE__ */ new Date();
+      let d = null;
+      const day = /(今天|明天|后天|大后天)/.exec(text), week = /(下)?(周|星期)([一二三四五六日天])/.exec(text), date = /(\d{1,2})月(\d{1,2})[日号]/.exec(text);
+      if (day) {
+        d = new Date(now);
+        d.setDate(now.getDate() + { 今天: 0, 明天: 1, 后天: 2, 大后天: 3 }[day[1]]);
+      } else if (week) {
+        d = new Date(now);
+        const target = "一二三四五六日天".indexOf(week[3]) % 7 + 1;
+        let diff = target % 7 - now.getDay();
+        if (diff <= 0 || week[1]) diff += 7;
+        if (week[1] && diff <= 7 && target % 7 > now.getDay()) diff += 0;
+        d.setDate(now.getDate() + diff);
+      } else if (date) {
+        d = new Date(now.getFullYear(), +date[1] - 1, +date[2]);
+        if (d < startOfDay(Date.now())) d.setFullYear(d.getFullYear() + 1);
+      }
+      const time = /(上午|早上|中午|下午|晚上)?\s*(\d{1,2})(?:[:：点](\d{1,2})?|点半)/.exec(text);
+      if (!d && !time) return 0;
+      if (!d) d = new Date(now);
+      let h = 18, m = 0;
+      if (time) {
+        h = +time[2];
+        m = time[0].includes("半") ? 30 : +(time[3] || 0);
+        if (/下午|晚上/.test(time[1] || "") && h < 12) h += 12;
+        if (time[1] === "中午" && h < 6) h += 12;
+      }
+      d.setHours(h, m, 0, 0);
+      if (d.getTime() < Date.now() && !day && !week && !date) d.setDate(d.getDate() + 1);
+      return d.getTime();
+    }
+    const FILTERS = [["all", "全部"], ["unread", "未读"], ["mention", "@我"], ["direct", "单聊"], ["group", "群聊"]];
+    function chips() {
+      if (S2.tab !== "messages") return "";
+      const f = S2.chatFilter || "all";
+      return `<div class="chat-filters" role="tablist">${FILTERS.map(([k, l]) => {
+        const n = k === "unread" ? S2.conversations.filter((c) => c.unread > 0).length : k === "mention" ? S2.conversations.filter((c) => c.mentionCount > 0).length : 0;
+        return `<button role="tab" class="${f === k ? "active" : ""}" data-chat-filter="${k}">${l}${n ? `<i>${n}</i>` : ""}</button>`;
+      }).join("")}</div>`;
+    }
+    function filter(list) {
+      switch (S2.chatFilter) {
+        case "unread":
+          return list.filter((c) => c.unread > 0 || c.mentionCount > 0);
+        case "mention":
+          return list.filter((c) => c.mentionCount > 0);
+        case "direct":
+          return list.filter((c) => c.kind === "direct");
+        case "group":
+          return list.filter((c) => c.kind === "group");
+        default:
+          return list;
+      }
+    }
+    document.addEventListener("click", (e) => {
+      const t = e.target;
+      let b;
+      if (b = t.closest("[data-work-view]")) {
+        view = b.dataset.workView;
+        render();
+        return;
+      }
+      if (b = t.closest("[data-task-scope]")) {
+        taskScope = b.dataset.taskScope;
+        tasks = null;
+        draw();
+        loadTasks();
+        return;
+      }
+      if (b = t.closest("[data-task-done]")) {
+        e.stopPropagation();
+        const id = b.dataset.taskDone;
+        api2("/api/tasks/" + id, { method: "PATCH", body: { done: b.checked } }).then(() => {
+          toast2(b.checked ? "已完成" : "已恢复");
+          setTimeout(loadTasks, 300);
+        }).catch((err) => {
+          b.checked = !b.checked;
+          toast2(err.message);
+        });
+        return;
+      }
+      if ((b = t.closest("[data-task]")) && !t.closest("input")) {
+        openTask(b.dataset.task);
+        return;
+      }
+      if (b = t.closest("[data-task-message]")) {
+        closeModal2();
+        openMessage2(b.dataset.cid, b.dataset.taskMessage);
+        return;
+      }
+      if (b = t.closest("[data-work]")) {
+        if (b.dataset.work === "new-task") newTask();
+        else newEvent();
+        return;
+      }
+      if (b = t.closest("[data-cal-day]")) {
+        selected = +b.dataset.calDay;
+        const d = new Date(selected);
+        if (d.getMonth() !== new Date(month).getMonth()) {
+          month = selected;
+          loadEvents();
+        }
+        draw();
+        return;
+      }
+      if (b = t.closest("[data-cal-move]")) {
+        const d = new Date(month);
+        d.setDate(1);
+        d.setMonth(d.getMonth() + +b.dataset.calMove);
+        month = d.getTime();
+        events = null;
+        draw();
+        loadEvents();
+        return;
+      }
+      if (t.closest("[data-cal-today]")) {
+        month = selected = startOfDay(Date.now());
+        draw();
+        loadEvents();
+        return;
+      }
+      if (b = t.closest("[data-event]")) {
+        openEvent(b.dataset.event);
+        return;
+      }
+      if (b = t.closest("[data-flag-open]")) {
+        openMessage2(b.dataset.cid, b.dataset.flagOpen);
+        return;
+      }
+      if (b = t.closest("[data-flag-done]")) {
+        setFlag(b.dataset.flagDone, false).then(loadFlags);
+        return;
+      }
+      if (b = t.closest("[data-flag-task]")) {
+        const m = (flags || []).find((x) => x.id === b.dataset.flagTask);
+        if (m) newTask({ title: preview2(m).slice(0, 200), messageId: m.id });
+        return;
+      }
+      if (b = t.closest("[data-chat-filter]")) {
+        S2.chatFilter = b.dataset.chatFilter;
+        renderSidebar2();
+        return;
+      }
+      if (b = t.closest("[data-work-msg]")) {
+        const m = S2.messages.find((x) => x.id === b.dataset.mid);
+        if (m) messageAction(b.dataset.workMsg, m);
+        return;
+      }
+    });
+    function messageAction(kind, m) {
+      if (kind === "task") newTask({ title: preview2(m).slice(0, 200), messageId: m.id });
+      else setFlag(m.id, kind === "flag");
+    }
+    async function setFlag(id, on) {
+      try {
+        await api2(`/api/messages/${id}/flag`, { method: on ? "POST" : "DELETE" });
+        if (on) flagged.add(id);
+        else flagged.delete(id);
+        toast2(on ? "已标记，可在工作台 → 标记中处理" : "已取消标记");
+      } catch (e) {
+        toast2(e.message);
+      }
+    }
+    return {
+      render,
+      newTask,
+      newEvent,
+      openTask,
+      openEvent,
+      chips,
+      filter,
+      parseWhen,
+      menuItems(m) {
+        if (m.recalled) return "";
+        return `<button data-work-msg="task" data-mid="${m.id}">${icon2("check")}转为待办</button><button data-work-msg="${flagged.has(m.id) ? "unflag" : "flag"}" data-mid="${m.id}">${icon2("star")}${flagged.has(m.id) ? "取消标记" : "标记"}</button>`;
+      },
+      messageAction,
+      setView(v) {
+        view = v;
+      },
+      start() {
+        loadFlags();
+      },
+      tasks: () => tasks,
+      events: () => events,
+      async fetchSoon() {
+        const [t, e] = await Promise.all([api2("/api/tasks").catch(() => []), api2(`/api/events?from=${Date.now() - DAY2}&to=${Date.now() + 2 * DAY2}`).catch(() => [])]);
+        return { tasks: t, events: e };
+      },
+      event(type, d) {
+        if (type === "task") {
+          if (S2.tab === "work" && view === "tasks") loadTasks();
+        }
+        if (type === "event") {
+          if (S2.tab === "work" && view === "calendar") loadEvents();
+        }
+        if (type === "flags") {
+          if (d.flagged) flagged.add(d.messageId);
+          else flagged.delete(d.messageId);
+          if (S2.tab === "work" && view === "flags") loadFlags();
+        }
+      },
+      reset() {
+        tasks = events = flags = null;
+        flagged.clear();
+        view = "tasks";
+        taskScope = "mine";
+      }
+    };
+  }
+
+  // internal/ui/src/global-search.js
+  function createGlobalSearch({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, openMessage: openMessage2, openChat: openChat2, startChat: startChat2, Docs: Docs2, preview: preview2, whenText: whenText2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let ticket = 0, timer = 0;
+    const mark = (text, q) => {
+      const t = esc3(text);
+      if (!q) return t;
+      const i = t.toLowerCase().indexOf(esc3(q).toLowerCase());
+      return i < 0 ? t : t.slice(0, i) + "<mark>" + t.slice(i, i + esc3(q).length) + "</mark>" + t.slice(i + esc3(q).length);
+    };
+    function open(query = "") {
+      modal2("搜索", `<div class="global-search"><label class="docs-search">${icon2("search")}<input id="global-q" placeholder="搜索联系人、群聊、聊天记录、文档" maxlength="100" value="${esc3(query)}" autocomplete="off"></label><div id="global-results" class="global-results"><p class="hint">输入关键词开始搜索 · Ctrl + K 随时打开</p></div></div>`, '<button class="secondary" data-action="close-modal">关闭</button>', true);
+      const input = $2("#global-q");
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      input.oninput = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => run(input.value.trim()), 250);
+      };
+      if (query) run(query);
+    }
+    async function run(q) {
+      const box = $2("#global-results");
+      if (!box) return;
+      if (!q) {
+        box.innerHTML = '<p class="hint">输入关键词开始搜索</p>';
+        return;
+      }
+      const t = ++ticket;
+      box.innerHTML = '<p class="hint">正在搜索…</p>';
+      let r;
+      try {
+        r = await api2("/api/search?q=" + encodeURIComponent(q));
+      } catch (e) {
+        if (t === ticket) box.innerHTML = `<p class="hint">${esc3(e.message)}</p>`;
+        return;
+      }
+      if (t !== ticket || !$2("#global-results")) return;
+      const section = (title, items) => items.length ? `<h5>${title}</h5>${items.join("")}` : "";
+      const html = section("联系人", r.contacts.map((c) => `<button class="search-hit" data-hit-user="${c.id}" data-cid="${c.conversationId || ""}">${av2(c)}<span><b>${mark(c.name, q)}</b><small>LinkMe 号 ${esc3(c.number)}</small></span></button>`)) + section("群聊", r.chats.map((c) => `<button class="search-hit" data-hit-chat="${c.id}"><span class="avatar">${icon2("contacts")}</span><span><b>${mark(c.name, q)}</b><small>${c.count} 人</small></span></button>`)) + section("聊天记录", r.messages.map((m) => `<button class="search-hit" data-hit-message="${m.id}" data-cid="${m.conversationId}">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<span><b>${esc3(m.conversationName)} · ${esc3(m.name)}</b><small>${mark(preview2(m), q)} · ${whenText2(m.created)}</small></span></button>`)) + section("云文档", r.docs.map((d) => `<button class="search-hit" data-hit-doc="${d.id}"><span class="docs-icon ${d.kind === "sheet" ? "is-sheet" : "is-doc"}">${icon2("doc")}</span><span><b>${mark(d.title, q)}</b><small>${esc3(d.ownerName)} · ${whenText2(d.updated)}</small></span></button>`));
+      box.innerHTML = html || '<p class="hint">没有找到相关内容</p>';
+    }
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest(".search-hit");
+      if (!b) return;
+      closeModal2();
+      if (b.dataset.hitUser) {
+        if (b.dataset.cid) openChat2(b.dataset.cid);
+        else startChat2(b.dataset.hitUser);
+      } else if (b.dataset.hitChat) openChat2(b.dataset.hitChat);
+      else if (b.dataset.hitMessage) openMessage2(b.dataset.cid, b.dataset.hitMessage);
+      else if (b.dataset.hitDoc) Docs2.open(b.dataset.hitDoc);
+    });
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k" && S2.user) {
+        e.preventDefault();
+        open(window.getSelection()?.toString().trim().slice(0, 100) || "");
+      }
+    });
+    return { open };
+  }
+
+  // internal/ui/src/assistant.js
+  var SUGGESTIONS = ["总结一下我的未读消息", "明天上午十点和同事开个会", "提醒我周五下午交周报", "把状态设为请勿打扰两小时", "今天有什么需要我处理的？"];
+  function createAssistant({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, toast: toast2, openChat: openChat2, openMessage: openMessage2, startChat: startChat2, showWork: showWork2, showTab: showTab2, Docs: Docs2, Work: Work2, closeModal: closeModal2 }) {
+    const $2 = (s) => document.querySelector(s);
+    let prefs = { enabled: false, brief: true, nudges: true, ai: false }, notices = [], brief = null, briefing = false, asking = false, answer = null, timer = 0, bubbleTimer = 0, started = false;
+    const bubbles = [], shown = /* @__PURE__ */ new Set();
+    const me = () => S2.user?.id;
+    const today = () => (/* @__PURE__ */ new Date()).toDateString();
+    const store = (k, v) => {
+      try {
+        if (v === void 0) return JSON.parse(localStorage.getItem("welink_me_" + k) || "null");
+        localStorage.setItem("welink_me_" + k, JSON.stringify(v));
+      } catch {
+        return null;
+      }
+    };
+    const dismissed = () => {
+      const d = store("dismissed");
+      return d?.date === today() ? new Set(d.keys) : /* @__PURE__ */ new Set();
+    };
+    const tz = () => -(/* @__PURE__ */ new Date()).getTimezoneOffset();
+    const quiet = () => !!S2.myStatus?.dnd;
+    function orb() {
+      let el = $2("#me-orb");
+      if (!prefs.enabled || !S2.user) {
+        el?.remove();
+        $2("#me-bubble")?.remove();
+        $2("#me-assist")?.remove();
+        return null;
+      }
+      if (!el) {
+        el = document.createElement("button");
+        el.id = "me-orb";
+        el.className = "me-orb";
+        el.setAttribute("aria-label", "Me 管家");
+        el.title = "Me 管家";
+        el.innerHTML = '<span class="orb-core">M</span><span class="orb-badge hidden"></span>';
+        document.body.append(el);
+        el.onclick = () => {
+          if (el.dataset.dragged) {
+            delete el.dataset.dragged;
+            return;
+          }
+          togglePanel();
+        };
+        dragOrb(el);
+      }
+      const n = notices.length;
+      const badge = el.querySelector(".orb-badge");
+      badge.textContent = n > 99 ? "99+" : n;
+      badge.classList.toggle("hidden", !n);
+      el.classList.toggle("alert", notices.some((x) => x.level === "high"));
+      return el;
+    }
+    function dragOrb(el) {
+      let start = null;
+      el.addEventListener("touchstart", (e) => {
+        start = { y: e.touches[0].clientY, top: el.getBoundingClientRect().top };
+      }, { passive: true });
+      el.addEventListener("touchmove", (e) => {
+        if (!start) return;
+        const dy = e.touches[0].clientY - start.y;
+        if (Math.abs(dy) < 6) return;
+        el.dataset.dragged = "1";
+        const top = Math.max(70, Math.min(innerHeight - 140, start.top + dy));
+        el.style.top = top + "px";
+        el.style.bottom = "auto";
+        e.preventDefault();
+      }, { passive: false });
+      el.addEventListener("touchend", () => {
+        if (el.dataset.dragged) store("orb", el.style.top);
+        start = null;
+      });
+      const saved = store("orb");
+      if (saved && innerWidth <= 700) {
+        el.style.top = saved;
+        el.style.bottom = "auto";
+      }
+    }
+    function bubble(text, open, urgent = true) {
+      if (!prefs.enabled || !prefs.nudges) return;
+      const b = { text, open, urgent };
+      const cur = $2("#me-bubble");
+      if (urgent && cur && cur.dataset.urgent !== "1") {
+        bubbles.unshift(b, current);
+        cur.remove();
+        clearTimeout(bubbleTimer);
+        nextBubble();
+        return;
+      }
+      if (urgent) {
+        const i = bubbles.findIndex((x) => !x.urgent);
+        bubbles.splice(i < 0 ? bubbles.length : i, 0, b);
+      } else bubbles.push(b);
+      if (!cur) nextBubble();
+    }
+    let current = null;
+    function nextBubble() {
+      if ($2("#me-assist")) {
+        bubbles.length = 0;
+        return;
+      }
+      const b = bubbles.shift();
+      if (!b) return;
+      const o = orb();
+      if (!o) return;
+      current = b;
+      const el = document.createElement("div");
+      el.id = "me-bubble";
+      el.className = "me-bubble";
+      el.setAttribute("role", "status");
+      el.dataset.urgent = b.urgent ? "1" : "";
+      el.innerHTML = `<span>${esc3(b.text)}</span><button class="icon-btn" aria-label="关闭">${icon2("close")}</button>`;
+      document.body.append(el);
+      const r = o.getBoundingClientRect();
+      if (innerWidth > 700) {
+        el.style.left = r.right + 10 + "px";
+        el.style.bottom = innerHeight - r.bottom + "px";
+      } else {
+        el.style.right = "76px";
+        el.style.top = Math.max(8, r.top) + "px";
+      }
+      el.onclick = (e) => {
+        const close = e.target.closest("button");
+        el.remove();
+        clearTimeout(bubbleTimer);
+        if (!close) {
+          if (b.open) b.open();
+          else openPanel();
+        }
+        setTimeout(nextBubble, 300);
+      };
+      o.classList.add("speaking");
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => {
+        el.remove();
+        o.classList.remove("speaking");
+        setTimeout(nextBubble, 400);
+      }, 8e3);
+    }
+    function togglePanel() {
+      if ($2("#me-assist")) closePanel();
+      else openPanel();
+    }
+    function closePanel() {
+      $2("#me-assist")?.remove();
+    }
+    function openPanel() {
+      if (!prefs.enabled) return;
+      let p = $2("#me-assist");
+      if (!p) {
+        p = document.createElement("aside");
+        p.id = "me-assist";
+        p.className = "me-assist";
+        p.setAttribute("aria-label", "Me 管家");
+        document.body.append(p);
+        p.addEventListener("click", panelClick);
+        p.innerHTML = `<header><b>✦ Me 管家</b><label class="assist-switch" title="关闭后不再提醒，可在设置里重新打开"><input type="checkbox" id="assist-enabled" checked> 管理应用</label><button class="icon-btn" data-me="close" aria-label="关闭">${icon2("close")}</button></header><div class="assist-body"></div><form class="assist-ask"><div class="assist-chips">${SUGGESTIONS.map((s) => `<button type="button" data-me-suggest="${esc3(s)}">${esc3(s)}</button>`).join("")}</div><textarea rows="2" maxlength="2000" placeholder="让 Me 帮你：发消息、建待办、约日程、改状态、打开文档…"></textarea><button class="primary" type="submit">发送</button></form>`;
+        p.querySelector("#assist-enabled").onchange = (e) => {
+          if (!e.target.checked) setEnabled(false);
+        };
+        const form = p.querySelector("form"), ta = form.querySelector("textarea");
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          ask(ta.value);
+        };
+        ta.onkeydown = (e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            ask(ta.value);
+          }
+        };
+        if (!prefs.ai) form.classList.add("hidden");
+      }
+      draw();
+      if (prefs.ai && prefs.brief && !brief && !briefing) loadBrief();
+    }
+    function draw() {
+      const body = $2("#me-assist .assist-body");
+      if (!body) return;
+      const hour = (/* @__PURE__ */ new Date()).getHours(), hello = hour < 6 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+      const facts = brief?.facts;
+      body.innerHTML = `<section class="assist-hello"><h3>${hello}，${esc3(S2.user?.name || "")}</h3>${facts ? `<div class="assist-facts"><span><b>${facts.unread || 0}</b>未读</span><span><b>${facts.mentions || 0}</b>@我</span><span><b>${facts.tasks || 0}</b>待办</span><span><b>${facts.events || 0}</b>日程</span></div>` : ""}</section>
+   ${prefs.ai && prefs.brief ? `<section class="assist-brief"><h4>今日简报${brief?.text ? '<button class="link" data-me="rebrief">刷新</button>' : ""}</h4>${briefing ? '<div class="ai-loading"><span></span>Me 正在整理今天的情况…</div>' : brief?.text ? `<div class="ai-reply">${replyHTML(brief.text)}</div>` : '<button class="secondary" data-me="rebrief">生成今日简报</button>'}</section>` : ""}
+   <section class="assist-notices"><h4>需要关注${notices.length ? ` · ${notices.length}` : ""}</h4>${notices.length ? notices.map(noticeHTML).join("") : '<p class="hint">暂时没有需要你处理的事 🎉</p>'}</section>
+   ${answer ? `<section class="assist-answer"><h4>Me 的回复</h4>${answer.loading ? '<div class="ai-loading"><span></span>Me 正在想…</div>' : `${answer.reply ? `<div class="ai-reply">${replyHTML(answer.reply)}</div>` : ""}${answer.actions.length ? `<div class="assist-actions">${answer.actions.map(actionHTML).join("")}${answer.actions.filter((a) => !a.done).length > 1 ? '<button class="primary" data-me="run-all">全部执行</button>' : ""}</div>` : ""}`}</section>` : ""}
+   ${!prefs.ai ? '<p class="hint">服务器未开启 AI，Me 管家只做提醒。</p>' : ""}`;
+    }
+    function noticeHTML(n, i) {
+      return `<div class="notice ${n.level || ""}"><span class="notice-icon">${n.icon || "•"}</span><div class="notice-text">${esc3(n.text)}${n.sub ? `<small>${esc3(n.sub)}</small>` : ""}</div><div class="notice-actions">${(n.actions || []).map((a, j) => `<button class="${j === 0 ? "primary" : "secondary"}" data-notice="${i}" data-notice-action="${j}">${esc3(a.label)}</button>`).join("")}<button class="icon-btn" data-notice-dismiss="${i}" title="忽略" aria-label="忽略">${icon2("close")}</button></div></div>`;
+    }
+    async function refresh2() {
+      if (!prefs.enabled || !S2.user) return;
+      const skip = dismissed(), list = [];
+      const conv = S2.conversations || [];
+      for (const c of conv.filter((c2) => c2.mentionCount > 0).slice(0, 3)) list.push({ key: "mention:" + c.id + ":" + c.mentionCount, icon: "@", level: "high", text: `${c.name} 里有 ${c.mentionCount} 条消息 @你`, actions: [{ label: "查看", run: () => openChat2(c.id) }] });
+      const unread = conv.filter((c) => c.unread > 0 && !c.muted && !c.peer?.ai), total = unread.reduce((n, c) => n + c.unread, 0);
+      if (total) list.push({ key: "unread:" + total, icon: "💬", text: `${unread.length} 个聊天共 ${total} 条未读`, sub: unread.slice(0, 3).map((c) => c.name).join("、"), actions: [{ label: "去看看", run: () => {
+        S2.chatFilter = "unread";
+        showTab2("messages");
+      } }] });
+      try {
+        const { tasks, events } = await Work2.fetchSoon();
+        const now = Date.now();
+        const overdue = tasks.filter((t) => t.due && t.due < now), soon = tasks.filter((t) => t.due && t.due >= now && t.due - now < 6 * 36e5);
+        if (overdue.length) list.push({ key: "overdue:" + overdue.map((t) => t.id).join(), icon: "⏰", level: "high", text: `${overdue.length} 个待办已逾期`, sub: overdue.slice(0, 3).map((t) => t.title).join("、"), actions: [{ label: "处理", run: () => showWork2("tasks") }] });
+        for (const t of soon.slice(0, 3)) list.push({ key: "due:" + t.id + ":" + t.due, icon: "📌", text: `待办“${t.title}”将在 ${whenText(t.due)} 截止`, actions: [{ label: "完成", run: () => api2("/api/tasks/" + t.id, { method: "PATCH", body: { done: true } }).then(() => {
+          toast2("已完成");
+          refresh2();
+        }) }, { label: "查看", run: () => {
+          showWork2("tasks");
+          setTimeout(() => Work2.openTask(t.id), 200);
+        } }] });
+        for (const e of events.filter((e2) => e2.start > now - 10 * 6e4 && e2.start - now < 3 * 36e5 && e2.attendees.find((a) => a.id === me())?.response !== "decline").slice(0, 3)) {
+          const mins = Math.round((e.start - now) / 6e4);
+          list.push({ key: "event:" + e.id + ":" + e.start, icon: "📅", level: mins <= 15 ? "high" : "", text: mins > 0 ? `“${e.title}”${mins < 60 ? mins + " 分钟后" : "将在 " + whenText(e.start)}开始` : `“${e.title}”正在进行`, sub: e.location || (e.meeting ? "线上会议" : ""), actions: [{ label: "查看", run: () => {
+            showWork2("calendar");
+            setTimeout(() => Work2.openEvent(e.id), 200);
+          } }] });
+          const remind = e.remind || 15;
+          if (mins <= remind && mins >= -1 && !shown.has("remind:" + e.id + e.start)) {
+            shown.add("remind:" + e.id + e.start);
+            if (!quiet()) bubble(`“${e.title}”${mins > 0 ? mins + " 分钟后开始" : "开始了"}${e.meeting ? "，点我查看会议" : ""}`, () => {
+              showWork2("calendar");
+              setTimeout(() => Work2.openEvent(e.id), 200);
+            });
+          }
+        }
+        for (const t of soon.filter((t2) => t2.due - now < 30 * 6e4)) if (!shown.has("due:" + t.id)) {
+          shown.add("due:" + t.id);
+          if (!quiet()) bubble(`待办“${t.title}”快到截止时间了`, () => showWork2("tasks"));
+        }
+      } catch {
+      }
+      notices = list.filter((n) => !skip.has(n.key)).concat(extra.filter((n) => !skip.has(n.key)));
+      orb();
+      draw();
+    }
+    const extra = [];
+    document.addEventListener("change", (e) => {
+      if (e.target.matches?.("[data-assistant-toggle]")) setEnabled(e.target.checked);
+    });
+    function remember(n) {
+      if (extra.some((x) => x.key === n.key)) return;
+      extra.unshift(n);
+      if (extra.length > 20) extra.pop();
+    }
+    function dismiss(i) {
+      const n = notices[i];
+      if (!n) return;
+      const d = dismissed();
+      d.add(n.key);
+      store("dismissed", { date: today(), keys: [...d] });
+      const j = extra.indexOf(n);
+      if (j >= 0) extra.splice(j, 1);
+      notices.splice(i, 1);
+      orb();
+      draw();
+    }
+    async function loadBrief(force = false) {
+      const cached = store("brief");
+      if (!force && cached?.date === today()) {
+        brief = cached;
+        draw();
+        return;
+      }
+      briefing = true;
+      draw();
+      try {
+        const r = await api2("/api/assistant/brief?tz=" + tz(), { method: "POST", body: {} });
+        brief = { date: today(), text: r.brief, facts: r.facts };
+        store("brief", brief);
+      } catch (e) {
+        brief = { date: today(), text: "", facts: null };
+        if (e.status !== 429) toast2(e.message);
+      } finally {
+        briefing = false;
+        draw();
+      }
+    }
+    async function ask(text) {
+      text = (text || "").trim();
+      if (!text || asking) return;
+      asking = true;
+      const ta = $2("#me-assist textarea");
+      if (ta) ta.value = "";
+      answer = { loading: true, actions: [] };
+      draw();
+      try {
+        const r = await api2("/api/assistant/ask?tz=" + tz(), { method: "POST", body: { text } });
+        answer = { reply: r.reply, actions: r.actions.map((a) => ({ ...a, done: false })) };
+      } catch (e) {
+        answer = { reply: "⚠️ " + e.message, actions: [] };
+      } finally {
+        asking = false;
+        draw();
+        $2("#me-assist .assist-answer")?.scrollIntoView({ block: "nearest" });
+      }
+    }
+    const convName = (id) => S2.conversations.find((c) => c.id === id)?.name || "某个聊天";
+    const userName = (id) => id === me() ? "我" : (S2.friends || []).find((f) => f.id === id)?.name || "成员";
+    const parseTime = (s) => {
+      if (!s) return 0;
+      const t = new Date(String(s).replace(" ", "T")).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+    function describe(a) {
+      switch (a.type) {
+        case "send_message":
+          return [`发消息给 ${convName(a.conversationId)}`, a.text];
+        case "schedule_message":
+          return [`定时发消息给 ${convName(a.conversationId)}`, `${whenText(parseTime(a.at))}：${a.text}`];
+        case "create_task":
+          return ["新建待办", `${a.title}${a.due ? " · 截止 " + whenText(parseTime(a.due)) : ""}${a.assignees?.length ? " · 负责人 " + a.assignees.map(userName).join("、") : ""}`];
+        case "complete_task":
+          return ["完成待办", (Work2.tasks() || []).find((t) => t.id === a.taskId)?.title || a.taskId];
+        case "create_event":
+          return ["新建日程", `${a.title} · ${whenText(parseTime(a.start))}${a.end ? " – " + whenText(parseTime(a.end)).split(" ")[1] : ""}${a.attendees?.length ? " · 邀请 " + a.attendees.map(userName).join("、") : ""}${a.meeting ? " · 线上会议" : ""}`];
+        case "set_status":
+          return ["设置状态", a.status === "clear" ? "清除状态" : ({ busy: "忙碌", dnd: "请勿打扰", away: "暂时离开", leave: "休假中", custom: a.text }[a.status] || a.status) + (a.hours ? ` · ${a.hours} 小时` : "")];
+        case "open":
+          return ["打开", { chat: convName(a.id), doc: "云文档", tasks: "待办", calendar: "日历", flags: "标记的消息", docs: "云文档列表" }[a.target] || a.target];
+        case "create_doc":
+          return ["新建文档", a.title];
+        case "summarize_chat":
+          return ["总结聊天", convName(a.conversationId)];
+      }
+      return [a.type, ""];
+    }
+    function actionHTML(a, i) {
+      const [title, detail] = describe(a);
+      return `<div class="assist-action${a.done ? " done" : ""}"><div><b>${esc3(title)}</b>${detail ? `<small>${esc3(detail)}</small>` : ""}</div>${a.done ? `<span class="ok">${a.done === true ? "已完成" : esc3(a.done)}</span>` : `<button class="primary" data-me-run="${i}">执行</button><button class="secondary" data-me-skip="${i}">取消</button>`}</div>`;
+    }
+    async function run(a) {
+      const clientId = "me-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      switch (a.type) {
+        case "send_message":
+          await api2(`/api/conversations/${a.conversationId}/messages`, { method: "POST", body: { kind: "text", text: String(a.text || ""), clientId } });
+          return "已发送";
+        case "schedule_message":
+          await api2("/api/schedules", { method: "POST", body: { conversationId: a.conversationId, kind: "text", text: String(a.text || ""), at: parseTime(a.at), repeat: "once", tzOffset: tz() } });
+          return "已设置";
+        case "create_task":
+          await api2("/api/tasks", { method: "POST", body: { title: a.title, due: parseTime(a.due), assignees: a.assignees || [] } });
+          return "已创建";
+        case "complete_task":
+          await api2("/api/tasks/" + a.taskId, { method: "PATCH", body: { done: true } });
+          return "已完成";
+        case "create_event": {
+          const start = parseTime(a.start);
+          await api2("/api/events", { method: "POST", body: { title: a.title, start, end: parseTime(a.end) || start + 36e5, attendees: a.attendees || [], meeting: !!a.meeting, location: a.location || "" } });
+          return "已创建";
+        }
+        case "set_status": {
+          const r = await api2("/api/me/status", { method: "PUT", body: { manual: a.status === "clear" ? "" : a.status, text: a.text || "", until: a.hours ? Date.now() + a.hours * 36e5 : 0 } });
+          S2.myStatus = r;
+          return "已设置";
+        }
+        case "open":
+          closePanel();
+          if (a.target === "chat" && a.id) openChat2(a.id);
+          else if (a.target === "doc" && a.id) Docs2.open(a.id);
+          else if (a.target === "docs") showTab2("docs");
+          else showWork2(a.target === "calendar" ? "calendar" : a.target === "flags" ? "flags" : "tasks");
+          return "已打开";
+        case "create_doc": {
+          const form = new FormData();
+          form.append("file", new File([String(a.markdown || "")], (a.title || "新文档").replace(/[\\/:*?"<>|]/g, "_") + ".md", { type: "text/markdown" }));
+          const r = await api2("/api/docs/import", { method: "POST", body: form });
+          closePanel();
+          Docs2.open(r.id);
+          return "已创建";
+        }
+        case "summarize_chat":
+          closePanel();
+          await openChat2(a.conversationId);
+          setTimeout(() => document.querySelector("[data-cx=ai-summary]")?.click(), 500);
+          return "已打开";
+      }
+      throw Error("Me 不支持这个操作");
+    }
+    async function runAt(i) {
+      const a = answer?.actions[i];
+      if (!a || a.done) return;
+      try {
+        a.done = await run(a);
+      } catch (e) {
+        toast2(e.message);
+        return;
+      }
+      draw();
+      setTimeout(refresh2, 500);
+    }
+    function panelClick(e) {
+      const t = e.target;
+      let b;
+      if (t.closest("[data-me=close]")) {
+        closePanel();
+        return;
+      }
+      if (t.closest("[data-me=rebrief]")) {
+        loadBrief(true);
+        return;
+      }
+      if (t.closest("[data-me=run-all]")) {
+        (async () => {
+          for (let i = 0; i < answer.actions.length; i++) await runAt(i);
+        })();
+        return;
+      }
+      if (b = t.closest("[data-me-run]")) {
+        runAt(+b.dataset.meRun);
+        return;
+      }
+      if (b = t.closest("[data-me-skip]")) {
+        answer.actions[+b.dataset.meSkip].done = "已取消";
+        draw();
+        return;
+      }
+      if (b = t.closest("[data-me-suggest]")) {
+        const ta = $2("#me-assist textarea");
+        ta.value = b.dataset.meSuggest;
+        ta.focus();
+        return;
+      }
+      if (b = t.closest("[data-notice-action]")) {
+        const n = notices[+b.dataset.notice];
+        const a = n?.actions?.[+b.dataset.noticeAction];
+        if (a) {
+          Promise.resolve(a.run()).catch((err) => toast2(err.message));
+          if (!/查看|去看看|处理/.test(a.label)) dismiss(+b.dataset.notice);
+        }
+        return;
+      }
+      if (b = t.closest("[data-notice-dismiss]")) {
+        dismiss(+b.dataset.noticeDismiss);
+        return;
+      }
+    }
+    async function setEnabled(on) {
+      try {
+        prefs = await api2("/api/assistant/prefs", { method: "PUT", body: { enabled: on } });
+      } catch (e) {
+        toast2(e.message);
+        return;
+      }
+      if (!on) {
+        closePanel();
+        orb();
+        toast2("已关闭 AI 管家，可在设置里重新打开");
+      } else {
+        toast2("Me 管家已开启");
+        boot();
+      }
+    }
+    async function boot() {
+      orb();
+      refresh2();
+      clearInterval(timer);
+      timer = setInterval(refresh2, 6e4);
+      if (prefs.ai && prefs.brief) {
+        const cached = store("brief");
+        if (cached?.date === today()) brief = cached;
+        else {
+          await loadBrief();
+          if (brief?.text && !quiet()) bubble("今日简报已准备好，点我看看今天要处理的事", openPanel, false);
+        }
+      }
+    }
+    return {
+      async start() {
+        started = true;
+        try {
+          prefs = await api2("/api/assistant/prefs");
+        } catch {
+          prefs = { enabled: false };
+        }
+        if (prefs.enabled) boot();
+        else orb();
+      },
+      settingsRow() {
+        return `<div class="prefs-row"><span>AI 管家 Me<small class="hint" style="display:block">悬浮助手、主动提醒和今日简报</small></span><label class="switch"><input type="checkbox" data-assistant-toggle ${prefs.enabled ? "checked" : ""}><span></span></label></div>`;
+      },
+      toggle(on) {
+        setEnabled(on);
+      },
+      open: openPanel,
+      event(type, d) {
+        if (!prefs.enabled) return;
+        if (type === "task" && d.created && d.by !== me()) {
+          const t = d.task;
+          remember({ key: "assigned:" + t.id, icon: "📌", level: "high", text: `${t.creator.name} 给你分配了待办“${t.title}”`, sub: t.due ? "截止 " + whenText(t.due) : "", actions: [{ label: "查看", run: () => {
+            showWork2("tasks");
+            setTimeout(() => Work2.openTask(t.id), 200);
+          } }] });
+          if (!quiet()) bubble(`${t.creator.name} 给你分配了待办：${t.title}`, () => {
+            showWork2("tasks");
+            setTimeout(() => Work2.openTask(t.id), 200);
+          });
+        }
+        if (type === "event" && d.created && d.by !== me()) {
+          const e = d.event;
+          remember({ key: "invite:" + e.id, icon: "📅", level: "high", text: `${e.creator.name} 邀请你参加“${e.title}”`, sub: whenText(e.start), actions: [{ label: "接受", run: () => api2("/api/events/" + e.id, { method: "PATCH", body: { response: "accept" } }).then(() => toast2("已接受")) }, { label: "拒绝", run: () => api2("/api/events/" + e.id, { method: "PATCH", body: { response: "decline" } }).then(() => toast2("已拒绝")) }] });
+          if (!quiet()) bubble(`${e.creator.name} 邀请你参加“${e.title}”（${whenText(e.start)}）`, openPanel);
+        }
+        if (type === "event" && d.deleted && d.by !== me()) remember({ key: "cancel:" + d.event.id, icon: "📅", text: `日程“${d.event.title || ""}”已取消` });
+        if (type === "doc-access" && !d.deleted) remember({ key: "doc:" + d.docId, icon: "📄", text: "有文档的协作权限有变化，可能有人与你分享了文档", actions: [{ label: "打开", run: () => Docs2.open(d.docId) }] });
+        if (type === "message" && d.sender !== me() && d.mentionRecipients?.includes(me()) && S2.active !== d.conversationId && !quiet()) bubble(`${d.name} 在“${convName(d.conversationId)}”里 @了你`, () => openMessage2(d.conversationId, d.id));
+        if (type === "assistant-prefs") {
+          const was = prefs.enabled;
+          prefs = { ...prefs, ...d };
+          if (was !== prefs.enabled) {
+            if (prefs.enabled) boot();
+            else {
+              closePanel();
+              orb();
+            }
+          }
+          return;
+        }
+        clearTimeout(this._t);
+        this._t = setTimeout(refresh2, 800);
+      },
+      changed() {
+        if (started && prefs.enabled) {
+          orb();
+          clearTimeout(this._c);
+          this._c = setTimeout(refresh2, 1500);
+        }
+      },
+      reset() {
+        clearInterval(timer);
+        prefs = { enabled: false };
+        notices = [];
+        brief = null;
+        answer = null;
+        extra.length = 0;
+        bubbles.length = 0;
+        $2("#me-orb")?.remove();
+        $2("#me-bubble")?.remove();
+        $2("#me-assist")?.remove();
       }
     };
   }
@@ -11902,7 +13108,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   var $ = (s, r = document) => r.querySelector(s);
   var $$ = (s, r = document) => [...r.querySelectorAll(s)];
   var esc2 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  var paths = { doc: "M6 2h9l5 5v15H6ZM14 2v6h6M9 13h8M9 17h6", cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8", "mic-off": "M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.5V6a3 3 0 0 0-5.9-.8M17 16.9A7 7 0 0 1 5 11M19 11a7 7 0 0 1-.4 2.3M12 18v3M8 21h8", "video-off": "M3 3l18 18M10 5h5v5M15 15v4H3V5h2M15 9l6-3v12l-4-2", record: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
+  var paths = { grid: "M4 4h7v7H4ZM13 4h7v7h-7ZM4 13h7v7H4ZM13 13h7v7h-7Z", doc: "M6 2h9l5 5v15H6ZM14 2v6h6M9 13h8M9 17h6", cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8", "mic-off": "M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.5V6a3 3 0 0 0-5.9-.8M17 16.9A7 7 0 0 1 5 11M19 11a7 7 0 0 1-.4 2.3M12 18v3M8 21h8", "video-off": "M3 3l18 18M10 5h5v5M15 15v4H3V5h2M15 9l6-3v12l-4-2", record: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
   var icon = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n] || paths.chat}"/></svg>`;
   var btn = (name, title, action2, extra = "") => `<button class="icon-btn" title="${title}" aria-label="${title}" data-action="${action2}" ${extra}>${icon(name)}</button>`;
   var av = (u = {}, size = "", online = false) => {
@@ -12095,7 +13301,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   function navigatePage(button) {
     const tab = button.dataset.nav;
-    if (!["messages", "contacts", "meetings", "docs", "drive", "files", "favorites", "profile"].includes(tab)) return;
+    if (!["messages", "contacts", "work", "meetings", "docs", "drive", "files", "favorites", "profile"].includes(tab)) return;
     if (!button.closest(".rail") && tab !== S.tab) pageHistory.push({ state: { tab: S.tab, active: S.active, profile: S.profile, search: S.search }, settings: $(".modal")?.getAttribute("aria-label") === "设置" });
     else pageHistory.length = 0;
     closeModal();
@@ -12105,7 +13311,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     renderShell();
   }
   function pageNavigation() {
-    return '<header class="utility-navigation' + (!pageHistory.length && ["meetings", "profile", "docs"].includes(S.tab) ? " is-root" : "") + '"><button class="page-back" data-action="page-back">' + icon("back") + "返回" + (pageHistory[pageHistory.length - 1]?.settings ? "设置" : "") + "</button></header>";
+    return '<header class="utility-navigation' + (!pageHistory.length && ["meetings", "profile", "docs", "work"].includes(S.tab) ? " is-root" : "") + '"><button class="page-back" data-action="page-back">' + icon("back") + "返回" + (pageHistory[pageHistory.length - 1]?.settings ? "设置" : "") + "</button></header>";
   }
   var Navigation = createNavigation({ getHandler: () => modalHandler, setHandler: (value) => {
     modalHandler = value;
@@ -12123,22 +13329,32 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   function nav() {
     const unread = S.conversations.reduce((n, c) => n + (c.muted ? c.mentionCount || 0 : c.unread), 0), requests = S.requests.filter((q) => q.recipient === S.user.id && q.status === "pending").length + S.groupRequests.filter((q) => q.canReview && q.status === "pending").length;
     markUnread(unread);
-    return `<aside class="rail"><button class="self" title="个人资料" data-action="profile">${av(S.user, "", true)}</button><nav>${[["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["meetings", "video", "会议", 0], ["docs", "doc", "文档", 0], ["drive", "cloud", "网盘", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => `<button data-nav="${tab}" class="${S.tab === tab ? "active" : ""}${n ? " has-unread" : ""}" title="${t}${n ? ` · ${n} 条未读` : ""}" aria-label="${t}">${icon(i)}<span class="rail-label">${t}</span>${n ? `<span class="badge">${n > 99 ? "99+" : n}</span>` : ""}</button>`).join("")}</nav><div class="rail-bottom">${btn("settings", "设置", "settings")}${btn("more", "更多", "more-menu")}</div></aside>`;
+    return `<aside class="rail"><button class="self" title="个人资料" data-action="profile">${av(S.user, "", true)}</button><nav>${[["messages", "chat", "消息", unread], ["contacts", "contacts", "联系人", requests], ["work", "grid", "工作台", 0], ["meetings", "video", "会议", 0], ["docs", "doc", "文档", 0], ["drive", "cloud", "网盘", 0], ["files", "folder", "文件", 0], ["favorites", "star", "收藏", 0], ["profile", "user", "我的", 0]].map(([tab, i, t, n]) => `<button data-nav="${tab}" class="${S.tab === tab ? "active" : ""}${n ? " has-unread" : ""}" title="${t}${n ? ` · ${n} 条未读` : ""}" aria-label="${t}">${icon(i)}<span class="rail-label">${t}</span>${n ? `<span class="badge">${n > 99 ? "99+" : n}</span>` : ""}</button>`).join("")}</nav><div class="rail-bottom">${btn("settings", "设置", "settings")}${btn("more", "更多", "more-menu")}</div></aside>`;
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = `<div class="shell ${S.active && S.tab === "messages" ? "in-chat" : ""} ${utility ? "in-utility" : ""}">${nav()}<aside class="sidebar"><div class="mobile-title"><button data-action="profile">${av(S.user)}</button><h2>${S.tab === "contacts" ? "联系人" : "消息"}</h2>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="searchbar"><label class="searchbox">${icon("search")}<input id="sidebar-search" value="${esc2(S.search)}" placeholder="搜索用户或群聊" aria-label="搜索用户或群聊" maxlength="60"></label>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">${windows()}<div id="connection-status"></div>${utility ? pageNavigation() : ""}<div id="main-content" style="display:contents"></div></main></div>`;
+    $("#app").innerHTML = `<div class="shell ${S.active && S.tab === "messages" ? "in-chat" : ""} ${utility ? "in-utility" : ""}">${nav()}<aside class="sidebar"><div class="sidebar-resizer" title="拖动调整宽度，双击恢复" aria-hidden="true"></div><div class="mobile-title"><button data-action="profile">${av(S.user)}</button><h2>${S.tab === "contacts" ? "联系人" : "消息"}</h2>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="searchbar"><label class="searchbox">${icon("search")}<input id="sidebar-search" value="${esc2(S.search)}" placeholder="搜索用户或群聊" aria-label="搜索用户或群聊" maxlength="60"></label>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">${windows()}<div id="connection-status"></div>${utility ? pageNavigation() : ""}<div id="main-content" style="display:contents"></div></main></div>`;
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
       S.search = e.target.value;
       renderSidebar();
     };
+    $("#sidebar-search").onkeydown = (e) => {
+      if (e.key === "Enter" && !e.isComposing && S.search.trim()) {
+        e.preventDefault();
+        GlobalSearch.open(S.search.trim());
+      }
+    };
     connectionState();
   }
   function renderSidebar() {
     const list = $("#sidebar-content");
     if (!list) return;
+    try {
+      Assistant.changed();
+    } catch {
+    }
     const q = S.search.toLowerCase();
     if (q.trim()) {
       list.innerHTML = Directory.render(S.search);
@@ -12150,7 +13366,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     const result = S.conversations.filter((c) => (c.name + (c.peer?.number || "") + (c.group?.number || "") + (c.last?.text || "")).toLowerCase().includes(q));
     const users = q ? S.friends.filter((u) => (u.name + (u.remark || "") + u.number + u.id + u.account).toLowerCase().includes(q)) : [];
-    list.innerHTML = Me.sidebar() + result.map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc2(u.remark || u.name) + '</b></div><div class="row-preview">' + esc2(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
+    list.innerHTML = Work.chips() + Me.sidebar() + Work.filter(result).map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc2(u.remark || u.name) + '</b></div><div class="row-preview">' + esc2(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
   }
   function conversationRow(c) {
     return `<div class="conversation-item"><button class="conversation-row ${S.active === c.id ? "selected" : ""} ${c.pinned ? "pinned" : ""}" data-conversation="${c.id}">${av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c, "", c.kind === "direct" && !c.peer?.ai)}<div class="row-text"><div class="row-title"><b>${esc2(c.name)}</b>${c.peer?.ai ? '<em class="ai-label">AI</em>' : ""}${c.kind === "direct" ? Contacts.badge(c.peer) : ""}<time>${c.last ? shortTime(c.last.created) : ""}</time></div><div class="row-preview"><span>${c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : ""}${esc2(c.kind === "group" && c.last && !c.last.recalled ? `${c.last.name}：` : "")}${esc2(preview(c.last))}</span>${c.muted ? icon("mute") : ""}${c.unread ? `<i class="badge">${c.unread > 99 ? "99+" : c.unread}</i>` : ""}</div></div></button><button type="button" class="conversation-more" data-conversation-menu="${c.id}" aria-label="${esc2(c.name)}的会话操作" title="会话操作">${icon("more")}</button></div>`;
@@ -12193,6 +13409,10 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     if (S.tab !== "docs" && Docs.isOpen()) Docs.leave();
     if (S.tab === "docs") {
       Docs.render();
+      return;
+    }
+    if (S.tab === "work") {
+      Work.render();
       return;
     }
     if (S.tab === "drive") {
@@ -12518,6 +13738,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     Me.start().catch(() => {
     });
     ChatX.start();
+    Work.start();
+    Assistant.start();
     Updates.start();
     await NativeNotifications.start().catch(() => toast("消息通知连接暂不可用，正在重试"));
     connectEvents(true);
@@ -12584,6 +13806,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         Calls.historyChanged();
       } else if (event.type === "message") {
         ChatX.event("message", d);
+        Assistant.event("message", d);
         Received.event("message", d).catch(() => {
         });
         Outbox.ack(d).catch(() => {
@@ -12605,8 +13828,12 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         if (d.userId === S.user.id) queueRefresh(true);
       } else if (["message-updated", "reaction", "pins", "urgent", "status", "meeting-minutes"].includes(event.type)) {
         ChatX.event(event.type, d);
+      } else if (["task", "event", "flags", "assistant-prefs"].includes(event.type)) {
+        Work.event(event.type, d);
+        Assistant.event(event.type, d);
       } else if (event.type.startsWith("doc-")) {
         Docs.event(event.type, d);
+        if (event.type === "doc-access") Assistant.event(event.type, d);
       } else if (event.type === "profile") {
         Avatars.changed(d);
         queueRefresh();
@@ -12679,6 +13906,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     Receipts.reset();
     Docs.reset();
     ChatX.reset();
+    Work.reset();
+    Assistant.reset();
     S.drafts = {};
     try {
       await NativeNotifications.stop().catch(() => {
@@ -12841,7 +14070,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>定时消息</span><button class="secondary" data-action="schedules">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION} 正式版 <button class="text-btn" data-update-check>检查更新</button></span></div><div class="prefs-row"><span>服务器</span><span>${esc2(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
+    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Assistant.settingsRow()}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>定时消息</span><button class="secondary" data-action="schedules">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION} 正式版 <button class="text-btn" data-update-check>检查更新</button></span></div><div class="prefs-row"><span>服务器</span><span>${esc2(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -12906,7 +14135,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   var menuSelection = "";
   function messageMenu(m, x, y, selection = "") {
     menuSelection = selection;
-    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}${ChatX.menuItems(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button>${m.kind === "voice" ? "" : `<button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>`}${selection ? `<button data-action="copy-selection">${icon("copy")}复制</button>` : m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 864e5 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
+    contextMenu(x, y, (m.recalled ? "" : `${Mentions.menu(m)}${ChatX.menuItems(m)}${Work.menuItems(m)}<button data-action="quote" data-mid="${m.id}">${icon("reply")}引用</button>${m.kind === "voice" ? "" : `<button data-fw="single" data-mid="${m.id}">${icon("send")}转发</button>`}${selection ? `<button data-action="copy-selection">${icon("copy")}复制</button>` : m.kind === "text" ? `<button data-action="copy-message" data-mid="${m.id}">${icon("copy")}复制文字</button>` : ""}<button data-action="favorite" data-mid="${m.id}">${icon("star")}收藏</button>${m.sender === S.user.id && Date.now() - m.created < 864e5 ? `<button data-action="recall" data-mid="${m.id}">${icon("history")}撤回</button>` : ""}`) + `<button data-fw="select" data-mid="${m.id}">${icon("check")}多选</button><button class="destructive" data-action="delete-message" data-mid="${m.id}">${icon("trash")}删除</button>`);
   }
   function emojis() {
     const old = $(".popup");
@@ -13713,6 +14942,48 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc: esc2, attach: (file, cid) => Attachments.add([file], cid) });
   var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc: esc2, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
   var Mentions = createMentions({ S, api, esc: esc2, av, toast, jump: jumpMessage });
+  sidebarResize();
+  var Work = createWork({ S, api, esc: esc2, av, icon, modal, closeModal, toast, renderSidebar, openMessage, preview, meetingButton });
+  var GlobalSearch = createGlobalSearch({ S, api, esc: esc2, av, icon, modal, closeModal, toast, openMessage, openChat, startChat, Docs, preview, whenText });
+  var Assistant = createAssistant({ S, api, esc: esc2, av, icon, toast, openChat, openMessage, startChat, showWork, showTab, Docs, Work, closeModal });
+  function showTab(tab) {
+    pageHistory.length = 0;
+    closeModal();
+    S.tab = tab;
+    S.search = "";
+    S.profile = null;
+    renderShell();
+  }
+  function showWork(view) {
+    Work.setView(view);
+    showTab("work");
+  }
+  async function openChat(cid) {
+    if (S.tab !== "messages") {
+      S.tab = "messages";
+      S.search = "";
+      S.profile = null;
+      renderShell();
+    }
+    await selectConversation(cid);
+  }
+  async function openMessage(cid, mid) {
+    closeModal();
+    await jumpMessage(cid, mid);
+  }
+  async function startChat(user) {
+    const c = await action("/api/conversations", { kind: "direct", members: [user] });
+    await refresh();
+    await openChat(c.id);
+  }
+  function meetingButton(code) {
+    const b = document.createElement("button");
+    b.dataset.meetingCode = code;
+    b.hidden = true;
+    document.body.append(b);
+    b.click();
+    b.remove();
+  }
   var ChatX = createChatFeatures({ S, api, esc: esc2, av, icon, modal, closeModal, toast, renderMessages, jumpMessage, messageMenu, Received, fileURL, download, Docs, shortTime, Mentions, queueRefresh, showPresence });
   var Me = createMe({ S, api, action, esc: esc2, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar, remote: async (d) => {
     if (!d.conversationId) return;

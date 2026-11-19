@@ -119,25 +119,33 @@ func (s *Server) aiConfig(w http.ResponseWriter, r *http.Request) {
 type aiContextMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Images are attachment ids of pictures in this message.
+	Images []string `json:"images,omitempty"`
 }
 
 func (s *Server) aiHistory(cid, user string, seq int64) ([]aiContextMessage, error) {
-	rows, err := s.db.Query(`SELECT m.sender,m.kind,m.text,COALESCE(a.name,'') FROM messages m LEFT JOIN attachments a ON a.id=m.attachment_id WHERE m.conversation_id=? AND m.seq<=? AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=m.id AND d.user_id=?) ORDER BY m.seq DESC LIMIT ?`, cid, seq, user, s.settings.AI.ContextMessages)
+	rows, err := s.db.Query(`SELECT m.sender,m.kind,m.text,COALESCE(a.name,''),m.attachment_id,COALESCE(a.mime,'') FROM messages m LEFT JOIN attachments a ON a.id=m.attachment_id WHERE m.conversation_id=? AND m.seq<=? AND m.recalled=0 AND NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=m.id AND d.user_id=?) ORDER BY m.seq DESC LIMIT ?`, cid, seq, user, s.settings.AI.ContextMessages)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	reversed := []aiContextMessage{}
 	remaining := s.settings.AI.ContextCharacters
+	pictures := 0
 	for rows.Next() {
-		var sender, kind, text, name string
-		if err = rows.Scan(&sender, &kind, &text, &name); err != nil {
+		var sender, kind, text, name, attachment, mime string
+		if err = rows.Scan(&sender, &kind, &text, &name, &attachment, &mime); err != nil {
 			return nil, err
 		}
 		if sender != user && !s.isAI(sender) {
 			continue
 		}
-		if kind != "text" {
+		var images []string
+		if kind == "image" && strings.HasPrefix(mime, "image/") && pictures < aiMaxImages {
+			pictures++
+			images = []string{attachment}
+			text = "[用户发送了一张图片：" + name + "，见附带的图片] " + text
+		} else if kind != "text" {
 			text = "[用户附件：" + name + "；内容尚未读取] " + text
 		}
 		runes := []rune(text)
@@ -149,7 +157,7 @@ func (s *Server) aiHistory(cid, user string, seq int64) ([]aiContextMessage, err
 		if s.isAI(sender) {
 			role = "assistant"
 		}
-		reversed = append(reversed, aiContextMessage{role, string(runes)})
+		reversed = append(reversed, aiContextMessage{Role: role, Content: string(runes), Images: images})
 		if remaining == 0 {
 			break
 		}
@@ -352,22 +360,38 @@ func (s *Server) answerAI(ctx context.Context, id, user, cid string, history []a
 	case <-ctx.Done():
 		return
 	}
-	payload := map[string]any{"model": s.settings.AI.Model, "reasoning": map[string]string{"effort": s.settings.AI.ReasoningEffort}, "instructions": aiInstructions, "input": history, "store": false, "stream": true}
-	endpoint := a.base + "/responses"
-	readReply := readAIReply
-	if s.settings.AI.chatAPI() {
-		messages := append([]aiContextMessage{{Role: "system", Content: aiInstructions}}, history...)
-		payload = map[string]any{"model": s.settings.AI.Model, "messages": messages, "stream": true}
+	chat := s.settings.AI.chatAPI()
+	endpoint, readReply := a.base+"/responses", readAIReply
+	if chat {
 		endpoint, readReply = a.base+"/chat/completions", readChatReply
 	}
-	raw, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return
+	send := func(withImages bool) (*http.Response, error) {
+		messages := s.aiProviderMessages(history, chat, withImages)
+		payload := map[string]any{"model": s.settings.AI.Model, "reasoning": map[string]string{"effort": s.settings.AI.ReasoningEffort}, "instructions": aiInstructions, "input": messages, "store": false, "stream": true}
+		if chat {
+			payload = map[string]any{"model": s.settings.AI.Model, "messages": append([]any{map[string]string{"role": "system", "content": aiInstructions}}, messages...), "stream": true}
+		}
+		raw, _ := json.Marshal(payload)
+		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+a.key)
+		req.Header.Set("Content-Type", "application/json")
+		return a.client.Do(req)
 	}
-	req.Header.Set("Authorization", "Bearer "+a.key)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.client.Do(req)
+	withImages := historyHasImages(history)
+	resp, err := send(withImages)
+	// A model that cannot see images still answers the words.
+	if err == nil && resp.StatusCode != 200 && withImages && ctx.Err() == nil {
+		resp.Body.Close()
+		for i := range history {
+			if len(history[i].Images) > 0 {
+				history[i].Content += "（当前模型不支持读取图片内容）"
+			}
+		}
+		resp, err = send(false)
+	}
 	if err != nil {
 		_ = s.finishAI(id, user, "", "AI 服务暂时不可用，请重试")
 		return

@@ -57,7 +57,7 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
  const moreTool=m=>`<button class="icon-btn" title="更多" aria-label="更多操作" data-cx="more" data-mid="${m.id}">${icon('more')}</button>`;
  function menuItems(m){
   if(m.recalled)return '';const mine=m.sender===me(),recent=Date.now()-m.created<DAY,pinned=(pins.get(m.conversationId)||[]).some(p=>p.id===m.id);
-  return `<button data-cx="react-pick" data-mid="${m.id}">${icon('emoji')}表情回复</button>${m.threadId?'':`<button data-cx="thread" data-mid="${m.id}">${icon('chat')}回复话题</button>`}`+
+  return (m.kind==='image'?`<button data-cx="copy-image" data-mid="${m.id}">${icon('copy')}复制图片</button>`:'')+`<button data-cx="react-pick" data-mid="${m.id}">${icon('emoji')}表情回复</button>${m.threadId?'':`<button data-cx="thread" data-mid="${m.id}">${icon('chat')}回复话题</button>`}`+
    (mine&&recent&&m.kind==='text'&&!/\nlinkme-doc:/.test(m.text)?`<button data-cx="edit" data-mid="${m.id}">${icon('notebook')}编辑</button>`:'')+
    (m.threadId?'':`<button data-cx="${pinned?'unpin':'pin'}" data-mid="${m.id}">${icon('pin')}${pinned?'取消置顶':'置顶'}</button>`)+
    (mine&&recent?`<button data-cx="urgent" data-mid="${m.id}">${icon('bell')}加急</button>`:'')+
@@ -220,6 +220,19 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
   return true;
  }
 
+ // Copy an image message as a picture others can paste anywhere.
+ async function copyImage(m){
+  try{
+   const blob=await (await fetch(fileURL(m.attachmentId))).blob();
+   const bitmap=await createImageBitmap(blob);const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;canvas.getContext('2d').drawImage(bitmap,0,0);
+   const png=await new Promise(r=>canvas.toBlob(r,'image/png'));
+   if(typeof window.welinkScreenshotCopy==='function'){const url=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(png)});await window.welinkScreenshotCopy(url)}
+   else if(navigator.clipboard?.write&&window.ClipboardItem)await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+   else throw Error('此设备暂不支持复制图片，可以长按保存');
+   toast('图片已复制');
+  }catch(e){toast(e.message&&!/NotAllowed|denied/i.test(e.message)?e.message:'复制图片失败')}
+ }
+
  // Personal status ------------------------------------------------------------------------------
  const STATUS_OPTIONS=[['','无状态'],['busy','忙碌'],['dnd','请勿打扰'],['away','暂时离开'],['leave','休假中']];
  async function loadStatuses(){const ids=[...new Set([me(),...(S.friends||[]).map(f=>f.id),...S.conversations.filter(c=>c.kind==='direct').map(c=>c.peer?.id)].filter(Boolean))];if(!ids.length)return;try{const r=await api('/api/statuses?ids='+ids.join(','));for(const [id,st] of Object.entries(r))statuses.set(id,st);S.myStatus=statuses.get(me())||null;refreshStatus()}catch{}}
@@ -248,10 +261,10 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
    case 'edit-cancel':cancelEdit();break;
    case 'pin':pin(mid,true);break;case 'unpin':pin(mid,false);break;
    case 'pins-open':pinList();break;
-   case 'pin-jump':closeModal();jumpMessage(mid);break;
+   case 'pin-jump':closeModal();jumpMessage(S.active,mid);break;
    case 'urgent':if(m)urgent(m);break;
    case 'urgent-ack':ack(mid);break;
-   case 'urgent-open':{const cid=b.dataset.cid;ack(mid);if(cid&&S.active!==cid)document.querySelector(`[data-conversation="${cid}"]`)?.click();setTimeout(()=>jumpMessage(mid),600);break}
+   case 'urgent-open':{const cid=b.dataset.cid;ack(mid);if(cid&&S.active!==cid)document.querySelector(`[data-conversation="${cid}"]`)?.click();setTimeout(()=>jumpMessage(cid,mid),600);break}
    case 'thread':if(mid)openThread(mid);break;
    case 'thread-close':closeThread();break;
    case 'vote':vote(mid);break;
@@ -268,6 +281,7 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
    case 'file-download':closeModal();download(b.dataset.file,b.dataset.name);break;
    case 'file-doc':try{const r=await api('/api/docs/import-attachment',{method:'POST',body:{attachmentId:b.dataset.file}});closeModal();Docs.open(r.id)}catch(err){toast(err.message)}break;
    case 'status':statusMenu();break;
+   case 'copy-image':if(m)copyImage(m);break;
   }
  });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.editing&&e.target.id==='composer'){e.preventDefault();cancelEdit()}});

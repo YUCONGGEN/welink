@@ -81,7 +81,7 @@ func openStore(dir string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err = db.Exec(driveSchema + driveFolderSchema + profileDetailsSchema + spaceSchema + adminSchema + consoleSchema + conversationVisibilitySchema + storageSchema + scheduleSchema + receiptSchema + docSchema + messageFeatureSchema + statusSchema); err != nil {
+	if _, err = db.Exec(driveSchema + driveFolderSchema + profileDetailsSchema + spaceSchema + adminSchema + consoleSchema + conversationVisibilitySchema + storageSchema + scheduleSchema + receiptSchema + docSchema + messageFeatureSchema + statusSchema + workSchema + assistantSchema); err != nil {
 		db.Close()
 		return nil, err
 	}

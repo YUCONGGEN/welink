@@ -67,7 +67,15 @@ export function createMe({S,api,action,esc,icon,modal,closeModal,toast,refresh,s
  // screen lives in this window); each request is handled once.
  function linkmeActions(t){for(const e of t.events||[]){if(e.type!=='linkme'||handledLinkMe.has(e.id))continue;handledLinkMe.add(e.id);if(e.method==='remote'&&remote)remote(e.details||{}).catch(err=>toast(err.message))}}
  const toolNames={linkme_send_message:'发送消息',linkme_send_file:'发送文件',linkme_schedule_message:'设置定时消息',linkme_cancel_schedule:'取消定时消息',linkme_read_messages:'查看聊天',linkme_list_contacts:'查看联系人',linkme_list_schedules:'查看定时消息',linkme_remote_assist:'发起远程协助'};
- async function onSent(message){if(!config?.enabled||message.sender!==S.user?.id||seen.has(message.id))return;const c=S.conversations.find(c=>c.id===message.conversationId);if(!c?.peer?.ai)return;seen.add(message.id);if(seen.size>200)seen.delete(seen.values().next().value);const g=generation;starting=true;render();
+ async function onSent(message){if(!config?.enabled||message.sender!==S.user?.id||seen.has(message.id))return;const c=S.conversations.find(c=>c.id===message.conversationId);if(!c?.peer?.ai)return;seen.add(message.id);if(seen.size>200)seen.delete(seen.values().next().value);
+  // A picture or file sent with words arrives as two messages: wait briefly
+  // for the words, then start one task that reads both.
+  if(deferred){clearTimeout(deferred.timer);deferred=null}
+  if(message.kind!=='text'){deferred={timer:setTimeout(()=>{deferred=null;run(message)},2000)};return}
+  run(message);
+ }
+ let deferred=null;
+ async function run(message){const g=generation;starting=true;render();
   try{let result;if(localDesktop()&&local.workspace){if(!local.available)throw Error('本机任务组件未下载，请点“工作目录”下载；普通对话仍可使用。');result=await action('/local/ai/start',{messageId:message.id});if(live(g))task={...result,state:'running',mode:'local'}}else{result=await action('/api/ai/runs',{messageId:message.id,mode:'chat'});if(live(g))task={...(task?.id===result.id?task:{}),id:result.id,conversationId:result.conversationId,state:'running',mode:'chat'}}
   }catch(error){if(live(g)){task={conversationId:message.conversationId,state:'failed',error:error.message};toast(error.message)}}finally{if(live(g)){starting=false;render();clearTimeout(timer);poll()}}
  }

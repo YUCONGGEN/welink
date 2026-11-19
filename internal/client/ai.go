@@ -253,7 +253,10 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 		c.ai.mu.Unlock()
 		var job struct {
 			ID, ConversationID, Model, Effort, Grant, Instructions string
-			History                                                []struct{ Role, Content string }
+			History                                                []struct {
+				Role, Content string
+				Images        []string
+			}
 		}
 		if err = c.aiRequest(r.Context(), token, "POST", "/api/ai/runs", map[string]string{"messageId": p.MessageID, "mode": "local"}, &job); err != nil {
 			c.ai.mu.Lock()
@@ -274,9 +277,17 @@ func (c *Client) serveAI(w http.ResponseWriter, r *http.Request) {
 		if !stillCurrent {
 			cancel()
 		}
-		history, _ := json.Marshal(job.History)
+		type line struct{ Role, Content string }
+		lines := make([]line, len(job.History))
+		var imageIDs []string
+		for i, h := range job.History {
+			lines[i] = line{h.Role, h.Content}
+			imageIDs = append(imageIDs, h.Images...)
+		}
+		history, _ := json.Marshal(lines)
+		images := c.downloadAIImages(ctx, token, filepath.Join(c.dir, "me", owner, "runtime", "images"), imageIDs)
 		prompt := job.Instructions + "\n\n当前用户与 Me 的聊天上下文（只属于这一段对话；最后一条是本轮请求）：\n" + string(history)
-		options := aiagent.Options{Binary: binary, Home: filepath.Join(c.dir, "me", owner, "runtime"), Workspace: prefs.Workspace, Model: job.Model, Effort: job.Effort, ProviderURL: strings.TrimRight(c.Config().Server, "/") + "/api/ai/v1", Grant: job.Grant, Prompt: prompt, SystemProxy: prefs.SystemProxy}
+		options := aiagent.Options{Binary: binary, Home: filepath.Join(c.dir, "me", owner, "runtime"), Workspace: prefs.Workspace, Model: job.Model, Effort: job.Effort, ProviderURL: strings.TrimRight(c.Config().Server, "/") + "/api/ai/v1", Grant: job.Grant, Prompt: prompt, SystemProxy: prefs.SystemProxy, Images: images}
 		if task.toolsKey != "" {
 			if exe, err := os.Executable(); err == nil {
 				options.Tools = &aiagent.ToolServer{Command: exe, Env: map[string]string{"LINKME_TOOLS_URL": "http://" + c.host + "/local/ai/tools", "LINKME_TOOLS_KEY": task.toolsKey}}
@@ -423,4 +434,48 @@ func (c *Client) runAI(ctx context.Context, task *localAITask, options aiagent.O
 			c.ai.mu.Unlock()
 		}
 	}
+}
+
+// downloadAIImages saves the pictures of a Me request into dir, replacing
+// the previous request's, and returns their paths for linkme-AIdex.
+func (c *Client) downloadAIImages(ctx context.Context, token, dir string, ids []string) []string {
+	_ = os.RemoveAll(dir)
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil
+	}
+	cfg := c.Config()
+	transport := &http.Transport{TLSClientConfig: tlsConfig(cfg.Fingerprint)}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: time.Minute}
+	paths := []string{}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] || len(id) != 32 || strings.Trim(id, "0123456789abcdef") != "" {
+			continue
+		}
+		seen[id] = true
+		req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(cfg.Server, "/")+"/api/files/"+id, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		ext := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}[strings.Split(resp.Header.Get("Content-Type"), ";")[0]]
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20+1))
+		resp.Body.Close()
+		if resp.StatusCode != 200 || err != nil || ext == "" || len(raw) > 8<<20 {
+			continue
+		}
+		path := filepath.Join(dir, id+ext)
+		if os.WriteFile(path, raw, 0o600) == nil {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }

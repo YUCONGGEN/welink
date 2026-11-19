@@ -132,3 +132,12 @@
 .receipt-person{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13px}
 .receipt-person .avatar{width:28px;height:28px;font-size:12px;flex:0 0 28px}
 @media(max-width:700px){.receipt-lists{grid-template-columns:1fr;min-width:0}}
+
+/* The chat list can be dragged narrower or wider (sidebar-resize.js). */
+@media(min-width:701px){
+ .sidebar{width:var(--sidebar-w,278px);position:relative}
+ .sidebar-resizer{position:absolute;top:0;right:-4px;bottom:0;width:8px;cursor:col-resize;z-index:5}
+ .sidebar-resizer:hover,.resizing-sidebar .sidebar-resizer{background:linear-gradient(90deg,transparent 3px,#3370ff 3px,#3370ff 5px,transparent 5px)}
+ .resizing-sidebar{cursor:col-resize;user-select:none}
+}
+@media(max-width:700px){.sidebar-resizer{display:none}}

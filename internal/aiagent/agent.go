@@ -26,6 +26,8 @@ type Options struct {
 	// SystemProxy lets linkme-AIdex reach the LinkMe server through the
 	// system proxy; by default it connects directly, as LinkMe does.
 	SystemProxy bool
+	// Images are local picture files sent with this request.
+	Images []string
 }
 type Event struct {
 	Type    string          `json:"type"`
@@ -154,7 +156,11 @@ func Start(ctx context.Context, o Options, events func(Event)) (*Session, error)
 		s.Close()
 		return nil, errors.New("linkme-AIdex 未启用工作目录沙箱，任务未开始")
 	}
-	if _, err = s.call(initCtx, "turn/start", map[string]any{"threadId": start.Thread.ID, "effort": o.Effort, "input": []any{map[string]any{"type": "text", "text": o.Prompt, "text_elements": []any{}}}}); err != nil {
+	input := []any{map[string]any{"type": "text", "text": o.Prompt, "text_elements": []any{}}}
+	for _, path := range o.Images {
+		input = append(input, map[string]any{"type": "localImage", "path": path})
+	}
+	if _, err = s.call(initCtx, "turn/start", map[string]any{"threadId": start.Thread.ID, "effort": o.Effort, "input": input}); err != nil {
 		s.Close()
 		return nil, err
 	}
