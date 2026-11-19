@@ -1,6 +1,6 @@
 (() => {
   // internal/ui/src/me-ai.js
-  function createMe({ S: S2, api: api2, action: action2, esc: esc3, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2, remote }) {
+  function createMe({ S: S2, api: api2, action: action2, esc: esc4, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, refresh: refresh2, selectConversation: selectConversation2, renderSidebar: renderSidebar2, remote }) {
     const $2 = (s) => document.querySelector(s), localDesktop = () => ["windows", "darwin"].includes(S2.config.platform) && config?.localTasks !== false;
     let config = null, local = { workspace: "", available: false, linkmeTools: false, systemProxy: false }, handledLinkMe = /* @__PURE__ */ new Set(), generation = 0, timer, task = null, seen = /* @__PURE__ */ new Set(), starting = false;
     const active = () => S2.conversations.find((c) => c.id === S2.active), live = (g) => g === generation && S2.user && !S2.signingOut;
@@ -70,10 +70,10 @@
         thinkingNode.hidden = !thinkingNode.textContent;
         const plan = events.find((e) => e.type === "plan")?.details?.plan || [], planNode = stream.querySelector(".me-plan");
         planNode.hidden = !plan.length;
-        planNode.innerHTML = plan.map((p) => '<li class="' + esc3(p.status || "pending") + '">' + esc3(p.step || "") + "</li>").join("");
+        planNode.innerHTML = plan.map((p) => '<li class="' + esc4(p.status || "pending") + '">' + esc4(p.step || "") + "</li>").join("");
         const shown = steps.slice(-6), stepsNode = stream.querySelector(".me-steps");
         stepsNode.hidden = !steps.length;
-        stepsNode.innerHTML = (steps.length > shown.length ? '<li class="more">前面还有 ' + (steps.length - shown.length) + " 步</li>" : "") + shown.map((s) => '<li class="' + esc3(s.status || "completed") + '"><span>' + esc3(s.text) + "</span>" + (s.code ? "<code>" + esc3(s.code) + "</code>" : "") + (s.note ? "<small>" + esc3(s.note) + "</small>" : "") + "</li>").join("");
+        stepsNode.innerHTML = (steps.length > shown.length ? '<li class="more">前面还有 ' + (steps.length - shown.length) + " 步</li>" : "") + shown.map((s) => '<li class="' + esc4(s.status || "completed") + '"><span>' + esc4(s.text) + "</span>" + (s.code ? "<code>" + esc4(s.code) + "</code>" : "") + (s.note ? "<small>" + esc4(s.note) + "</small>" : "") + "</li>").join("");
         const reply = stream.querySelector(".me-reply");
         reply.textContent = text;
         reply.hidden = !text;
@@ -153,22 +153,22 @@
     }
     function approvalHTML(e) {
       const d = e.details || {}, item = d.item || {};
-      if (e.method === "item/tool/requestUserInput") return "<b>Me 需要你补充信息</b>" + (d.reason ? "<p>" + esc3(d.reason) + "</p>" : "") + (d.questions || []).map((q) => "<label>" + esc3(q.question || q.header) + '<textarea data-me-answer="' + esc3(q.id) + '" maxlength="4000" placeholder="' + esc3((q.options || []).map((o) => o.label).join(" / ")) + '"></textarea></label>').join("") + '<div><button class="primary" data-me-approve>提交回答</button><button class="secondary" data-me-deny>不回答</button></div>';
+      if (e.method === "item/tool/requestUserInput") return "<b>Me 需要你补充信息</b>" + (d.reason ? "<p>" + esc4(d.reason) + "</p>" : "") + (d.questions || []).map((q) => "<label>" + esc4(q.question || q.header) + '<textarea data-me-answer="' + esc4(q.id) + '" maxlength="4000" placeholder="' + esc4((q.options || []).map((o) => o.label).join(" / ")) + '"></textarea></label>').join("") + '<div><button class="primary" data-me-approve>提交回答</button><button class="secondary" data-me-deny>不回答</button></div>';
       let title = "Me 请求执行操作", body = "";
       if (e.method === "item/commandExecution/requestApproval") {
         title = "Me 想运行一条命令";
         const command = d.command || item.command;
-        body = "<pre>" + esc3(shellCommand(command).slice(0, 4e3)) + "</pre>" + (d.cwd || item.cwd ? "<small>位置：" + esc3(d.cwd || item.cwd) + "</small>" : "");
+        body = "<pre>" + esc4(shellCommand(command).slice(0, 4e3)) + "</pre>" + (d.cwd || item.cwd ? "<small>位置：" + esc4(d.cwd || item.cwd) + "</small>" : "");
       } else if (e.method === "item/fileChange/requestApproval") {
         title = "Me 想修改文件";
         const files = (item.changes || []).map((c) => c.path).filter(Boolean);
-        body = files.length ? '<ul class="me-files">' + files.slice(0, 12).map((f) => "<li>" + esc3(f) + "</li>").join("") + (files.length > 12 ? "<li>等 " + files.length + " 个文件</li>" : "") + "</ul>" : "";
+        body = files.length ? '<ul class="me-files">' + files.slice(0, 12).map((f) => "<li>" + esc4(f) + "</li>").join("") + (files.length > 12 ? "<li>等 " + files.length + " 个文件</li>" : "") + "</ul>" : "";
       } else if (e.method === "item/permissions/requestApproval") {
         title = "Me 需要额外权限";
-        body = "<pre>" + esc3(JSON.stringify(d.permissions || d, null, 2)).slice(0, 4e3) + "</pre>";
+        body = "<pre>" + esc4(JSON.stringify(d.permissions || d, null, 2)).slice(0, 4e3) + "</pre>";
       }
       const always = /commandExecution|fileChange/.test(e.method);
-      return "<b>" + esc3(title) + "</b>" + (d.reason ? "<p>" + esc3(d.reason) + "</p>" : "") + body + '<div><button class="primary" data-me-approve>允许</button>' + (always ? '<button class="secondary" data-me-approve data-me-always title="本次任务中同类操作不再询问">本次任务都允许</button>' : "") + '<button class="secondary" data-me-deny>拒绝</button></div>';
+      return "<b>" + esc4(title) + "</b>" + (d.reason ? "<p>" + esc4(d.reason) + "</p>" : "") + body + '<div><button class="primary" data-me-approve>允许</button>' + (always ? '<button class="secondary" data-me-approve data-me-always title="本次任务中同类操作不再询问">本次任务都允许</button>' : "") + '<button class="secondary" data-me-deny>拒绝</button></div>';
     }
     async function poll() {
       const g = generation;
@@ -254,7 +254,7 @@
       }
     }
     async function workspace() {
-      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc3(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p><label class="me-allow"><input type="checkbox" id="me-linkme-tools" ' + (local.linkmeTools ? "checked" : "") + '><span><b>允许 linkme-AIdex 代我操作 LinkMe</b><small>以你的身份查看好友和聊天、发消息、发送工作目录中的文件和图片、设置定时消息、发起远程协助邀请（对方仍需接受）。定时消息可在“设置 → 定时消息”中查看和取消。</small></span></label><div class="me-codex" id="me-codex" aria-live="polite"></div><label class="me-allow me-proxy"><input type="checkbox" id="me-system-proxy" ' + (local.systemProxy ? "checked" : "") + "><span><b>linkme-AIdex 通过系统代理连接服务器</b><small>默认直接连接服务器，开不开系统代理（如 127.0.0.1:7897）都能用。只有服务器必须经代理才能访问时才勾选。</small></span></label>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
+      modal2("Me 的本地工作目录", '<p class="hint">Me 可以在此目录内读写文件和运行任务。需要额外权限时，会在聊天中向你确认。</p><label>工作目录<input id="me-workspace" placeholder="例如 E:\\工作文件" value="' + esc4(local.workspace) + '"></label><p class="hint">清空目录后恢复为对话模式。</p><label class="me-allow"><input type="checkbox" id="me-linkme-tools" ' + (local.linkmeTools ? "checked" : "") + '><span><b>允许 linkme-AIdex 代我操作 LinkMe</b><small>以你的身份查看好友和聊天、发消息、发送工作目录中的文件和图片、设置定时消息、发起远程协助邀请（对方仍需接受）。定时消息可在“设置 → 定时消息”中查看和取消。</small></span></label><div class="me-codex" id="me-codex" aria-live="polite"></div><label class="me-allow me-proxy"><input type="checkbox" id="me-system-proxy" ' + (local.systemProxy ? "checked" : "") + "><span><b>linkme-AIdex 通过系统代理连接服务器</b><small>默认直接连接服务器，开不开系统代理（如 127.0.0.1:7897）都能用。只有服务器必须经代理才能访问时才勾选。</small></span></label>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="me-save-workspace">保存</button>');
       codexRow();
       $2("#me-save-workspace").onclick = async () => {
         try {
@@ -291,11 +291,11 @@
       if (!st.supported) html += "<p>当前系统暂不支持本机任务，普通对话仍可使用。</p>";
       else if (st.state === "downloading") {
         const pct = st.total ? Math.floor(st.done * 100 / st.total) : 0;
-        html += "<p>正在下载 linkme-AIdex " + esc3(st.version) + "… " + mb(st.done) + " / " + mb(st.total) + '</p><progress max="100" value="' + pct + '"></progress><button class="text-btn" data-me-codex="cancel">取消下载</button>';
-      } else if (st.state === "installed") html += "<p>已就绪" + (st.source === "downloaded" ? " · linkme-AIdex " + esc3(st.current) : " · 使用本机已安装的组件") + "</p>";
-      else if (st.state === "unavailable") html += "<p>" + esc3(st.error || "服务器尚未提供 linkme-AIdex") + "</p>";
-      else if (st.state === "outdated") html += "<p>已安装 linkme-AIdex " + esc3(st.current) + "，可更新到 " + esc3(st.version) + "（" + mb(st.size) + '）</p><button class="secondary" data-me-codex="install">更新</button>';
-      else html += "<p>" + (st.state === "failed" ? esc3(st.error || "下载失败") : "处理本机文件需要先下载 linkme-AIdex " + esc3(st.version) + "（约 " + mb(st.size) + "），之后自动更新。") + '</p><button class="secondary" data-me-codex="install">' + (st.state === "failed" ? "重试" : "下载") + "</button>";
+        html += "<p>正在下载 linkme-AIdex " + esc4(st.version) + "… " + mb(st.done) + " / " + mb(st.total) + '</p><progress max="100" value="' + pct + '"></progress><button class="text-btn" data-me-codex="cancel">取消下载</button>';
+      } else if (st.state === "installed") html += "<p>已就绪" + (st.source === "downloaded" ? " · linkme-AIdex " + esc4(st.current) : " · 使用本机已安装的组件") + "</p>";
+      else if (st.state === "unavailable") html += "<p>" + esc4(st.error || "服务器尚未提供 linkme-AIdex") + "</p>";
+      else if (st.state === "outdated") html += "<p>已安装 linkme-AIdex " + esc4(st.current) + "，可更新到 " + esc4(st.version) + "（" + mb(st.size) + '）</p><button class="secondary" data-me-codex="install">更新</button>';
+      else html += "<p>" + (st.state === "failed" ? esc4(st.error || "下载失败") : "处理本机文件需要先下载 linkme-AIdex " + esc4(st.version) + "（约 " + mb(st.size) + "），之后自动更新。") + '</p><button class="secondary" data-me-codex="install">' + (st.state === "failed" ? "重试" : "下载") + "</button>";
       row.innerHTML = html;
       if (st.state === "downloading") codexTimer = setTimeout(codexRow, 500);
     }
@@ -561,7 +561,7 @@
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.26";
+  var CLIENT_VERSION = "0.1.27";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {
@@ -603,8 +603,8 @@
         host = u.port && u.port !== "8250" ? u.host : u.hostname;
       } catch {
       }
-      const esc3 = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-      return '<button type="button" class="auth-server" data-action="connection" title="切换服务器"><span class="auth-server-dot" aria-hidden="true"></span><span>服务器 <b>' + esc3(host || "未设置") + '</b></span><span class="auth-server-switch">切换</span></button>';
+      const esc4 = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      return '<button type="button" class="auth-server" data-action="connection" title="切换服务器"><span class="auth-server-dot" aria-hidden="true"></span><span>服务器 <b>' + esc4(host || "未设置") + '</b></span><span class="auth-server-switch">切换</span></button>';
     }
     let timer;
     function render(mode = "login", emailValue = "") {
@@ -727,7 +727,7 @@
   function createNativeNotifications({ S: S2, action: action2, selectConversation: selectConversation2, refresh: refresh2, toast: toast2 }) {
     const supported = typeof window.welinkMessageNotifications === "function" || !!window.WeLinkAndroid?.messageNotifications;
     let active = false, draining = null;
-    async function open() {
+    async function open2() {
       if (!S2.user) return;
       let raw = "";
       try {
@@ -760,7 +760,7 @@
       await action2("/local/notifications", { token: S2.token });
       window.WeLinkAndroid?.messageNotifications(true);
       active = true;
-      await open();
+      await open2();
     }
     async function stop() {
       if (!supported) return;
@@ -768,14 +768,14 @@
       window.WeLinkAndroid?.messageNotifications(false);
       await action2("/local/notifications", { token: "" });
     }
-    window.addEventListener("welink-open-message", open);
+    window.addEventListener("welink-open-message", open2);
     window.addEventListener("welink-native-invite", drainInvites);
     window.addEventListener("welink-native-invite-action", (event) => {
       if (!event.detail) drainInvites();
     });
     window.addEventListener("focus", () => {
       if (active) {
-        open();
+        open2();
         drainInvites();
       } else if (S2.user) start().catch(() => {
       });
@@ -940,7 +940,7 @@
   }
 
   // internal/ui/src/directory-search.js
-  function createDirectorySearch({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, renderSidebar: renderSidebar2, contextMenu: contextMenu2 }) {
+  function createDirectorySearch({ S: S2, api: api2, esc: esc4, av: av2, icon: icon2, renderSidebar: renderSidebar2, contextMenu: contextMenu2 }) {
     let key = "", version = 0, timer, data = null, loading = false, error = "";
     const matches = (u, q) => (u.name + " " + (u.remark || "") + " " + u.number).toLowerCase().includes(q.toLowerCase());
     const group = (g) => g.group ? { id: g.id, name: g.name, ...g.group, joined: true } : g;
@@ -972,7 +972,7 @@
         }, 180);
       }
       const foundUsers = unique([...users, ...data?.users || []]), foundGroups = unique([...groups, ...data?.groups || []]);
-      return '<div class="directory-results">' + (foundUsers.length ? '<div class="search-section-label">用户</div>' + foundUsers.map((u) => `<div class="user-search-result" data-search-user="${u.id}"><button class="conversation-row" ${u.id === S2.user.id ? "data-profile" : "data-start-chat"}="${u.id}">${av2(u, "", true)}<div class="row-text"><div class="row-title"><b>${esc3(u.remark || u.name)}${u.id === S2.user.id ? "（我）" : ""}</b></div><div class="row-preview">${esc3(u.number)}</div></div></button>${u.id !== S2.user.id ? '<div class="user-search-actions"><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话">' + icon2("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话">' + icon2("video") + "</button></div>" : ""}</div>`).join("") : "") + (foundGroups.length ? '<div class="search-section-label">群聊</div>' + foundGroups.map((g) => `<button class="conversation-row directory-group" data-group-join="${g.id}" data-joined="${g.joined === true}" data-mode="${esc3(g.joinMode)}" data-name="${esc3(g.name)}" ${!g.joined && g.joinMode === "closed" ? "disabled" : ""}>${av2({ kind: "group", avatar: g.avatar })}<div class="row-text"><div class="row-title"><b>${esc3(g.name)}</b></div><div class="row-preview">${esc3(g.number)} · ${g.count || 0} 人 · ${g.joined ? "发消息" : g.joinMode === "closed" ? "暂不开放" : g.joinMode === "approval" ? "申请加入" : "加入群聊"}</div></div></button>`).join("") : "") + (loading ? '<div class="directory-status">正在搜索…</div>' : error ? '<div class="directory-status" role="status">' + esc3(error) + "</div>" : !foundUsers.length && !foundGroups.length ? '<div class="empty-list">没有找到用户或群聊</div>' : "") + "</div>";
+      return '<div class="directory-results">' + (foundUsers.length ? '<div class="search-section-label">用户</div>' + foundUsers.map((u) => `<div class="user-search-result" data-search-user="${u.id}"><button class="conversation-row" ${u.id === S2.user.id ? "data-profile" : "data-start-chat"}="${u.id}">${av2(u, "", true)}<div class="row-text"><div class="row-title"><b>${esc4(u.remark || u.name)}${u.id === S2.user.id ? "（我）" : ""}</b></div><div class="row-preview">${esc4(u.number)}</div></div></button>${u.id !== S2.user.id ? '<div class="user-search-actions"><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话">' + icon2("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话">' + icon2("video") + "</button></div>" : ""}</div>`).join("") : "") + (foundGroups.length ? '<div class="search-section-label">群聊</div>' + foundGroups.map((g) => `<button class="conversation-row directory-group" data-group-join="${g.id}" data-joined="${g.joined === true}" data-mode="${esc4(g.joinMode)}" data-name="${esc4(g.name)}" ${!g.joined && g.joinMode === "closed" ? "disabled" : ""}>${av2({ kind: "group", avatar: g.avatar })}<div class="row-text"><div class="row-title"><b>${esc4(g.name)}</b></div><div class="row-preview">${esc4(g.number)} · ${g.count || 0} 人 · ${g.joined ? "发消息" : g.joinMode === "closed" ? "暂不开放" : g.joinMode === "approval" ? "申请加入" : "加入群聊"}</div></div></button>`).join("") : "") + (loading ? '<div class="directory-status">正在搜索…</div>' : error ? '<div class="directory-status" role="status">' + esc4(error) + "</div>" : !foundUsers.length && !foundGroups.length ? '<div class="empty-list">没有找到用户或群聊</div>' : "") + "</div>";
     }
     function userMenu(id, x, y) {
       if (id === S2.user?.id) return;
@@ -1114,7 +1114,7 @@
   }
 
   // internal/ui/src/navigation.js
-  function createNavigation({ getHandler, setHandler, beforeOpen, esc: esc3, icon: icon2, onPageBack, beforeBack }) {
+  function createNavigation({ getHandler, setHandler, beforeOpen, esc: esc4, icon: icon2, onPageBack, beforeBack }) {
     const stack = [];
     const host = () => document.getElementById("overlays");
     const dialog = () => host().querySelector(".modal");
@@ -1126,7 +1126,7 @@
       host().innerHTML = "";
       setHandler(null);
     }
-    function open(title, body, footer = "", wide = false) {
+    function open2(title, body, footer = "", wide = false) {
       beforeOpen();
       const current = dialog(), previousFocus = document.activeElement;
       const transient = /截图|录音|视频预览|语音消息|远程协助|邀请|来电|登录 Windows/.test(title) || current?.querySelector("canvas,video,audio,.qr-confirm,.remote-invite");
@@ -1139,7 +1139,7 @@
           if (stack.length > 12) stack.shift();
         }
       } else stack.length = 0;
-      host().innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-label="${esc3(title)}"><header class="modal-head"><button type="button" class="dialog-back" data-action="modal-back" aria-label="返回${stack.length ? "上一页" : ""}" title="${stack.length ? "返回上一页" : "返回"}">${icon2("back")}<span>返回</span></button><h3>${esc3(title)}</h3><button type="button" class="icon-btn" data-action="close-modal" aria-label="关闭" title="关闭">${icon2("close")}</button></header><div class="modal-body">${body}<div class="form-error" id="modal-error" role="alert"></div></div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ""}</section></div>`;
+      host().innerHTML = `<div class="modal-backdrop"><section class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-label="${esc4(title)}"><header class="modal-head"><button type="button" class="dialog-back" data-action="modal-back" aria-label="返回${stack.length ? "上一页" : ""}" title="${stack.length ? "返回上一页" : "返回"}">${icon2("back")}<span>返回</span></button><h3>${esc4(title)}</h3><button type="button" class="icon-btn" data-action="close-modal" aria-label="关闭" title="关闭">${icon2("close")}</button></header><div class="modal-body">${body}<div class="form-error" id="modal-error" role="alert"></div></div>${footer ? `<footer class="modal-footer">${footer}</footer>` : ""}</section></div>`;
       setHandler(null);
       if (!matchMedia("(max-width:700px)").matches) {
         const opened = dialog();
@@ -1197,11 +1197,11 @@
       if (stack.some((item) => item.title === "设置")) back();
       else clear();
     }
-    return { open, clear, back, handleBack, complete };
+    return { open: open2, clear, back, handleBack, complete };
   }
 
   // internal/ui/src/conversation-actions.js
-  function createConversationActions({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, contextMenu: contextMenu2, refresh: refresh2 }) {
+  function createConversationActions({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, contextMenu: contextMenu2, refresh: refresh2 }) {
     const find = (id) => S2.conversations.find((c) => c.id === id);
     function menu(id, x, y) {
       const c = find(id);
@@ -1260,7 +1260,7 @@
   }
 
   // internal/ui/src/cloud.js
-  function createCloud({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, bytes: bytes2, fullTime: fullTime2, upload: upload2 }) {
+  function createCloud({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, bytes: bytes2, fullTime: fullTime2, upload: upload2 }) {
     const $2 = (s) => document.querySelector(s);
     let drive = [], folders = [], path = [], folderID = "", offset = 0, driveQuery = "", searchDraft = "", driveGeneration = 0, uploading = false;
     const owns = (token) => S2.user && S2.token === token && !S2.signingOut;
@@ -1304,7 +1304,7 @@
         }
       };
     }
-    const crumbs = (items, attr) => `<button ${attr}="">全部文件</button>` + items.map((f) => `<span> / </span><button ${attr}="${f.id}">${esc3(f.name)}</button>`).join("");
+    const crumbs = (items, attr) => `<button ${attr}="">全部文件</button>` + items.map((f) => `<span> / </span><button ${attr}="${f.id}">${esc4(f.name)}</button>`).join("");
     function enter2(id) {
       if ($2(".cloud-page")) $2(".cloud-page").scrollTop = 0;
       folderID = id;
@@ -1332,7 +1332,7 @@
       folders = result.folders || [];
       path = result.path || [];
       const prior = $2("#drive-search"), focused = document.activeElement === prior, selection = focused ? [prior.selectionStart, prior.selectionEnd] : null, scroll = $2(".cloud-page")?.scrollTop || 0;
-      $2("#main-content").innerHTML = `<section class="cloud-page"><header class="cloud-heading"><div><h2>我的网盘</h2><p>文件随账号保存，随时取用和分享</p></div><div class="drive-heading-actions"><button class="secondary" id="drive-new-folder">${icon2("folder")}新建文件夹</button><button class="primary" id="drive-upload" ${uploading ? "disabled" : ""}>${icon2("plus")}${uploading ? "上传中…" : "上传文件"}</button></div><input type="file" multiple id="drive-file-input" hidden></header><div class="drive-capacity"><div><b>免费 ${bytes2(result.quota)} 空间</b><span>${bytes2(result.used)} / ${bytes2(result.quota)}</span></div><progress value="${result.used}" max="${result.quota}"></progress><small>聊天附件不占用这份容量</small></div><div id="drive-upload-status" class="cloud-upload-status"></div><nav class="drive-breadcrumb" aria-label="网盘路径">${crumbs(path, "data-drive-folder")}</nav><label class="cloud-search">${icon2("search")}<input id="drive-search" placeholder="搜索当前文件夹" value="${esc3(searchDraft)}"><button id="drive-search-submit" aria-label="搜索当前文件夹">搜索</button>${driveQuery ? '<button id="drive-search-clear" aria-label="清除网盘搜索">' + icon2("close") + "</button>" : ""}</label><div class="cloud-file-list">${folders.map((f) => `<article class="cloud-file cloud-folder"><button class="drive-folder-open" data-drive-folder="${f.id}">${icon2("folder")}<span><b>${esc3(f.name)}</b><small>文件夹</small></span></button><div class="cloud-file-actions"><button data-folder-action="rename" data-id="${f.id}">重命名</button><button data-folder-action="delete" data-id="${f.id}" aria-label="删除文件夹">${icon2("trash")}</button></div></article>`).join("")}${drive.map((f) => `<article class="cloud-file"><span class="cloud-file-icon">${icon2("file")}</span><div class="cloud-file-name"><b>${esc3(f.name)}</b><small>${bytes2(f.size)} · ${fullTime2(f.updated)}</small></div><div class="cloud-file-actions"><button data-drive="download" data-id="${f.id}" title="下载" aria-label="下载">${icon2("download")}</button><button data-drive="share" data-id="${f.id}" title="分享" aria-label="分享">${icon2("copy")}</button><button data-drive="move" data-id="${f.id}">移动</button><button data-drive="rename" title="重命名" data-id="${f.id}">重命名</button><button data-drive="delete" data-id="${f.id}" title="删除" aria-label="删除">${icon2("trash")}</button></div></article>`).join("")}${!drive.length && !folders.length ? '<div class="cloud-empty">' + icon2("folder") + "<h3>" + (driveQuery ? "没有匹配的文件或文件夹" : "这个文件夹还是空的") + "</h3><p>" + (driveQuery ? "换个关键词试试，或清除搜索" : "新建文件夹，或上传、拖入文件") + "</p></div>" : ""}</div>${result.hasMore ? '<button id="drive-more" class="secondary cloud-more">加载更多</button>' : ""}</section>`;
+      $2("#main-content").innerHTML = `<section class="cloud-page"><header class="cloud-heading"><div><h2>我的网盘</h2><p>文件随账号保存，随时取用和分享</p></div><div class="drive-heading-actions"><button class="secondary" id="drive-new-folder">${icon2("folder")}新建文件夹</button><button class="primary" id="drive-upload" ${uploading ? "disabled" : ""}>${icon2("plus")}${uploading ? "上传中…" : "上传文件"}</button></div><input type="file" multiple id="drive-file-input" hidden></header><div class="drive-capacity"><div><b>免费 ${bytes2(result.quota)} 空间</b><span>${bytes2(result.used)} / ${bytes2(result.quota)}</span></div><progress value="${result.used}" max="${result.quota}"></progress><small>聊天附件不占用这份容量</small></div><div id="drive-upload-status" class="cloud-upload-status"></div><nav class="drive-breadcrumb" aria-label="网盘路径">${crumbs(path, "data-drive-folder")}</nav><label class="cloud-search">${icon2("search")}<input id="drive-search" placeholder="搜索当前文件夹" value="${esc4(searchDraft)}"><button id="drive-search-submit" aria-label="搜索当前文件夹">搜索</button>${driveQuery ? '<button id="drive-search-clear" aria-label="清除网盘搜索">' + icon2("close") + "</button>" : ""}</label><div class="cloud-file-list">${folders.map((f) => `<article class="cloud-file cloud-folder"><button class="drive-folder-open" data-drive-folder="${f.id}">${icon2("folder")}<span><b>${esc4(f.name)}</b><small>文件夹</small></span></button><div class="cloud-file-actions"><button data-folder-action="rename" data-id="${f.id}">重命名</button><button data-folder-action="delete" data-id="${f.id}" aria-label="删除文件夹">${icon2("trash")}</button></div></article>`).join("")}${drive.map((f) => `<article class="cloud-file"><span class="cloud-file-icon">${icon2("file")}</span><div class="cloud-file-name"><b>${esc4(f.name)}</b><small>${bytes2(f.size)} · ${fullTime2(f.updated)}</small></div><div class="cloud-file-actions"><button data-drive="download" data-id="${f.id}" title="下载" aria-label="下载">${icon2("download")}</button><button data-drive="share" data-id="${f.id}" title="分享" aria-label="分享">${icon2("copy")}</button><button data-drive="move" data-id="${f.id}">移动</button><button data-drive="rename" title="重命名" data-id="${f.id}">重命名</button><button data-drive="delete" data-id="${f.id}" title="删除" aria-label="删除">${icon2("trash")}</button></div></article>`).join("")}${!drive.length && !folders.length ? '<div class="cloud-empty">' + icon2("folder") + "<h3>" + (driveQuery ? "没有匹配的文件或文件夹" : "这个文件夹还是空的") + "</h3><p>" + (driveQuery ? "换个关键词试试，或清除搜索" : "新建文件夹，或上传、拖入文件") + "</p></div>" : ""}</div>${result.hasMore ? '<button id="drive-more" class="secondary cloud-more">加载更多</button>' : ""}</section>`;
       bind("drive-new-folder", () => editName());
       bind("drive-upload", () => $2("#drive-file-input").click());
       $2("#drive-file-input").onchange = (e) => {
@@ -1405,12 +1405,12 @@
       a.remove();
     }
     function share(f) {
-      modal2("分享文件", `<p class="hint">${esc3(f.name)}</p><p><b>永久有效</b></p><p class="hint">拿到链接的人可以下载这个文件。重复获取会使用同一链接；主动取消分享、删除文件或账号后失效。</p><div id="drive-share-result"></div>`, '<button class="secondary" id="drive-revoke">取消已有分享</button><button class="primary" id="drive-create-share">获取分享链接</button>');
+      modal2("分享文件", `<p class="hint">${esc4(f.name)}</p><p><b>永久有效</b></p><p class="hint">拿到链接的人可以下载这个文件。重复获取会使用同一链接；主动取消分享、删除文件或账号后失效。</p><div id="drive-share-result"></div>`, '<button class="secondary" id="drive-revoke">取消已有分享</button><button class="primary" id="drive-create-share">获取分享链接</button>');
       const host = $2("#drive-share-result");
       bind("drive-create-share", async () => {
         const result = await api2("/api/drive/files/" + f.id + "/share", { method: "POST", body: {} });
         if (!host.isConnected) return;
-        host.innerHTML = '<textarea id="drive-share-url" readonly>' + esc3(result.url) + '</textarea><button class="secondary" id="drive-copy-share">复制分享链接</button>';
+        host.innerHTML = '<textarea id="drive-share-url" readonly>' + esc4(result.url) + '</textarea><button class="secondary" id="drive-copy-share">复制分享链接</button>';
         bind("drive-copy-share", () => copy(result.url));
       });
       bind("drive-revoke", async () => {
@@ -1421,7 +1421,7 @@
     }
     function editName(f, isFolder = true) {
       const creating = !f, parentID = folderID;
-      modal2(creating ? "新建文件夹" : isFolder ? "重命名文件夹" : "重命名文件", '<label>名称</label><input id="drive-rename" maxlength="240" value="' + esc3(f?.name || "") + '" placeholder="' + (isFolder ? "文件夹名称" : "文件名") + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-save-name">' + (creating ? "创建" : "保存") + "</button>");
+      modal2(creating ? "新建文件夹" : isFolder ? "重命名文件夹" : "重命名文件", '<label>名称</label><input id="drive-rename" maxlength="240" value="' + esc4(f?.name || "") + '" placeholder="' + (isFolder ? "文件夹名称" : "文件名") + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-save-name">' + (creating ? "创建" : "保存") + "</button>");
       const input = $2("#drive-rename");
       bind("drive-save-name", async () => {
         const name = input.value.trim();
@@ -1438,18 +1438,18 @@
       };
     }
     async function move(f) {
-      modal2("移动文件", '<p class="hint">选择目标文件夹：' + esc3(f.name) + '</p><div id="drive-move-folders"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-move-confirm" disabled>移动到这里</button>');
-      const host = $2("#drive-move-folders"), confirm2 = $2("#drive-move-confirm");
+      modal2("移动文件", '<p class="hint">选择目标文件夹：' + esc4(f.name) + '</p><div id="drive-move-folders"></div>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="drive-move-confirm" disabled>移动到这里</button>');
+      const host = $2("#drive-move-folders"), confirm = $2("#drive-move-confirm");
       let target = f.folderId || "", generation = 0;
       async function load(id) {
         const g = ++generation;
-        confirm2.disabled = true;
+        confirm.disabled = true;
         try {
           const result = await api2("/api/drive?folder=" + encodeURIComponent(id));
           if (!host.isConnected || g !== generation) return;
           target = id;
-          host.innerHTML = '<nav class="drive-breadcrumb">' + crumbs(result.path || [], "data-move-folder") + '</nav><div class="drive-picker-list">' + (result.folders || []).map((item) => '<button data-move-folder="' + item.id + '">' + icon2("folder") + "<span>" + esc3(item.name) + "</span>" + icon2("chevron") + "</button>").join("") + "</div>";
-          confirm2.disabled = target === (f.folderId || "");
+          host.innerHTML = '<nav class="drive-breadcrumb">' + crumbs(result.path || [], "data-move-folder") + '</nav><div class="drive-picker-list">' + (result.folders || []).map((item) => '<button data-move-folder="' + item.id + '">' + icon2("folder") + "<span>" + esc4(item.name) + "</span>" + icon2("chevron") + "</button>").join("") + "</div>";
+          confirm.disabled = target === (f.folderId || "");
         } catch (error) {
           if (host.isConnected && g === generation) fail(error);
         }
@@ -1468,9 +1468,9 @@
     }
     document.addEventListener("click", async (event) => {
       if (!S2.user || S2.tab !== "drive") return;
-      const open = event.target.closest("[data-drive-folder]");
-      if (open) {
-        enter2(open.dataset.driveFolder);
+      const open2 = event.target.closest("[data-drive-folder]");
+      if (open2) {
+        enter2(open2.dataset.driveFolder);
         return;
       }
       const button = event.target.closest("[data-drive],[data-folder-action]");
@@ -1492,7 +1492,7 @@
             editName(f, isFolder);
             break;
           case "delete":
-            modal2(isFolder ? "删除文件夹" : "删除网盘文件", "<p>确定删除「" + esc3(f.name) + "」？" + (isFolder ? "其子文件夹和文件也会一并删除。" : "") + "相关分享链接将失效，此操作无法撤销。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="drive-confirm-delete">删除</button>');
+            modal2(isFolder ? "删除文件夹" : "删除网盘文件", "<p>确定删除「" + esc4(f.name) + "」？" + (isFolder ? "其子文件夹和文件也会一并删除。" : "") + "相关分享链接将失效，此操作无法撤销。</p>", '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" id="drive-confirm-delete">删除</button>');
             bind("drive-confirm-delete", async () => {
               await api2("/api/drive/" + (isFolder ? "folders/" : "files/") + f.id, { method: "DELETE", ...isFolder ? { body: { confirmName: f.name } } : {} });
               closeModal2();
@@ -1522,7 +1522,7 @@
   }
 
   // internal/ui/src/transfers.js
-  function createTransfers({ S: S2, api: api2, esc: esc3, av: av2, bytes: bytes2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, toast: toast2 }) {
+  function createTransfers({ S: S2, api: api2, esc: esc4, av: av2, bytes: bytes2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, toast: toast2 }) {
     let generation = 0, entries = [];
     const requests = /* @__PURE__ */ new Set();
     const active = (owner2, g) => S2.user && S2.token === owner2 && generation === g && !S2.signingOut;
@@ -1598,13 +1598,13 @@
       }
     }
     function html(cid) {
-      return entries.filter((e) => e.cid === cid).map((e) => `<article class="message mine pending-message">${av2(S2.user)}<div class="message-body"><div class="bubble"><b>${esc3(e.name)}</b><small>${bytes2(e.size)}</small></div><div class="outbox-status">${e.error ? esc3(e.error) : e.progress === 100 ? "正在生成消息…" : "正在上传 " + (e.progress === null ? "" : e.progress + "%")}</div><small>大文件直接上传，请保持客户端运行</small></div></article>`).join("");
+      return entries.filter((e) => e.cid === cid).map((e) => `<article class="message mine pending-message">${av2(S2.user)}<div class="message-body"><div class="bubble"><b>${esc4(e.name)}</b><small>${bytes2(e.size)}</small></div><div class="outbox-status">${e.error ? esc4(e.error) : e.progress === 100 ? "正在生成消息…" : "正在上传 " + (e.progress === null ? "" : e.progress + "%")}</div><small>大文件直接上传，请保持客户端运行</small></div></article>`).join("");
     }
     return { upload: upload2, chat, html, stop };
   }
 
   // internal/ui/src/calls.js
-  function createCalls({ S: S2, api: api2, action: action2, esc: esc3, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, Desktop: Desktop2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
+  function createCalls({ S: S2, api: api2, action: action2, esc: esc4, av: av2, icon: icon2, toast: toast2, modal: modal2, closeModal: closeModal2, randomID: randomID2, Meetings: Meetings2, Desktop: Desktop2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, fullTime: fullTime2 }) {
     const $2 = (s) => document.querySelector(s);
     let active = null, scope = "", generation = 0, shape = "", ending = "", refreshTimer2, clock, ringTimer, audio, joining = "", dialing = false, history = null, closingTask = null;
     const permitted = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), dismissed = /* @__PURE__ */ new Set();
@@ -1632,10 +1632,10 @@
       try {
         c = JSON.parse(m.text);
       } catch {
-        return esc3("[通话]");
+        return esc4("[通话]");
       }
       ;
-      return `<button class="call-message-card" data-call-redial="${esc3(m.conversationId || "")}" data-call-mode="${c.mode === "video" ? "video" : "audio"}">${icon2(c.mode === "video" ? "video" : "phone")}<span>${esc3(summary(c))}</span></button>`;
+      return `<button class="call-message-card" data-call-redial="${esc4(m.conversationId || "")}" data-call-mode="${c.mode === "video" ? "video" : "audio"}">${icon2(c.mode === "video" ? "video" : "phone")}<span>${esc4(summary(c))}</span></button>`;
     }
     function stopRing() {
       clearInterval(ringTimer);
@@ -1716,7 +1716,7 @@
       }
       shape = next;
       const hang = c.state === "ringing" ? "取消" : "挂断";
-      layer().innerHTML = `<section class="call-dialog ${c.mode === "video" ? "call-video" : "call-audio"} ${incoming ? "is-incoming" : "is-outgoing"}" role="dialog" aria-label="${incoming ? "来电" : "通话"}"><header><b>${APP_NAME} · ${c.mode === "video" ? "视频" : "语音"}通话</b><button data-call-minimize title="收起">${icon2("minus")}</button></header><div class="call-person">${av2(c.peer, "large")}<h2>${esc3(c.peer.remark || c.peer.name)}</h2><p class="call-kind">${c.mode === "video" ? "视频通话" : "语音通话"}</p><p class="call-status" role="status">${esc3(status)}</p></div><div class="call-buttons">${incoming ? `<button class="call-decline" data-call-reject>${icon2("phone")}<span>拒绝</span></button>${c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : ""}<button class="call-answer" data-call-answer="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}<span>接听</span></button>` : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : ""}${c.canEnd ? '<button class="call-decline" data-call-end' + (busy ? " disabled" : "") + ">" + icon2("phone") + "<span>" + hang + "</span></button>" : ""}${other ? '<button class="secondary" data-call-dismiss>知道了</button>' : ""}</div></section><div class="call-mini-bar"><button class="call-mini" data-call-expand title="展开通话">${icon2("phone")}<span>${esc3(c.peer.name)} · ${esc3(status)}</span></button>${c.canEnd && !incoming ? '<button class="call-mini-end" data-call-mini-end title="' + hang + '" aria-label="' + hang + '"' + (busy ? " disabled" : "") + ">" + icon2("phone") + "</button>" : ""}</div>`;
+      layer().innerHTML = `<section class="call-dialog ${c.mode === "video" ? "call-video" : "call-audio"} ${incoming ? "is-incoming" : "is-outgoing"}" role="dialog" aria-label="${incoming ? "来电" : "通话"}"><header><b>${APP_NAME} · ${c.mode === "video" ? "视频" : "语音"}通话</b><button data-call-minimize title="收起">${icon2("minus")}</button></header><div class="call-person">${av2(c.peer, "large")}<h2>${esc4(c.peer.remark || c.peer.name)}</h2><p class="call-kind">${c.mode === "video" ? "视频通话" : "语音通话"}</p><p class="call-status" role="status">${esc4(status)}</p></div><div class="call-buttons">${incoming ? `<button class="call-decline" data-call-reject>${icon2("phone")}<span>拒绝</span></button>${c.mode === "video" ? '<button class="call-audio-answer" data-call-answer="audio">' + icon2("phone") + "<span>语音接听</span></button>" : ""}<button class="call-answer" data-call-answer="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}<span>接听</span></button>` : c.canJoin ? '<button class="call-answer" data-call-resume>' + icon2("phone") + "<span>继续通话</span></button>" : ""}${c.canEnd ? '<button class="call-decline" data-call-end' + (busy ? " disabled" : "") + ">" + icon2("phone") + "<span>" + hang + "</span></button>" : ""}${other ? '<button class="secondary" data-call-dismiss>知道了</button>' : ""}</div></section><div class="call-mini-bar"><button class="call-mini" data-call-expand title="展开通话">${icon2("phone")}<span>${esc4(c.peer.name)} · ${esc4(status)}</span></button>${c.canEnd && !incoming ? '<button class="call-mini-end" data-call-mini-end title="' + hang + '" aria-label="' + hang + '"' + (busy ? " disabled" : "") + ">" + icon2("phone") + "</button>" : ""}</div>`;
     }
     async function refreshConversation(c, g) {
       if (S2.active !== c.conversationId || S2.historyMode) return;
@@ -1925,7 +1925,7 @@
       }
     }
     function historyRow(c) {
-      return `<article class="call-history-row" data-call-record="${c.id}">${av2(c.peer)}<div><b>${esc3(c.peer.name)}</b><p class="${c.started === 0 && c.callee === S2.user.id ? "call-missed" : ""}">${c.caller === S2.user.id ? "呼出" : "呼入"} · ${esc3(summary(c))}</p><small>${esc3(fullTime2(c.created))}</small></div><button title="再次呼叫" aria-label="再次呼叫" data-call-redial="${c.conversationId}" data-call-mode="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}</button><button title="删除通话记录" aria-label="删除通话记录" data-call-delete="${c.id}">${icon2("trash")}</button></article>`;
+      return `<article class="call-history-row" data-call-record="${c.id}">${av2(c.peer)}<div><b>${esc4(c.peer.name)}</b><p class="${c.started === 0 && c.callee === S2.user.id ? "call-missed" : ""}">${c.caller === S2.user.id ? "呼出" : "呼入"} · ${esc4(summary(c))}</p><small>${esc4(fullTime2(c.created))}</small></div><button title="再次呼叫" aria-label="再次呼叫" data-call-redial="${c.conversationId}" data-call-mode="${c.mode}">${icon2(c.mode === "video" ? "video" : "phone")}</button><button title="删除通话记录" aria-label="删除通话记录" data-call-delete="${c.id}">${icon2("trash")}</button></article>`;
     }
     async function loadHistory(older = false) {
       const h = history, g = generation;
@@ -1999,7 +1999,7 @@
   }
 
   // internal/ui/src/desktop.js
-  function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2, esc: esc3 }) {
+  function createDesktop({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, markRead: markRead2, esc: esc4 }) {
     const native = typeof window.welinkDesktopSettings === "function";
     let lastCount = -1, nativeHidden = !!window.welinkNativeHidden;
     const hidden = () => document.hidden || nativeHidden || !document.hasFocus();
@@ -2025,7 +2025,7 @@
       try {
         const p = await window.welinkDesktopSettings();
         const toggle = (id, label, checked) => `<label class="prefs-row" for="${id}"><span>${label}</span><input id="${id}" type="checkbox" ${checked ? "checked" : ""}></label>`;
-        const shortcut = (id, label, value, error) => `<label class="prefs-row desktop-shortcut" for="${id}"><span>${label}</span><span class="shortcut-control"><input id="${id}" class="shortcut-input" readonly value="${esc3(value || "")}" placeholder="点击后按下快捷键" aria-label="${label}快捷键"><button class="secondary" type="button" data-clear-shortcut="${id}">清除</button></span></label>${error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc3(error) + "</p>" : ""}`;
+        const shortcut = (id, label, value, error) => `<label class="prefs-row desktop-shortcut" for="${id}"><span>${label}</span><span class="shortcut-control"><input id="${id}" class="shortcut-input" readonly value="${esc4(value || "")}" placeholder="点击后按下快捷键" aria-label="${label}快捷键"><button class="secondary" type="button" data-clear-shortcut="${id}">清除</button></span></label>${error ? '<p class="shortcut-error" data-shortcut-error="' + id + '">' + esc4(error) + "</p>" : ""}`;
         modal2("Windows 桌面设置", toggle("desktop-auto-start", "登录 Windows 后启动 " + APP_NAME, p.autoStart) + toggle("desktop-start-minimized", "开机启动时最小化到托盘", p.startMinimized ?? true) + `<p class="hint">仅对当前 Windows 用户生效，默认关闭。${p.autoStart && !p.autoStartRegistered ? "启动项尚未注册，请重新保存。" : ""}</p>` + toggle("desktop-close-tray", "关闭窗口后留在系统托盘", p.closeToTray) + '<p class="hint">关闭窗口后继续接收消息，双击托盘图标即可恢复。</p><p class="hint">普通聊天只通过任务栏图标提示未读；来电、远程和会议邀请会在右下角显示。</p>' + toggle("desktop-hotkeys-enabled", "启用全局快捷键", p.hotkeysEnabled ?? true) + shortcut("desktop-show-hotkey", "显示主界面", p.showHotkey ?? "Ctrl+Alt+W", p.hotkeyErrors?.show) + shortcut("desktop-capture-hotkey", "截图", p.captureHotkey ?? "Ctrl+Alt+A", p.hotkeyErrors?.capture) + '<p class="hint">点击输入框后按下组合键，须包含 Ctrl 或 Alt。可清除某一项；被 QQ 等其他程序占用时可换一个组合键。</p>' + (p.trayAvailable ? "" : '<p class="hint">系统托盘暂不可用，关闭窗口时会最小化到任务栏。</p>') + '<p class="hint">完全退出可使用托盘右键菜单中的“退出 ' + APP_NAME + '”。</p><p id="desktop-save-error" class="shortcut-error" role="alert"></p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="desktop-save">保存</button>');
         document.querySelector(".modal").classList.add("desktop-settings");
         const $2 = (id) => document.getElementById(id), availability = () => {
@@ -2100,7 +2100,7 @@
   }
 
   // internal/ui/src/screenshots.js
-  function createScreenshots({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, attach }) {
+  function createScreenshots({ S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, attach }) {
     let pending = null, editor = null, generation = 0, stream = null;
     const own = (state) => editor === state && state.canvas.isConnected;
     function reset() {
@@ -2238,8 +2238,8 @@
       const canSend = !!intent.cid && !!S2.user && S2.token === intent.token;
       modal2(
         "截图预览",
-        `<div class="screenshot-tools" role="toolbar" aria-label="截图标注">${[["pen", "画笔"], ["rectangle", "矩形"], ["arrow", "箭头"], ["text", "文字"], ["mosaic", "马赛克"]].map(([tool, label]) => `<button type="button" data-shot-tool="${tool}" class="${tool === "pen" ? "selected" : ""}" aria-pressed="${tool === "pen"}">${label}</button>`).join("")}<label>颜色<input id="screenshot-color" type="color" value="#ff5454" aria-label="标注颜色"></label><label>粗细<select id="screenshot-width" aria-label="标注粗细"><option value="2">细</option><option value="4" selected>中</option><option value="8">粗</option></select></label><button id="screenshot-undo" type="button">撤销</button><button id="screenshot-clear" type="button">清空标注</button></div><div class="screenshot-canvas-wrap"><canvas id="screenshot-canvas" aria-label="截图标注画布"></canvas></div><div class="screenshot-text-row hidden"><input id="screenshot-text" maxlength="200" placeholder="输入标注文字后，点击图中要放置的位置" aria-label="截图标注文字"></div><p class="hint">${image.naturalWidth} × ${image.naturalHeight} · ${canSend ? "完成后放入「" + esc3(intent.name) + "」的输入框，按发送才发出" : "可保存到电脑或复制到剪贴板"}。Esc 关闭，Ctrl + Z 撤销。</p>`,
-        '<button class="secondary" data-action="close-modal">取消</button><button class="secondary" id="screenshot-save">保存图片</button><button class="secondary" id="screenshot-copy">复制</button>' + (canSend ? '<button class="primary" id="screenshot-send" title="放入「' + esc3(intent.name) + '」的输入框">完成</button>' : ""),
+        `<div class="screenshot-tools" role="toolbar" aria-label="截图标注">${[["pen", "画笔"], ["rectangle", "矩形"], ["arrow", "箭头"], ["text", "文字"], ["mosaic", "马赛克"]].map(([tool, label]) => `<button type="button" data-shot-tool="${tool}" class="${tool === "pen" ? "selected" : ""}" aria-pressed="${tool === "pen"}">${label}</button>`).join("")}<label>颜色<input id="screenshot-color" type="color" value="#ff5454" aria-label="标注颜色"></label><label>粗细<select id="screenshot-width" aria-label="标注粗细"><option value="2">细</option><option value="4" selected>中</option><option value="8">粗</option></select></label><button id="screenshot-undo" type="button">撤销</button><button id="screenshot-clear" type="button">清空标注</button></div><div class="screenshot-canvas-wrap"><canvas id="screenshot-canvas" aria-label="截图标注画布"></canvas></div><div class="screenshot-text-row hidden"><input id="screenshot-text" maxlength="200" placeholder="输入标注文字后，点击图中要放置的位置" aria-label="截图标注文字"></div><p class="hint">${image.naturalWidth} × ${image.naturalHeight} · ${canSend ? "完成后放入「" + esc4(intent.name) + "」的输入框，按发送才发出" : "可保存到电脑或复制到剪贴板"}。Esc 关闭，Ctrl + Z 撤销。</p>`,
+        '<button class="secondary" data-action="close-modal">取消</button><button class="secondary" id="screenshot-save">保存图片</button><button class="secondary" id="screenshot-copy">复制</button>' + (canSend ? '<button class="primary" id="screenshot-send" title="放入「' + esc4(intent.name) + '」的输入框">完成</button>' : ""),
         true
       );
       document.querySelector(".modal").classList.add("screenshot-editor");
@@ -2389,7 +2389,7 @@
   }
 
   // internal/ui/src/avatars.js
-  function createAvatars({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, av: av2, refresh: refresh2, renderMessages: renderMessages2, renderMain: renderMain2, updateRail: updateRail2, profile: profile2, groupDetail }) {
+  function createAvatars({ S: S2, api: api2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, av: av2, refresh: refresh2, renderMessages: renderMessages2, renderMain: renderMain2, updateRail: updateRail2, profile: profile2, groupDetail }) {
     const $2 = (s) => document.querySelector(s);
     let current = null;
     const endpoint = (s) => s.scope === "user" ? "/api/me/avatar" : "/api/groups/" + s.target + "/avatar";
@@ -2411,7 +2411,7 @@
         chooseCartoon();
         return;
       }
-      modal2(s.scope === "user" ? "个人头像" : "群头像", `<div class="avatar-selection"><div>${av2(s.info, "large")}</div><h4>${esc3(s.info.name || "更换头像")}</h4><p>选择照片后可移动、缩放和旋转裁剪。</p><button class="primary" data-avatar="pick">选择图片</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden><small>最多 8 MB，4096 × 4096 像素；保存为静态头像</small>${s.info.avatar?.startsWith("image:") ? '<button class="avatar-reset" data-avatar="reset">恢复默认头像</button>' : ""}</div>`, '<button class="secondary" data-avatar="cancel">返回</button>');
+      modal2(s.scope === "user" ? "个人头像" : "群头像", `<div class="avatar-selection"><div>${av2(s.info, "large")}</div><h4>${esc4(s.info.name || "更换头像")}</h4><p>选择照片后可移动、缩放和旋转裁剪。</p><button class="primary" data-avatar="pick">选择图片</button><input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden><small>最多 8 MB，4096 × 4096 像素；保存为静态头像</small>${s.info.avatar?.startsWith("image:") ? '<button class="avatar-reset" data-avatar="reset">恢复默认头像</button>' : ""}</div>`, '<button class="secondary" data-avatar="cancel">返回</button>');
       $2("#avatar-file").onchange = (e) => {
         if (e.target.files[0]) load(e.target.files[0]);
       };
@@ -2716,7 +2716,7 @@
 
   // internal/ui/src/outbox.js
   function createOutbox({ onSent = () => {
-  }, sendLarge, S: S2, api: api2, toast: toast2, esc: esc3, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
+  }, sendLarge, S: S2, api: api2, toast: toast2, esc: esc4, av: av2, bytes: bytes2, randomID: randomID2, Mentions: Mentions2, renderMessages: renderMessages2, renderReply: renderReply2, queueRefresh: queueRefresh2, modal: modal2, closeModal: closeModal2 }) {
     const $2 = (selector) => document.querySelector(selector);
     let scope = "", generation = 0, rows = [], drafts = /* @__PURE__ */ new Map(), timer, working = false, controller, saveChain = Promise.resolve(), storageWarning = false;
     const scopeFor = () => JSON.stringify([new URL(S2.config.server).href.replace(/\/$/, ""), (S2.config.fingerprint || "").toLowerCase(), S2.user?.id]);
@@ -2971,8 +2971,8 @@
     }
     const status = (row) => row.state === "sending" ? "正在发送…" : row.state === "failed" ? row.error : row.error || "已保存，等待发送";
     function item(row, panel = false) {
-      const content = row.file ? `<b>${esc3(row.body.kind === "voice" ? "语音" : row.file.name)}</b><small>${bytes2(row.file.size)}</small>` : esc3(row.body.text);
-      return `<article class="${panel ? "outbox-row" : "message mine pending-message"}" data-outbox="${row.id}">${panel ? "" : av2(S2.user)}<div class="message-body">${panel ? "<b>" + esc3(S2.conversations.find((c) => c.id === row.cid)?.name || "原会话已不可访问") + "</b>" : ""}<div class="bubble">${content}</div><div class="outbox-status ${row.state === "failed" ? "failed" : ""}" role="status">${esc3(status(row))}</div><div class="outbox-actions">${row.state !== "sending" ? '<button data-outbox-retry="' + row.id + '">重试</button>' : ""}<button data-outbox-remove="${row.id}">移除待发送</button></div></div></article>`;
+      const content = row.file ? `<b>${esc4(row.body.kind === "voice" ? "语音" : row.file.name)}</b><small>${bytes2(row.file.size)}</small>` : esc4(row.body.text);
+      return `<article class="${panel ? "outbox-row" : "message mine pending-message"}" data-outbox="${row.id}">${panel ? "" : av2(S2.user)}<div class="message-body">${panel ? "<b>" + esc4(S2.conversations.find((c) => c.id === row.cid)?.name || "原会话已不可访问") + "</b>" : ""}<div class="bubble">${content}</div><div class="outbox-status ${row.state === "failed" ? "failed" : ""}" role="status">${esc4(status(row))}</div><div class="outbox-actions">${row.state !== "sending" ? '<button data-outbox-retry="' + row.id + '">重试</button>' : ""}<button data-outbox-remove="${row.id}">移除待发送</button></div></div></article>`;
     }
     function html(cid) {
       return S2.historyMode ? "" : rows.filter((r) => r.cid === cid && !S2.messages.some((m) => m.clientId === r.id && m.sender === S2.user?.id)).map((r) => item(r)).join("");
@@ -3028,7 +3028,7 @@
     return metadata.has(url.pathname) ? { name: url.pathname, url } : match ? { name: match[2] ? "messages:" + match[1] : url.pathname, cid: match[1], messages: !!match[2], url } : null;
   };
   var temporary = (error) => !error.status && error.name !== "AbortError" || [408, 502, 503, 504].includes(error.status);
-  function createReceivedCache({ S: S2, toast: toast2, modal: modal2, closeModal: closeModal2, esc: esc3, bytes: bytes2, connectionState: connectionState2, onReconciled }) {
+  function createReceivedCache({ S: S2, toast: toast2, modal: modal2, closeModal: closeModal2, esc: esc4, bytes: bytes2, connectionState: connectionState2, onReconciled }) {
     let current = null;
     const identity = () => JSON.stringify([new URL(S2.config.server).href.replace(/\/$/, ""), (S2.config.fingerprint || "").toLowerCase(), S2.token]);
     const alive = (ctx) => current === ctx && !ctx.dead && ctx.token === S2.token && !S2.signingOut && ctx.identity === identity();
@@ -3376,7 +3376,7 @@
       }
       await ctx.chain;
       const count = [...ctx.records].filter(([name]) => name.startsWith("messages:")).reduce((n, [, r]) => n + r.data.items.length, 0), size = [...ctx.records.values()].reduce((n, r) => n + r.size, 0), policy = limits(ctx);
-      modal2("本机聊天缓存", `<p>已缓存 <b>${count}</b> 条消息 · ${esc3(bytes2(size))}</p><p class="hint">断网时可查看本机已加载的聊天记录。图片、语音、视频和文件内容仍需联网打开。</p><p class="hint">当前上限 ${policy.messages} 条消息、${esc3(bytes2(policy.bytes))}，保留 ${policy.days} 天。缓存与此服务器和登录会话绑定，退出登录会清除；不会删除服务器记录、草稿或待发送消息。</p>`, '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="clear-received-cache">清理本机缓存</button>');
+      modal2("本机聊天缓存", `<p>已缓存 <b>${count}</b> 条消息 · ${esc4(bytes2(size))}</p><p class="hint">断网时可查看本机已加载的聊天记录。图片、语音、视频和文件内容仍需联网打开。</p><p class="hint">当前上限 ${policy.messages} 条消息、${esc4(bytes2(policy.bytes))}，保留 ${policy.days} 天。缓存与此服务器和登录会话绑定，退出登录会清除；不会删除服务器记录、草稿或待发送消息。</p>`, '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="clear-received-cache">清理本机缓存</button>');
       document.querySelector("#clear-received-cache").onclick = async () => {
         await forget();
         closeModal2();
@@ -3390,7 +3390,7 @@
   }
 
   // internal/ui/src/mentions.js
-  function createMentions({ S: S2, api: api2, esc: esc3, av: av2, toast: toast2, jump }) {
+  function createMentions({ S: S2, api: api2, esc: esc4, av: av2, toast: toast2, jump }) {
     const $2 = (s) => document.querySelector(s), drafts = /* @__PURE__ */ new Map();
     let popup = null, revision = 0, pending = null, cache = null;
     const group = () => S2.conversations.find((c) => c.id === S2.active)?.kind === "group";
@@ -3441,7 +3441,7 @@
       node.className = "mention-picker";
       node.setAttribute("role", "listbox");
       node.setAttribute("aria-label", "选择要提醒的成员");
-      node.innerHTML = '<div class="mention-picker-title">选择要提醒的成员</div>' + p.items.map((u, i) => `<button type="button" id="mention-option-${i}" role="option" aria-selected="${i === p.index}" data-mention-index="${i}" class="${i === p.index ? "selected" : ""}">${u.id === "all" ? '<span class="mention-all-avatar">@</span>' : av2(u)}<span><b>${esc3(u.nickname || u.name)}</b><small>${u.id === "all" ? "提醒群内所有成员" : esc3(u.number)}</small></span></button>`).join("") + (p.items.length ? "" : '<p class="hint">没有找到成员</p>');
+      node.innerHTML = '<div class="mention-picker-title">选择要提醒的成员</div>' + p.items.map((u, i) => `<button type="button" id="mention-option-${i}" role="option" aria-selected="${i === p.index}" data-mention-index="${i}" class="${i === p.index ? "selected" : ""}">${u.id === "all" ? '<span class="mention-all-avatar">@</span>' : av2(u)}<span><b>${esc4(u.nickname || u.name)}</b><small>${u.id === "all" ? "提醒群内所有成员" : esc4(u.number)}</small></span></button>`).join("") + (p.items.length ? "" : '<p class="hint">没有找到成员</p>');
       node.onpointerdown = (e) => e.preventDefault();
       node.onclick = (e) => {
         const b = e.target.closest("[data-mention-index]");
@@ -3528,7 +3528,7 @@
       }
       return false;
     }
-    function open() {
+    function open2() {
       const el = input();
       if (!el || el.disabled) return;
       show(el.selectionStart, el.selectionEnd);
@@ -3546,14 +3546,14 @@
       }
     }
     function text(m) {
-      if (!m.mentions?.length) return esc3(m.text);
+      if (!m.mentions?.length) return esc4(m.text);
       let at = 0, out = "";
       for (const span of m.mentions) {
         if (span.start < at || span.end > m.text.length) continue;
-        out += esc3(m.text.slice(at, span.start)) + `<span class="message-mention">${esc3(m.text.slice(span.start, span.end))}</span>`;
+        out += esc4(m.text.slice(at, span.start)) + `<span class="message-mention">${esc4(m.text.slice(span.start, span.end))}</span>`;
         at = span.end;
       }
-      return out + esc3(m.text.slice(at));
+      return out + esc4(m.text.slice(at));
     }
     function applies(m) {
       return m.sender !== S2.user?.id && !m.recalled && (m.mentionRecipients || []).includes(S2.user?.id);
@@ -3594,7 +3594,7 @@
     document.addEventListener("click", (e) => {
       const b = e.target.closest("[data-mention],[data-mention-user]");
       if (b) {
-        if (b.dataset.mention === "open") open();
+        if (b.dataset.mention === "open") open2();
         if (b.dataset.mentionUser) mentionUser(b.dataset.mentionUser);
         if (b.dataset.mention === "jump" && pending) {
           const p = pending;
@@ -3610,7 +3610,7 @@
   }
 
   // internal/ui/src/attachments.js
-  function createAttachments({ S: S2, esc: esc3, icon: icon2, bytes: bytes2, toast: toast2 }) {
+  function createAttachments({ S: S2, esc: esc4, icon: icon2, bytes: bytes2, toast: toast2 }) {
     const $2 = (s) => document.querySelector(s), pending = /* @__PURE__ */ new Map(), limit = 20;
     let next = 0;
     const list = (cid) => pending.get(cid) || [];
@@ -3664,7 +3664,7 @@
       if (button && input) button.disabled = !input.value.trim() && !list(S2.active).length;
     }
     function item(entry) {
-      const { file } = entry, name = esc3(file.name || "未命名文件");
+      const { file } = entry, name = esc4(file.name || "未命名文件");
       const body = entry.url ? `<img src="${entry.url}" alt="">` : `<span class="attach-icon">${icon2(video(file) ? "video" : "file")}</span><span class="attach-meta"><b>${name}</b><small>${bytes2(file.size)}</small></span>`;
       return `<div class="attach-item${entry.url ? " is-image" : ""}" title="${name} · ${bytes2(file.size)}">${body}<button type="button" class="attach-remove" data-attach-remove="${entry.id}" aria-label="移除 ${name}">×</button></div>`;
     }
@@ -3690,7 +3690,7 @@
   }
 
   // internal/ui/src/receipts.js
-  function createReceipts({ S: S2, api: api2, esc: esc3, av: av2, modal: modal2 }) {
+  function createReceipts({ S: S2, api: api2, esc: esc4, av: av2, modal: modal2 }) {
     const $2 = (s) => document.querySelector(s);
     let state = { cid: "", members: /* @__PURE__ */ new Map() }, loading = 0, frame = 0;
     const conversation = (cid) => S2.conversations.find((c) => c.id === cid);
@@ -3719,7 +3719,7 @@
       if (m.sender !== S2.user?.id || m.recalled || !m.seq) return "";
       const t = text(m);
       const group = conversation(m.conversationId)?.kind === "group";
-      return `<button type="button" class="receipt${t?.done ? " done" : ""}${t ? "" : " hidden"}" data-receipt="${esc3(m.id)}" data-seq="${m.seq}" ${group ? "" : 'tabindex="-1"'}>${t ? esc3(t.label) : ""}</button>`;
+      return `<button type="button" class="receipt${t?.done ? " done" : ""}${t ? "" : " hidden"}" data-receipt="${esc4(m.id)}" data-seq="${m.seq}" ${group ? "" : 'tabindex="-1"'}>${t ? esc4(t.label) : ""}</button>`;
     }
     function paint() {
       cancelAnimationFrame(frame);
@@ -3761,9 +3761,9 @@
       }
     }
     function row(x) {
-      return `<div class="receipt-person">${av2({ id: x.userId, name: x.name, avatar: x.avatar })}<span>${esc3(x.name)}</span></div>`;
+      return `<div class="receipt-person">${av2({ id: x.userId, name: x.name, avatar: x.avatar })}<span>${esc4(x.name)}</span></div>`;
     }
-    function open(id) {
+    function open2(id) {
       const m = S2.messages.find((x) => x.id === id);
       if (!m || conversation(m.conversationId)?.kind !== "group") return;
       const c = counts(m);
@@ -3775,7 +3775,7 @@
       const b = e.target.closest("#messages .receipt[data-receipt]");
       if (b) {
         e.preventDefault();
-        open(b.dataset.receipt);
+        open2(b.dataset.receipt);
       }
     });
     return { label, load, event, paint, reset() {
@@ -3783,6 +3783,49 @@
       state = { cid: "", members: /* @__PURE__ */ new Map() };
     } };
   }
+
+  // internal/ui/src/dialogs.js
+  var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  function open({ title, message, input, ok, cancel, danger }) {
+    return new Promise((resolve) => {
+      const layer = document.createElement("div");
+      layer.className = "lm-dialog-layer";
+      layer.innerHTML = `<div class="lm-dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}">${title ? `<h3>${esc(title)}</h3>` : ""}${message ? `<p>${esc(message).replace(/\n/g, "<br>")}</p>` : ""}${input ? `<input class="lm-dialog-input" maxlength="${input.max || 200}" placeholder="${esc(input.placeholder || "")}" value="${esc(input.value || "")}">` : ""}<div class="lm-dialog-actions"><button class="secondary" data-dialog="cancel">${esc(cancel || "取消")}</button><button class="primary${danger ? " danger-fill" : ""}" data-dialog="ok">${esc(ok || "确定")}</button></div></div>`;
+      document.body.append(layer);
+      const field = layer.querySelector(".lm-dialog-input"), okBtn = layer.querySelector("[data-dialog=ok]");
+      const done = (value) => {
+        document.removeEventListener("keydown", key, true);
+        layer.remove();
+        resolve(value);
+      };
+      const accept = () => done(input ? field.value : true), reject = () => done(input ? null : false);
+      const key = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          reject();
+        } else if (e.key === "Enter" && !e.isComposing && (document.activeElement === field || document.activeElement === okBtn || !input)) {
+          e.preventDefault();
+          e.stopPropagation();
+          accept();
+        }
+      };
+      document.addEventListener("keydown", key, true);
+      layer.addEventListener("mousedown", (e) => {
+        if (e.target === layer) reject();
+      });
+      okBtn.onclick = accept;
+      layer.querySelector("[data-dialog=cancel]").onclick = reject;
+      setTimeout(() => {
+        if (field) {
+          field.focus();
+          field.select();
+        } else okBtn.focus();
+      }, 0);
+    });
+  }
+  var confirmDialog = (message, options = {}) => open({ title: options.title || "请确认", message, ok: options.ok, cancel: options.cancel, danger: options.danger });
+  var inputDialog = (message, options = {}) => open({ title: options.title || message, message: options.title ? message : "", input: { value: options.value, placeholder: options.placeholder, max: options.max }, ok: options.ok, cancel: options.cancel });
 
   // internal/ui/src/docs-text.js
   var chars = (s) => Array.from(s);
@@ -3921,11 +3964,11 @@
     return out;
   }
   var plain = (md) => runs(md).map((r) => r.text).join("");
-  var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  var esc2 = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var safeLink = (u) => /^(https?:|mailto:)/i.test(u) ? u : /^www\./i.test(u) ? "https://" + u : "";
   function toHTML(md) {
     return runs(md).map((r) => {
-      let h = esc(r.text).replace(/\n/g, "<br>");
+      let h = esc2(r.text).replace(/\n/g, "<br>");
       if (r.code) h = "<code>" + h + "</code>";
       if (r.b) h = "<b>" + h + "</b>";
       if (r.i) h = "<i>" + h + "</i>";
@@ -3933,7 +3976,7 @@
       if (r.u) h = "<u>" + h + "</u>";
       if (r.link) {
         const href = safeLink(r.link);
-        h = href ? `<a href="${esc(href)}" data-href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${h}</a>` : `<a data-href="${esc(r.link)}" class="unsafe-link" title="不支持的链接">${h}</a>`;
+        h = href ? `<a href="${esc2(href)}" data-href="${esc2(r.link)}" target="_blank" rel="noopener noreferrer">${h}</a>` : `<a data-href="${esc2(r.link)}" class="unsafe-link" title="不支持的链接">${h}</a>`;
       }
       return h;
     }).join("") || "";
@@ -4126,7 +4169,7 @@
         case "ordered":
           return `<li class="num">${inline(b.text)}</li>`;
         case "code":
-          return `<pre>${esc(b.text)}</pre>`;
+          return `<pre>${esc2(b.text)}</pre>`;
         case "quote":
           return `<blockquote>${inline(b.text)}</blockquote>`;
         case "divider":
@@ -4149,7 +4192,7 @@
     for (const c of id || "") h = h * 31 + c.charCodeAt(0) >>> 0;
     return PALETTE[h % PALETTE.length];
   };
-  function createDocEditor({ mount, outline, content, editable, newId, onChange, onWhere, toast: toast2, esc: esc3, askAI }) {
+  function createDocEditor({ mount, outline, content, editable, newId, onChange, onWhere, toast: toast2, esc: esc4, askAI }) {
     const conf = /* @__PURE__ */ new Map(), els = /* @__PURE__ */ new Map(), dirty = /* @__PURE__ */ new Set(), inflight = /* @__PURE__ */ new Map(), localOnly = /* @__PURE__ */ new Set();
     let pending = [], canEdit = editable, menu = null, bar = null, composing = false, whereTimer = 0, lastWhere = "", peers = [], outlineTimer = 0;
     const undo = [], redo = [];
@@ -4197,7 +4240,7 @@
     function tableHTML(b) {
       const rows = b.rows?.length ? b.rows : [["", ""], ["", ""]];
       const cols = Math.max(...rows.map((r) => r.length), 1);
-      return `<div class="blk-table-wrap"><table class="blk-table"><tbody>${rows.map((r, i) => `<tr>${Array.from({ length: cols }, (_, j) => `<td contenteditable="${canEdit}" data-r="${i}" data-c="${j}">${esc3(r[j] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table>${canEdit ? '<div class="blk-table-tools"><button data-table="row">+ 行</button><button data-table="col">+ 列</button><button data-table="-row">− 行</button><button data-table="-col">− 列</button></div>' : ""}</div>`;
+      return `<div class="blk-table-wrap"><table class="blk-table"><tbody>${rows.map((r, i) => `<tr>${Array.from({ length: cols }, (_, j) => `<td contenteditable="${canEdit}" data-r="${i}" data-c="${j}">${esc4(r[j] || "")}</td>`).join("")}</tr>`).join("")}</tbody></table>${canEdit ? '<div class="blk-table-tools"><button data-table="row">+ 行</button><button data-table="col">+ 列</button><button data-table="-row">− 行</button><button data-table="-col">− 列</button></div>' : ""}</div>`;
     }
     function build(b) {
       const el = document.createElement("div");
@@ -4276,7 +4319,7 @@
     function drawOutline() {
       if (!outline) return;
       const heads = [...root.children].filter((e) => /^h[123]$/.test(e.dataset.type));
-      outline.innerHTML = heads.length ? "<h5>目录</h5>" + heads.map((e) => `<button class="lvl-${e.dataset.type}" data-outline="${e.dataset.id}">${esc3(plain(localText(e.dataset.id)) || "无标题")}</button>`).join("") : "";
+      outline.innerHTML = heads.length ? "<h5>目录</h5>" + heads.map((e) => `<button class="lvl-${e.dataset.type}" data-outline="${e.dataset.id}">${esc4(plain(localText(e.dataset.id)) || "无标题")}</button>`).join("") : "";
     }
     function record(group) {
       if (!group.length) return;
@@ -4651,7 +4694,7 @@
       const query = q.trim().toLowerCase();
       menu.items = TYPES.filter(([t, label, short]) => !query || label.includes(query) || t.includes(query) || short.toLowerCase().includes(query) || ({ p: "zw text", h1: "bt1 title", h2: "bt2", h3: "bt3", bullet: "lb list wx", ordered: "yx num", todo: "db rw task", quote: "yy", code: "dm", divider: "fgx line hr", table: "bg table" }[t] || "").includes(query));
       menu.index = Math.min(menu.index, Math.max(0, menu.items.length - 1));
-      menu.el.innerHTML = menu.items.length ? menu.items.map(([t, label, short], i) => `<button role="option" class="${i === menu.index ? "active" : ""}" data-slash="${t}"><span>${esc3(short)}</span>${label}</button>`).join("") : "<p>没有匹配的内容</p>";
+      menu.el.innerHTML = menu.items.length ? menu.items.map(([t, label, short], i) => `<button role="option" class="${i === menu.index ? "active" : ""}" data-slash="${t}"><span>${esc4(short)}</span>${label}</button>`).join("") : "<p>没有匹配的内容</p>";
     }
     function chooseMenu(type) {
       if (!menu) return;
@@ -4700,12 +4743,12 @@
       bar.style.left = Math.max(8, Math.min(innerWidth - w - 8, rect.left + rect.width / 2 - w / 2)) + "px";
       bar.style.top = Math.max(8, rect.top - 46) + "px";
     }
-    function linkPrompt() {
+    async function linkPrompt() {
       const r = range();
       if (!r || r.collapsed || !r.single) return;
       const current = runs(localText(r.start.id));
       const has = sliceRuns(current, r.start.off, r.end.off).find((x) => x.link)?.link || "";
-      const url = prompt("链接地址（留空则移除链接）", has || "https://");
+      const url = await inputDialog("留空则移除链接", { title: "链接地址", value: has || "https://", placeholder: "https://" });
       if (url === null) return;
       selectText(r.start.id, r.start.off, r.end.off);
       const clean = url.trim();
@@ -5125,7 +5168,7 @@
       const box = document.createElement("div");
       box.className = "doc-block-menu";
       const type = typeOf(id);
-      box.innerHTML = (TEXTUAL.has(type) ? '<h6>转换为</h6><div class="turn-grid">' + TYPES.filter((t) => TEXTUAL.has(t[0])).map(([t, l, s]) => `<button data-block-op="turn:${t}" data-id="${id}" class="${t === type ? "active" : ""}" title="${l}">${esc3(s)}</button>`).join("") + "</div>" : "") + `<button data-block-op="up" data-id="${id}">上移</button><button data-block-op="down" data-id="${id}">下移</button><button data-block-op="copy" data-id="${id}">复制内容</button>${askAI ? `<button data-block-op="ai" data-id="${id}">✦ 让 AI 处理这段</button>` : ""}<button data-block-op="delete" data-id="${id}" class="danger">删除</button>`;
+      box.innerHTML = (TEXTUAL.has(type) ? '<h6>转换为</h6><div class="turn-grid">' + TYPES.filter((t) => TEXTUAL.has(t[0])).map(([t, l, s]) => `<button data-block-op="turn:${t}" data-id="${id}" class="${t === type ? "active" : ""}" title="${l}">${esc4(s)}</button>`).join("") + "</div>" : "") + `<button data-block-op="up" data-id="${id}">上移</button><button data-block-op="down" data-id="${id}">下移</button><button data-block-op="copy" data-id="${id}">复制内容</button>${askAI ? `<button data-block-op="ai" data-id="${id}">✦ 让 AI 处理这段</button>` : ""}<button data-block-op="delete" data-id="${id}" class="danger">删除</button>`;
       document.body.append(box);
       const r = anchor.getBoundingClientRect();
       box.style.left = Math.max(8, r.left) + "px";
@@ -6174,7 +6217,7 @@
     }
     return out + (inString ? formula.slice(start) : fix(formula.slice(start)));
   }
-  function createSheetEditor({ mount, content, editable, newId, onChange, onWhere, toast: toast2, esc: esc3, askAI }) {
+  function createSheetEditor({ mount, content, editable, newId, onChange, onWhere, toast: toast2, esc: esc4, askAI }) {
     let pages = (content.sheets || []).map((p) => ({ ...p, cells: { ...p.cells || {} }, cols: { ...p.cols || {} } }));
     let active = 0, canEdit = editable, queueOps = [], seq = 0, peers = [], editing = null, clip = null, frame = 0, afterAdd = "";
     const pendingKeys = /* @__PURE__ */ new Map(), inflight = /* @__PURE__ */ new Map(), undo = [], redo = [];
@@ -6235,7 +6278,7 @@
       const text = display(v), num = typeof v === "number", err = isError(v);
       const cls = ["c", num ? "num" : "", err ? "err" : "", typeof v === "boolean" ? "bool" : "", s.b ? "b" : "", s.i ? "i" : "", s.u ? "u" : "", s.s ? "s" : "", s.a ? "a-" + s.a : ""].filter(Boolean).join(" ");
       const style2 = `left:${xs[c - 1]}px;top:${(r - 1) * ROW_H}px;width:${colW(c)}px;${s.bg ? "background:" + s.bg + ";" : ""}${s.c ? "color:" + s.c + ";" : ""}`;
-      return `<div class="${cls}" style="${style2}"${err && v.why ? ` title="${esc3(v.why)}"` : ""}>${esc3(text)}</div>`;
+      return `<div class="${cls}" style="${style2}"${err && v.why ? ` title="${esc4(v.why)}"` : ""}>${esc4(text)}</div>`;
     }
     function draw() {
       frame = 0;
@@ -6270,11 +6313,11 @@
         const p = parseRef(v.where.split("!")[1]);
         if (!p || p.col > size.cols) return "";
         const color = peerColor(v.userId);
-        return `<div class="peer" style="left:${xs[p.col - 1]}px;top:${(p.row - 1) * ROW_H}px;width:${colW(p.col)}px;border-color:${color}"><span style="background:${color}">${esc3(v.name)}</span></div>`;
+        return `<div class="peer" style="left:${xs[p.col - 1]}px;top:${(p.row - 1) * ROW_H}px;width:${colW(p.col)}px;border-color:${color}"><span style="background:${color}">${esc4(v.name)}</span></div>`;
       }).join("");
     }
     function drawTabs() {
-      $2(".sheet-tabs").innerHTML = pages.map((p, i) => `<button class="tab${i === active ? " active" : ""}" data-tab="${i}" title="双击重命名，右键更多">${esc3(p.name)}</button>`).join("") + (canEdit ? '<button class="add" data-sh="addSheet" title="新建工作表">＋</button>' : "");
+      $2(".sheet-tabs").innerHTML = pages.map((p, i) => `<button class="tab${i === active ? " active" : ""}" data-tab="${i}" title="双击重命名，右键更多">${esc4(p.name)}</button>`).join("") + (canEdit ? '<button class="add" data-sh="addSheet" title="新建工作表">＋</button>' : "");
     }
     function select(r, c, extend = false) {
       r = Math.max(1, Math.min(5e4, r));
@@ -6384,8 +6427,8 @@
         let v = editor.value;
         if (v.startsWith("=")) {
           v = v.replace(/\s+$/, "");
-          const open = (v.match(/\(/g) || []).length - (v.match(/\)/g) || []).length;
-          if (open > 0) v += ")".repeat(open);
+          const open2 = (v.match(/\(/g) || []).length - (v.match(/\)/g) || []).length;
+          if (open2 > 0) v += ")".repeat(open2);
         }
         writeValue(r, c, v);
       }
@@ -6902,7 +6945,7 @@
       document.body.append(m);
       m.style.left = e.clientX + "px";
       m.style.top = Math.max(8, e.clientY - m.offsetHeight) + "px";
-      m.addEventListener("mousedown", (ev) => {
+      m.addEventListener("mousedown", async (ev) => {
         const b = ev.target.closest("[data-tab-op]");
         if (!b) return;
         ev.preventDefault();
@@ -6914,7 +6957,7 @@
             toast2("至少保留一个工作表");
             return;
           }
-          if (confirm(`删除工作表“${p.name}”？引用它的公式会显示 #REF!`)) {
+          if (await confirmDialog("引用它的公式会显示 #REF!。", { title: `删除工作表“${p.name}”`, ok: "删除", danger: true })) {
             queueOps.push({ op: "deleteSheet", sheet: p.id });
             onChange();
           }
@@ -6933,9 +6976,9 @@
         }
       }), 0);
     });
-    function rename(i) {
+    async function rename(i) {
       const p = pages[i];
-      const name = prompt("工作表名称", p.name);
+      const name = await inputDialog("工作表名称", { value: p.name, max: 31 });
       if (name === null || !name.trim() || name.trim() === p.name) return;
       queueOps.push({ op: "renameSheet", sheet: p.id, name: name.trim() });
       onChange();
@@ -7092,7 +7135,7 @@
   var SHEET_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3h16v18H4ZM4 9h16M4 15h16M10 3v18"/></svg>';
   var docIcon = (kind) => `<span class="docs-icon ${kind === "sheet" ? "is-sheet" : "is-doc"}">${kind === "sheet" ? SHEET_ICON : DOC_ICON}</span>`;
   var DOC_MARK = /^\[(文档|表格)\] ([^\n]*)\nlinkme-doc:([a-f0-9]{32})$/;
-  function createDocs({ S: S2, api: api2, esc: esc3, av: av2, modal: modal2, closeModal: closeModal2, toast: toast2, downloadURL: downloadURL2, showDocsTab: showDocsTab2, when }) {
+  function createDocs({ S: S2, api: api2, esc: esc4, av: av2, modal: modal2, closeModal: closeModal2, toast: toast2, downloadURL: downloadURL2, showDocsTab: showDocsTab2, when }) {
     const $2 = (s) => document.querySelector(s);
     let scope = "recent", query = "", list = null, loading = 0, current = null, listTimer = 0;
     const clientId = "d" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -7115,7 +7158,7 @@
     }
     function row(d) {
       const mine = d.ownerId === S2.user.id;
-      return `<div class="docs-row" data-open-doc="${d.id}" role="button" tabindex="0">${docIcon(d.kind)}<span class="docs-name"><b>${esc3(d.title)}</b><small>${mine ? "我" : esc3(d.ownerName || "")} · ${scope === "recent" && d.opened ? "最近打开 " + timeText(d.opened) : "更新于 " + timeText(d.updated)}${d.updatedByName && d.updatedByName !== S2.user.name ? " · " + esc3(d.updatedByName) + " 修改" : ""}</small></span><span class="docs-role role-${d.role}">${ROLE_LABEL[d.role] || ""}</span><button class="icon-btn docs-more" data-docs-more="${d.id}" aria-label="更多操作">⋯</button></div>`;
+      return `<div class="docs-row" data-open-doc="${d.id}" role="button" tabindex="0">${docIcon(d.kind)}<span class="docs-name"><b>${esc4(d.title)}</b><small>${mine ? "我" : esc4(d.ownerName || "")} · ${scope === "recent" && d.opened ? "最近打开 " + timeText(d.opened) : "更新于 " + timeText(d.updated)}${d.updatedByName && d.updatedByName !== S2.user.name ? " · " + esc4(d.updatedByName) + " 修改" : ""}</small></span><span class="docs-role role-${d.role}">${ROLE_LABEL[d.role] || ""}</span><button class="icon-btn docs-more" data-docs-more="${d.id}" aria-label="更多操作">⋯</button></div>`;
     }
     function drawHome() {
       const main = $2("#main-content");
@@ -7125,7 +7168,7 @@
    <header class="docs-head"><div><h2>云文档</h2><p>多人实时协作的文档和表格，可导入导出 Word、Excel 和 Markdown</p></div>
    <div class="docs-actions"><button class="primary" data-docs="new-doc">${DOC_ICON}新建文档</button><button class="secondary" data-docs="new-sheet">${SHEET_ICON}新建表格</button><button class="secondary" data-docs="import">导入</button><input type="file" id="docs-import" hidden accept=".md,.markdown,.txt,.docx,.xlsx,.csv"></div></header>
    <div class="docs-filter"><nav class="docs-tabs" role="tablist">${[["recent", "最近"], ["mine", "我的"], ["shared", "与我共享"]].map(([k, l]) => `<button role="tab" aria-selected="${scope === k}" class="${scope === k ? "active" : ""}" data-docs-scope="${k}">${l}</button>`).join("")}</nav>
-   <label class="docs-search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4"/></svg><input id="docs-search" placeholder="搜索文档标题" value="${esc3(query)}" maxlength="100"></label></div>
+   <label class="docs-search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM20 20l-4-4"/></svg><input id="docs-search" placeholder="搜索文档标题" value="${esc4(query)}" maxlength="100"></label></div>
    <div class="docs-list">${list === null ? '<p class="docs-empty">正在加载…</p>' : items.length ? items.map(row).join("") : `<div class="docs-empty"><b>${query ? "没有找到相关文档" : scope === "shared" ? "还没有人与你共享文档" : "还没有文档"}</b><p>${scope === "shared" ? "别人分享给你或分享到群里的文档会出现在这里" : "新建一篇文档或表格，邀请同事一起编辑"}</p></div>`}</div>
   </section>`;
       const search = $2("#docs-search");
@@ -7143,7 +7186,7 @@
     async function create(kind) {
       try {
         const { id } = await api2("/api/docs", { method: "POST", body: { kind, title: "" } });
-        await open(id, { fresh: true });
+        await open2(id, { fresh: true });
       } catch (e) {
         toast2(e.message);
       }
@@ -7159,7 +7202,7 @@
       try {
         const { id } = await api2("/api/docs/import", { method: "POST", body: form });
         toast2("导入完成");
-        await open(id);
+        await open2(id);
       } catch (e) {
         toast2(e.message);
       }
@@ -7182,21 +7225,21 @@
         box.remove();
         const op = b.dataset.docsOp;
         try {
-          if (op === "open") await open(id);
+          if (op === "open") await open2(id);
           else if (op === "rename") {
-            const t = prompt("文档标题", d.title);
+            const t = await inputDialog("文档标题", { value: d.title, max: 100 });
             if (t !== null && t.trim() && t.trim() !== d.title) {
               await api2("/api/docs/" + id, { method: "PATCH", body: { title: t.trim() } });
               await loadList();
             }
           } else if (op === "delete") {
-            if (confirm(`删除“${d.title}”？所有协作者都将无法再打开，且无法恢复。`)) {
+            if (await confirmDialog("所有协作者都将无法再打开，且无法恢复。", { title: `删除“${d.title}”`, ok: "删除", danger: true })) {
               await api2("/api/docs/" + id, { method: "DELETE" });
               toast2("已删除");
               await loadList();
             }
           } else if (op === "leave") {
-            if (confirm(`将“${d.title}”移出列表？如果是直接分享给你的，你将失去访问权限。`)) {
+            if (await confirmDialog("如果是直接分享给你的，你将失去访问权限。", { title: `将“${d.title}”移出列表`, ok: "移出" })) {
               await api2(`/api/docs/${id}/members/${S2.user.id}`, { method: "DELETE" });
               await loadList();
             }
@@ -7330,7 +7373,7 @@
       const seen = /* @__PURE__ */ new Map();
       for (const v of others) if (!seen.has(v.userId)) seen.set(v.userId, v);
       const box = $2(".doc-viewers");
-      if (box) box.innerHTML = [...seen.values()].slice(0, 6).map((v) => `<span class="doc-viewer" style="--peer:${peerColor(v.userId)}" title="${esc3(v.name)} 正在${current.kind === "sheet" ? "查看" : "编辑"}">${av2({ id: v.userId, name: v.name, avatar: v.avatar })}</span>`).join("") + (seen.size > 6 ? `<span class="doc-viewer more">+${seen.size - 6}</span>` : "");
+      if (box) box.innerHTML = [...seen.values()].slice(0, 6).map((v) => `<span class="doc-viewer" style="--peer:${peerColor(v.userId)}" title="${esc4(v.name)} 正在${current.kind === "sheet" ? "查看" : "编辑"}">${av2({ id: v.userId, name: v.name, avatar: v.avatar })}</span>`).join("") + (seen.size > 6 ? `<span class="doc-viewer more">+${seen.size - 6}</span>` : "");
       current.editor.viewers(others);
     }
     let whereTimer = 0;
@@ -7339,7 +7382,7 @@
       clearTimeout(whereTimer);
       whereTimer = setTimeout(() => presence(), 150);
     }
-    async function open(id, { fresh = false } = {}) {
+    async function open2(id, { fresh = false } = {}) {
       if (S2.tab !== "docs") {
         showDocsTab2(id);
         return;
@@ -7368,7 +7411,7 @@
       main.innerHTML = `<section class="doc-page kind-${doc.kind}">
    <header class="doc-bar">
     <button class="icon-btn" data-docs="back" title="返回文档列表" aria-label="返回文档列表"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
-    ${docIcon(doc.kind)}<div class="doc-crumb"><span class="doc-bar-title">${esc3(doc.title)}</span><small class="doc-save">已保存</small></div>
+    ${docIcon(doc.kind)}<div class="doc-crumb"><span class="doc-bar-title">${esc4(doc.title)}</span><small class="doc-save">已保存</small></div>
     <span class="doc-role-tag role-${doc.role}">${ROLE_LABEL[doc.role]}</span>
     <div class="doc-viewers"></div>
     ${doc.aiEnabled ? '<button class="secondary doc-ai-btn" data-docs="ai" title="AI 检查、整理、分析和修改">✦ AI 助手</button>' : ""}
@@ -7377,11 +7420,11 @@
    </header>
    <div class="doc-main">
     ${doc.kind === "doc" ? '<nav class="doc-outline" aria-label="目录"></nav>' : ""}
-    <div class="doc-scroll">${doc.kind === "doc" ? `<article class="doc-paper"><h1 class="doc-title" ${canEdit ? 'contenteditable="plaintext-only"' : ""} data-placeholder="请输入标题" spellcheck="false">${esc3(doc.title)}</h1><div class="doc-info">${av2(doc.owner)}<span>${esc3(doc.owner.name)} 创建 · 更新于 ${timeText(doc.updated)}</span></div><div class="doc-mount"></div></article>` : '<div class="doc-mount sheet-mount"></div>'}</div>
+    <div class="doc-scroll">${doc.kind === "doc" ? `<article class="doc-paper"><h1 class="doc-title" ${canEdit ? 'contenteditable="plaintext-only"' : ""} data-placeholder="请输入标题" spellcheck="false">${esc4(doc.title)}</h1><div class="doc-info">${av2(doc.owner)}<span>${esc4(doc.owner.name)} 创建 · 更新于 ${timeText(doc.updated)}</span></div><div class="doc-mount"></div></article>` : '<div class="doc-mount sheet-mount"></div>'}</div>
     <aside class="doc-ai hidden" aria-label="AI 助手"></aside>
    </div></section>`;
       const mount = main.querySelector(".doc-mount");
-      const options = { mount, content: doc.content, editable: canEdit, newId, onChange: () => doc.sync?.schedule(), onWhere: setWhere, toast: toast2, esc: esc3, askAI: doc.aiEnabled ? (ids) => openAI(ids) : null };
+      const options = { mount, content: doc.content, editable: canEdit, newId, onChange: () => doc.sync?.schedule(), onWhere: setWhere, toast: toast2, esc: esc4, askAI: doc.aiEnabled ? (ids) => openAI(ids) : null };
       doc.editor = doc.kind === "sheet" ? createSheetEditor(options) : createDocEditor({ ...options, outline: main.querySelector(".doc-outline") });
       doc.sync = createSync(doc);
       const title = main.querySelector(".doc-title");
@@ -7478,17 +7521,17 @@
       const manage = RANK[info.role] >= 3;
       const roleSelect = (value, attrs, allowManage = true) => `<select ${attrs} ${manage ? "" : "disabled"}>${["view", "edit", ...allowManage ? ["manage"] : []].map((r) => `<option value="${r}" ${r === value ? "selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`;
       const chats = S2.conversations.filter((c) => !c.peer?.ai);
-      modal2("分享“" + esc3(doc.title) + "”", `<div class="share">
+      modal2("分享“" + esc4(doc.title) + "”", `<div class="share">
    ${manage ? `<div class="share-add"><input id="share-search" placeholder="搜索好友或群聊，添加协作者" autocomplete="off"><select id="share-role"><option value="view">可阅读</option><option value="edit" selected>可编辑</option><option value="manage">可管理</option></select></div><div id="share-results" class="share-results"></div>` : '<p class="hint">只有所有者和“可管理”的协作者可以调整权限。</p>'}
    <h5>协作者</h5><div class="share-list">
-    ${info.people.map((p) => `<div class="share-person">${av2(p)}<span><b>${esc3(p.name)}${p.id === S2.user.id ? "（我）" : ""}</b><small>${p.number ? "LinkMe 号 " + esc3(p.number) : ""}</small></span>${p.role === "owner" ? "<em>所有者</em>" : roleSelect(p.role, `data-share-user="${p.id}"`) + (manage || p.id === S2.user.id ? `<button class="icon-btn" data-share-remove="${p.id}" title="${p.id === S2.user.id ? "退出协作" : "移除"}" aria-label="移除">×</button>` : "")}</div>`).join("")}
-    ${info.chats.map((c) => `<div class="share-person"><span class="avatar">${docIcon("doc").replace("docs-icon is-doc", "docs-icon is-chat")}</span><span><b>${esc3(c.name)}</b><small>群聊 · ${c.count} 人</small></span>${roleSelect(c.role, `data-share-chat="${c.id}"`, false)}${manage ? `<button class="icon-btn" data-share-unchat="${c.id}" aria-label="移除">×</button>` : ""}</div>`).join("")}
+    ${info.people.map((p) => `<div class="share-person">${av2(p)}<span><b>${esc4(p.name)}${p.id === S2.user.id ? "（我）" : ""}</b><small>${p.number ? "LinkMe 号 " + esc4(p.number) : ""}</small></span>${p.role === "owner" ? "<em>所有者</em>" : roleSelect(p.role, `data-share-user="${p.id}"`) + (manage || p.id === S2.user.id ? `<button class="icon-btn" data-share-remove="${p.id}" title="${p.id === S2.user.id ? "退出协作" : "移除"}" aria-label="移除">×</button>` : "")}</div>`).join("")}
+    ${info.chats.map((c) => `<div class="share-person"><span class="avatar">${docIcon("doc").replace("docs-icon is-doc", "docs-icon is-chat")}</span><span><b>${esc4(c.name)}</b><small>群聊 · ${c.count} 人</small></span>${roleSelect(c.role, `data-share-chat="${c.id}"`, false)}${manage ? `<button class="icon-btn" data-share-unchat="${c.id}" aria-label="移除">×</button>` : ""}</div>`).join("")}
    </div>
    <h5>链接分享</h5>
    <div class="share-row"><select id="share-link" ${manage ? "" : "disabled"}><option value="none" ${!info.linkRole ? "selected" : ""}>关闭：仅协作者可访问</option><option value="view" ${info.linkRole === "view" ? "selected" : ""}>获得链接的 LinkMe 用户可阅读</option><option value="edit" ${info.linkRole === "edit" ? "selected" : ""}>获得链接的 LinkMe 用户可编辑</option></select><button class="secondary" id="share-copy">复制链接</button></div>
    <label class="share-check"><input type="checkbox" id="share-export" ${info.viewerExport ? "checked" : ""} ${manage ? "" : "disabled"}> 允许“可阅读”的人导出和下载</label>
    <h5>发送到聊天</h5>
-   <div class="share-row"><select id="share-chat">${chats.map((c) => `<option value="${c.id}">${esc3(c.name)}${c.kind === "group" ? "（群）" : ""}</option>`).join("")}</select>${manage ? `<select id="share-grant"><option value="none">仅发送</option><option value="view" selected>并授予可阅读</option><option value="edit">并授予可编辑</option></select>` : ""}<button class="primary" id="share-send" ${chats.length ? "" : "disabled"}>发送</button></div>
+   <div class="share-row"><select id="share-chat">${chats.map((c) => `<option value="${c.id}">${esc4(c.name)}${c.kind === "group" ? "（群）" : ""}</option>`).join("")}</select>${manage ? `<select id="share-grant"><option value="none">仅发送</option><option value="view" selected>并授予可阅读</option><option value="edit">并授予可编辑</option></select>` : ""}<button class="primary" id="share-send" ${chats.length ? "" : "disabled"}>发送</button></div>
   </div>`, '<button class="secondary" data-action="close-modal">完成</button>');
       const root = document.querySelector(".modal .share");
       if (!root) return;
@@ -7516,16 +7559,19 @@
         const rm = e.target.closest("[data-share-remove]");
         if (rm) {
           const me = rm.dataset.shareRemove === S2.user.id;
-          if (!me || confirm("退出后你将无法再打开这篇文档，确定吗？")) run(async () => {
-            await api2(`/api/docs/${doc.id}/members/${rm.dataset.shareRemove}`, { method: "DELETE" });
-            if (me) {
-              closeModal2();
-              closeDoc();
-              drawHome();
-              loadList();
-              throw Object.assign(Error("已退出协作"), { quiet: true });
-            }
-          }, "已移除");
+          (async () => {
+            if (me && !await confirmDialog("退出后你将无法再打开这篇文档。", { title: "退出协作", ok: "退出", danger: true })) return;
+            run(async () => {
+              await api2(`/api/docs/${doc.id}/members/${rm.dataset.shareRemove}`, { method: "DELETE" });
+              if (me) {
+                closeModal2();
+                closeDoc();
+                drawHome();
+                loadList();
+                throw Object.assign(Error("已退出协作"), { quiet: true });
+              }
+            }, "已移除");
+          })();
           return;
         }
         const un = e.target.closest("[data-share-unchat]");
@@ -7561,7 +7607,7 @@ linkme-doc:${doc.id}`;
         const have = new Set(info.people.map((p) => p.id)), haveChats = new Set(info.chats.map((c) => c.id));
         const people = (S2.friends || []).filter((f) => !have.has(f.id) && ((f.name || "").toLowerCase().includes(q) || String(f.number || "").includes(q))).slice(0, 8);
         const groups = S2.conversations.filter((c) => c.kind === "group" && !haveChats.has(c.id) && c.name.toLowerCase().includes(q)).slice(0, 5);
-        out.innerHTML = [...people.map((p) => `<button data-share-add="user:${p.id}">${av2(p)}<span>${esc3(p.name)}</span><small>${p.number ? "LinkMe 号 " + esc3(p.number) : "好友"}</small></button>`), ...groups.map((g) => `<button data-share-add="chat:${g.id}"><span class="avatar">#</span><span>${esc3(g.name)}</span><small>群聊 · 成员都能访问</small></button>`)].join("") || '<p class="hint">没有匹配的好友或群聊</p>';
+        out.innerHTML = [...people.map((p) => `<button data-share-add="user:${p.id}">${av2(p)}<span>${esc4(p.name)}</span><small>${p.number ? "LinkMe 号 " + esc4(p.number) : "好友"}</small></button>`), ...groups.map((g) => `<button data-share-add="chat:${g.id}"><span class="avatar">#</span><span>${esc4(g.name)}</span><small>群聊 · 成员都能访问</small></button>`)].join("") || '<p class="hint">没有匹配的好友或群聊</p>';
       });
     }
     async function history() {
@@ -7574,7 +7620,7 @@ linkme-doc:${doc.id}`;
         toast2(e.message);
         return;
       }
-      modal2("历史版本", `<div class="doc-history"><div class="doc-history-list">${versions.length ? versions.map((v) => `<button data-version="${v.id}"><b>${new Date(v.created).toLocaleString("zh-CN", { hour12: false })}</b><small>${esc3(v.authorName || "")} 编辑前的内容 · ${esc3(v.title)}</small></button>`).join("") : '<p class="hint">编辑一段时间后会自动保存历史版本（每 5 分钟最多一个）。</p>'}</div><div class="doc-history-view"><p class="hint">选择左侧的版本查看内容</p></div></div>`, '<button class="secondary" data-action="close-modal">关闭</button>', true);
+      modal2("历史版本", `<div class="doc-history"><div class="doc-history-list">${versions.length ? versions.map((v) => `<button data-version="${v.id}"><b>${new Date(v.created).toLocaleString("zh-CN", { hour12: false })}</b><small>${esc4(v.authorName || "")} 编辑前的内容 · ${esc4(v.title)}</small></button>`).join("") : '<p class="hint">编辑一段时间后会自动保存历史版本（每 5 分钟最多一个）。</p>'}</div><div class="doc-history-view"><p class="hint">选择左侧的版本查看内容</p></div></div>`, '<button class="secondary" data-action="close-modal">关闭</button>', true);
       const box = document.querySelector(".doc-history");
       if (!box) return;
       box.addEventListener("click", async (e) => {
@@ -7585,14 +7631,14 @@ linkme-doc:${doc.id}`;
           view.innerHTML = '<p class="hint">正在加载…</p>';
           try {
             const v = await api2(`/api/docs/${doc.id}/versions/${b.dataset.version}`);
-            view.innerHTML = `<div class="doc-history-head"><b>${esc3(v.title)}</b>${RANK[doc.role] >= 2 ? `<button class="primary" data-restore="${b.dataset.version}">恢复此版本</button>` : ""}</div><div class="doc-history-body">${previewHTML(doc.kind, v.content)}</div>`;
+            view.innerHTML = `<div class="doc-history-head"><b>${esc4(v.title)}</b>${RANK[doc.role] >= 2 ? `<button class="primary" data-restore="${b.dataset.version}">恢复此版本</button>` : ""}</div><div class="doc-history-body">${previewHTML(doc.kind, v.content)}</div>`;
           } catch (err) {
-            view.innerHTML = `<p class="hint">${esc3(err.message)}</p>`;
+            view.innerHTML = `<p class="hint">${esc4(err.message)}</p>`;
           }
           return;
         }
         const r = e.target.closest("[data-restore]");
-        if (r && confirm("用这个版本替换当前内容？当前内容会先存为一个历史版本，可以再恢复回来。")) {
+        if (r && await confirmDialog("当前内容会先存为一个历史版本，可以再恢复回来。", { title: "恢复到这个版本", ok: "恢复" })) {
           try {
             await api2(`/api/docs/${doc.id}/versions/${r.dataset.restore}/restore`, { method: "POST", body: {} });
             closeModal2();
@@ -7630,7 +7676,7 @@ linkme-doc:${doc.id}`;
           }
           return s;
         };
-        return `<p class="hint">${esc3(p.name)}${content.sheets.length > 1 ? ` 等 ${content.sheets.length} 个工作表` : ""}</p><table class="doc-preview-table">${Array.from({ length: mr }, (_, r) => "<tr>" + Array.from({ length: mc }, (_2, c) => `<td>${esc3(p.cells[col(c + 1) + (r + 1)]?.v || "")}</td>`).join("") + "</tr>").join("")}</table>`;
+        return `<p class="hint">${esc4(p.name)}${content.sheets.length > 1 ? ` 等 ${content.sheets.length} 个工作表` : ""}</p><table class="doc-preview-table">${Array.from({ length: mr }, (_, r) => "<tr>" + Array.from({ length: mc }, (_2, c) => `<td>${esc4(p.cells[col(c + 1) + (r + 1)]?.v || "")}</td>`).join("") + "</tr>").join("")}</table>`;
       }
       let n = 0;
       return (content.blocks || []).map((b) => {
@@ -7652,11 +7698,11 @@ linkme-doc:${doc.id}`;
           case "quote":
             return `<blockquote>${t}</blockquote>`;
           case "code":
-            return `<pre>${esc3(b.text || "")}</pre>`;
+            return `<pre>${esc4(b.text || "")}</pre>`;
           case "divider":
             return "<hr>";
           case "table":
-            return `<table class="doc-preview-table">${(b.rows || []).map((r) => "<tr>" + r.map((c) => `<td>${esc3(c)}</td>`).join("") + "</tr>").join("")}</table>`;
+            return `<table class="doc-preview-table">${(b.rows || []).map((r) => "<tr>" + r.map((c) => `<td>${esc4(c)}</td>`).join("") + "</tr>").join("")}</table>`;
           default:
             return `<p>${t || "&nbsp;"}</p>`;
         }
@@ -7666,7 +7712,7 @@ linkme-doc:${doc.id}`;
       const id = current?.id;
       if (id) {
         closeDoc();
-        await open(id);
+        await open2(id);
       }
     }
     function more(anchor) {
@@ -7696,7 +7742,7 @@ linkme-doc:${doc.id}`;
           navigator.clipboard?.writeText(`[${doc.kind === "sheet" ? "表格" : "文档"}] ${doc.title}
 linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即可"), () => toast2("复制失败"));
         } else if (op === "delete") {
-          if (confirm(`删除“${doc.title}”？所有协作者都将无法再打开，且无法恢复。`)) {
+          if (await confirmDialog("所有协作者都将无法再打开，且无法恢复。", { title: `删除“${doc.title}”`, ok: "删除", danger: true })) {
             try {
               await api2("/api/docs/" + doc.id, { method: "DELETE" });
               closeDoc();
@@ -7750,7 +7796,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const doc = current, box = $2(".doc-ai .ai-scope");
       if (!box || !doc) return;
       if (doc.kind === "sheet") {
-        box.innerHTML = `范围：整个表格，当前选中 <b>${esc3(doc.editor.selection())}</b>`;
+        box.innerHTML = `范围：整个表格，当前选中 <b>${esc4(doc.editor.selection())}</b>`;
         return;
       }
       box.innerHTML = aiScope.length ? `范围：选中的 <b>${aiScope.length}</b> 段 <button data-ai-scope-clear>改为全文</button>` : "范围：全文（选中文字后点工具条上的 ✦ AI 可只处理选中部分）";
@@ -7778,7 +7824,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         drawAI();
         if (mode === "ask") panel.querySelector(".ai-ask textarea").value = "";
       } catch (e) {
-        out.innerHTML = `<p class="ai-error">${esc3(e.message)}</p>`;
+        out.innerHTML = `<p class="ai-error">${esc4(e.message)}</p>`;
       } finally {
         aiBusy = false;
         panel.querySelectorAll(".ai-quick button,.ai-ask button").forEach((b) => b.disabled = false);
@@ -7787,25 +7833,25 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     function editHTML(e) {
       const doc = current;
       let body = "";
-      if (e.op === "cell") body = `<div class="ai-cell"><code>${esc3(e.sheet || "")}!${esc3(e.ref || "")}</code>${e.original ? `<del>${esc3(e.original)}</del>` : ""}<ins>${esc3(e.v ?? "")}</ins></div>`;
+      if (e.op === "cell") body = `<div class="ai-cell"><code>${esc4(e.sheet || "")}!${esc4(e.ref || "")}</code>${e.original ? `<del>${esc4(e.original)}</del>` : ""}<ins>${esc4(e.v ?? "")}</ins></div>`;
       else if (e.op === "replace") {
         const cur = doc.editor.blocks().find((b) => b.id === e.id);
-        body = `${e.original ? `<del>${esc3(e.original)}</del>` : cur ? `<del>${esc3(plain(cur.text))}</del>` : ""}<ins>${toHTML(e.text || "")}</ins>`;
+        body = `${e.original ? `<del>${esc4(e.original)}</del>` : cur ? `<del>${esc4(plain(cur.text))}</del>` : ""}<ins>${toHTML(e.text || "")}</ins>`;
       } else if (e.op === "insert") body = `<div class="ai-new">${(e.blocks || []).map((b) => `<ins>${toHTML(b.text || "")}</ins>`).join("")}</div>`;
       else if (e.op === "delete") {
         const cur = doc.editor.blocks().find((b) => b.id === e.id);
-        body = `<del>${esc3(cur ? plain(cur.text) : "该段")}</del>`;
+        body = `<del>${esc4(cur ? plain(cur.text) : "该段")}</del>`;
       }
       const label = { replace: "修改", insert: "新增", delete: "删除", cell: "单元格" }[e.op] || e.op;
-      return `<div class="ai-edit${e.done ? " done" : ""}" data-edit="${e._i}"><div class="ai-edit-head"><span class="tag">${label}</span>${e.reason ? `<span>${esc3(e.reason)}</span>` : ""}</div>${body}${doc.aiCanApply ? `<div class="ai-edit-actions">${e.done ? `<span class="ok">${e.done === "applied" ? "已应用" : "已忽略"}</span>` : `<button class="primary" data-ai-apply="${e._i}">应用</button><button class="secondary" data-ai-skip="${e._i}">忽略</button>`}${e.op !== "cell" && e.id ? `<button class="link" data-ai-goto="${esc3(e.id)}">定位</button>` : ""}</div>` : ""}</div>`;
+      return `<div class="ai-edit${e.done ? " done" : ""}" data-edit="${e._i}"><div class="ai-edit-head"><span class="tag">${label}</span>${e.reason ? `<span>${esc4(e.reason)}</span>` : ""}</div>${body}${doc.aiCanApply ? `<div class="ai-edit-actions">${e.done ? `<span class="ok">${e.done === "applied" ? "已应用" : "已忽略"}</span>` : `<button class="primary" data-ai-apply="${e._i}">应用</button><button class="secondary" data-ai-skip="${e._i}">忽略</button>`}${e.op !== "cell" && e.id ? `<button class="link" data-ai-goto="${esc4(e.id)}">定位</button>` : ""}</div>` : ""}</div>`;
     }
     function drawAI() {
       const doc = current, out = $2(".doc-ai .ai-results");
       if (!out || !doc) return;
       const edits = doc.aiEdits || [];
-      const open2 = edits.filter((e) => !e.done);
+      const open3 = edits.filter((e) => !e.done);
       out.innerHTML = `${doc.aiReply ? `<div class="ai-reply">${replyHTML(doc.aiReply)}<div class="ai-reply-actions"><button class="link" data-ai-copy>复制</button>${doc.kind === "doc" && RANK[doc.role] >= 2 ? '<button class="link" data-ai-insert>插入到文档</button>' : ""}</div></div>` : ""}
-   ${edits.length ? `<div class="ai-edits-head"><b>${edits.length} 条修改建议</b>${doc.aiCanApply && open2.length > 1 ? '<button class="primary" data-ai-all>全部应用</button>' : ""}</div>${edits.map(editHTML).join("")}` : doc.aiReply ? "" : '<p class="hint">没有需要修改的地方。</p>'}
+   ${edits.length ? `<div class="ai-edits-head"><b>${edits.length} 条修改建议</b>${doc.aiCanApply && open3.length > 1 ? '<button class="primary" data-ai-all>全部应用</button>' : ""}</div>${edits.map(editHTML).join("")}` : doc.aiReply ? "" : '<p class="hint">没有需要修改的地方。</p>'}
    ${!doc.aiCanApply && edits.length ? '<p class="hint">你只有阅读权限，可以把建议告诉文档的编辑者。</p>' : ""}`;
     }
     function applyOne(e) {
@@ -7878,7 +7924,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const opener = e.target.closest("[data-open-doc]");
       if (opener) {
         e.preventDefault();
-        open(opener.dataset.openDoc);
+        open2(opener.dataset.openDoc);
         return;
       }
       const scopeBtn = e.target.closest("[data-docs-scope]");
@@ -7923,7 +7969,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && e.target.matches?.(".docs-row[data-open-doc]")) open(e.target.dataset.openDoc);
+      if (e.key === "Enter" && e.target.matches?.(".docs-row[data-open-doc]")) open2(e.target.dataset.openDoc);
     });
     window.addEventListener("beforeunload", () => {
       if (current) closeDoc();
@@ -7940,7 +7986,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         drawHome();
         loadList();
       },
-      open,
+      open: open2,
       leave() {
         closeDoc();
       },
@@ -7991,7 +8037,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         if (m.kind !== "text") return "";
         const x = DOC_MARK.exec(m.text || "");
         if (!x) return "";
-        return `<button class="file-card doc-card" data-open-doc="${x[3]}">${docIcon(x[1] === "表格" ? "sheet" : "doc")}<span><b>${esc3(x[2])}</b><small>LinkMe 云${x[1]} · 点击打开</small></span></button>`;
+        return `<button class="file-card doc-card" data-open-doc="${x[3]}">${docIcon(x[1] === "表格" ? "sheet" : "doc")}<span><b>${esc4(x[2])}</b><small>LinkMe 云${x[1]} · 点击打开</small></span></button>`;
       },
       preview(text) {
         const x = DOC_MARK.exec(text || "");
@@ -8012,7 +8058,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   var PREVIEW_TEXT = /\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|ini|conf|js|ts|go|py|java|kt|c|h|cpp|cs|rb|php|sh|sql|css|html?)$/i;
   var PREVIEW_MEDIA = /\.(png|jpe?g|gif|webp|bmp|mp4|webm|m4v|mov|mp3|wav|m4a|ogg)$/i;
   var AS_DOC = /\.(docx|xlsx|csv|md|markdown)$/i;
-  function createChatFeatures({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, renderMessages: renderMessages2, jumpMessage: jumpMessage2, messageMenu: messageMenu2, Received: Received2, fileURL: fileURL2, download: download2, Docs: Docs2, shortTime: shortTime2, Mentions: Mentions2, queueRefresh: queueRefresh2, showPresence: showPresence2 }) {
+  function createChatFeatures({ S: S2, api: api2, esc: esc4, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, renderMessages: renderMessages2, jumpMessage: jumpMessage2, messageMenu: messageMenu2, Received: Received2, fileURL: fileURL2, download: download2, Docs: Docs2, shortTime: shortTime2, Mentions: Mentions2, queueRefresh: queueRefresh2, showPresence: showPresence2 }) {
     const $2 = (s) => document.querySelector(s);
     const translations = /* @__PURE__ */ new Map(), pins = /* @__PURE__ */ new Map(), statuses = /* @__PURE__ */ new Map();
     let aiEnabled = false, summary = null, thread = null, urgentQueue = [], urgentShowing = null, beep = null, autoStatus = "", statusTimer = 0;
@@ -8062,18 +8108,18 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     function pollCard(m) {
       const spec = parse2(m.text), poll = m.poll || { counts: [], votes: {} }, mine = poll.votes?.[me()] || [], voters = Object.keys(poll.votes || {}).length, total = Math.max(1, poll.counts.reduce((a, b) => a + b, 0));
       const closed = !!spec.closed, voted = mine.length > 0;
-      return `<div class="poll-card" data-poll="${m.id}"><div class="card-kind">📊 投票 · ${spec.multi ? "多选" : "单选"}${closed ? " · 已结束" : ""}</div><h4>${esc3(spec.title || "")}</h4>
+      return `<div class="poll-card" data-poll="${m.id}"><div class="card-kind">📊 投票 · ${spec.multi ? "多选" : "单选"}${closed ? " · 已结束" : ""}</div><h4>${esc4(spec.title || "")}</h4>
    ${(spec.options || []).map((o, i) => {
         const n = poll.counts[i] || 0, pct = Math.round(n * 100 / total);
-        return `<label class="poll-option${mine.includes(i) ? " mine" : ""}"><input type="${spec.multi ? "checkbox" : "radio"}" name="poll-${m.id}" value="${i}" ${mine.includes(i) ? "checked" : ""} ${closed ? "disabled" : ""}><span class="poll-text">${esc3(o)}</span>${voted || closed ? `<span class="poll-count">${n} 票 · ${pct}%</span><i style="width:${pct}%"></i>` : ""}</label>`;
+        return `<label class="poll-option${mine.includes(i) ? " mine" : ""}"><input type="${spec.multi ? "checkbox" : "radio"}" name="poll-${m.id}" value="${i}" ${mine.includes(i) ? "checked" : ""} ${closed ? "disabled" : ""}><span class="poll-text">${esc4(o)}</span>${voted || closed ? `<span class="poll-count">${n} 票 · ${pct}%</span><i style="width:${pct}%"></i>` : ""}</label>`;
       }).join("")}
    <div class="card-foot"><span>${voters} 人已参与</span>${closed ? "" : `<button class="primary" data-cx="vote" data-mid="${m.id}">${voted ? "修改投票" : "投票"}</button>`}${voters ? `<button data-cx="poll-detail" data-mid="${m.id}">详情</button>` : ""}${m.sender === me() && !closed ? `<button data-cx="poll-close" data-mid="${m.id}">结束</button>` : ""}</div></div>`;
     }
     function chainCard(m) {
       const spec = parse2(m.text), list = m.chain || [], mine = list.find((e) => e.userId === me());
-      return `<div class="chain-card"><div class="card-kind">🐉 接龙</div><h4>${esc3(spec.title || "")}</h4>${spec.note ? `<p class="chain-note">${esc3(spec.note)}</p>` : ""}
-   ${list.length ? `<ol>${list.map((e) => `<li><b>${esc3(e.name)}</b>${e.text ? " " + esc3(e.text) : ""}</li>`).join("")}</ol>` : '<p class="chain-note">还没有人参与，来做第一个</p>'}
-   <div class="card-foot"><span>${list.length} 人已接龙</span><button class="primary" data-cx="chain-join" data-mid="${m.id}">${mine ? "修改" : "+ 参与接龙"}</button>${mine ? `<button data-cx="chain-leave" data-mid="${m.id}">退出</button>` : ""}</div></div>`;
+      return `<div class="chain-card"><div class="card-kind">🐉 接龙</div><h4>${esc4(spec.title || "")}</h4>${spec.note ? `<p class="chain-note">${esc4(spec.note)}</p>` : ""}
+   ${list.length ? `<ol>${list.map((e) => e.userId === me() && chainEditing === m.id ? `<li><b>${esc4(e.name)}</b> <input class="chain-input" data-chain-input="${m.id}" maxlength="100" value="${esc4(e.text)}" placeholder="补充说明，可留空"></li>` : `<li><b>${esc4(e.name)}</b>${e.text ? " " + esc4(e.text) : ""}</li>`).join("")}</ol>` : '<p class="chain-note">还没有人参与，来做第一个</p>'}
+   <div class="card-foot"><span>${list.length} 人已接龙</span>${chainEditing === m.id && mine ? `<button class="primary" data-cx="chain-save" data-mid="${m.id}">保存</button><button data-cx="chain-cancel" data-mid="${m.id}">取消</button>` : `<button class="primary" data-cx="chain-join" data-mid="${m.id}">${mine ? "修改" : "+ 参与接龙"}</button>${mine ? `<button data-cx="chain-leave" data-mid="${m.id}">退出</button>` : ""}`}</div></div>`;
     }
     function card(m) {
       if (m.recalled) return "";
@@ -8091,13 +8137,13 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (m.recalled) return "";
       let html = "";
       const t = translations.get(m.id);
-      if (t?.open) html += `<div class="translation">${t.loading ? '<span class="hint">正在翻译…</span>' : `<div>${esc3(t.text).replace(/\n/g, "<br>")}</div><small>译文 · Me <button data-cx="translate-hide" data-mid="${m.id}">收起</button></small>`}</div>`;
+      if (t?.open) html += `<div class="translation">${t.loading ? '<span class="hint">正在翻译…</span>' : `<div>${esc4(t.text).replace(/\n/g, "<br>")}</div><small>译文 · Me <button data-cx="translate-hide" data-mid="${m.id}">收起</button></small>`}</div>`;
       if (m.urgent) {
         const pending = m.urgent.targets.includes(me()) && !m.urgent.acked.includes(me());
         const n = m.urgent.targets.length, done = m.urgent.acked.length;
         html += `<div class="urgent-line"><span class="urgent-tag">❗ 加急</span>${m.sender === me() ? `<span>${done}/${n} 人已确认</span>` : pending ? `<button data-cx="urgent-ack" data-mid="${m.id}">知道了</button>` : "<span>已确认</span>"}</div>`;
       }
-      if (m.reactions?.length) html += `<div class="reactions">${m.reactions.map((r) => `<button class="reaction${r.users.includes(me()) ? " mine" : ""}" data-cx="react" data-mid="${m.id}" data-reaction="${esc3(r.emoji)}" title="${esc3(r.users.map(nameOf).join("、"))}">${esc3(r.emoji)}<span>${r.users.length}</span></button>`).join("")}<button class="reaction add" data-cx="react-pick" data-mid="${m.id}" title="添加表情回复">${icon2("emoji")}</button></div>`;
+      if (m.reactions?.length) html += `<div class="reactions">${m.reactions.map((r) => `<button class="reaction${r.users.includes(me()) ? " mine" : ""}" data-cx="react" data-mid="${m.id}" data-reaction="${esc4(r.emoji)}" title="${esc4(r.users.map(nameOf).join("、"))}">${esc4(r.emoji)}<span>${r.users.length}</span></button>`).join("")}<button class="reaction add" data-cx="react-pick" data-mid="${m.id}" title="添加表情回复">${icon2("emoji")}</button></div>`;
       if (m.thread?.count && !m.threadId) html += `<button class="thread-link" data-cx="thread" data-mid="${m.id}">${icon2("chat")}${m.thread.count} 条回复 · 最后回复 ${shortTime2(m.thread.last)}</button>`;
       return html;
     }
@@ -8116,7 +8162,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       document.querySelector(".reaction-picker")?.remove();
       const box = document.createElement("div");
       box.className = "reaction-picker";
-      box.innerHTML = REACTIONS.map((e) => `<button data-cx="react" data-mid="${mid}" data-reaction="${esc3(e)}">${esc3(e)}</button>`).join("");
+      box.innerHTML = REACTIONS.map((e) => `<button data-cx="react" data-mid="${mid}" data-reaction="${esc4(e)}">${esc4(e)}</button>`).join("");
       document.body.append(box);
       const r = anchor.getBoundingClientRect();
       box.style.left = Math.max(8, Math.min(r.left, innerWidth - box.offsetWidth - 8)) + "px";
@@ -8214,7 +8260,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       const p = list[0];
       box.className = "pinned-bar";
-      box.innerHTML = `<span class="pin-icon">${icon2("pin")}</span><button class="pinned-text" data-cx="pin-jump" data-mid="${p.id}"><b>${esc3(p.name)}：</b>${esc3(previewText(p))}</button>${list.length > 1 ? `<button class="pinned-more" data-cx="pins-open">${list.length} 条置顶</button>` : `<button class="pinned-more" data-cx="pins-open">管理</button>`}`;
+      box.innerHTML = `<span class="pin-icon">${icon2("pin")}</span><button class="pinned-text" data-cx="pin-jump" data-mid="${p.id}"><b>${esc4(p.name)}：</b>${esc4(previewText(p))}</button>${list.length > 1 ? `<button class="pinned-more" data-cx="pins-open">${list.length} 条置顶</button>` : `<button class="pinned-more" data-cx="pins-open">管理</button>`}`;
     }
     function previewText(m) {
       const p = preview2(m) || Docs2.preview(m.text);
@@ -8223,7 +8269,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function pinList() {
       const list = pins.get(S2.active) || [];
-      modal2("置顶消息", list.length ? `<div class="pin-list">${list.map((p) => `<div class="pin-item"><button data-cx="pin-jump" data-mid="${p.id}"><b>${esc3(p.name)}</b><span>${esc3(previewText(p))}</span><small>${esc3(p.pinnedByName || "")} 置顶于 ${shortTime2(p.pinnedAt)}</small></button><button class="secondary" data-cx="unpin" data-mid="${p.id}">取消置顶</button></div>`).join("")}</div>` : '<p class="hint">没有置顶消息</p>', '<button class="secondary" data-action="close-modal">关闭</button>');
+      modal2("置顶消息", list.length ? `<div class="pin-list">${list.map((p) => `<div class="pin-item"><button data-cx="pin-jump" data-mid="${p.id}"><b>${esc4(p.name)}</b><span>${esc4(previewText(p))}</span><small>${esc4(p.pinnedByName || "")} 置顶于 ${shortTime2(p.pinnedAt)}</small></button><button class="secondary" data-cx="unpin" data-mid="${p.id}">取消置顶</button></div>`).join("")}</div>` : '<p class="hint">没有置顶消息</p>', '<button class="secondary" data-action="close-modal">关闭</button>');
     }
     async function pin(mid, on) {
       try {
@@ -8237,7 +8283,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const c = S2.conversations.find((c2) => c2.id === m.conversationId);
       if (!c) return;
       if (c.kind === "direct") {
-        if (!confirm(`加急提醒 ${c.name}？对方会收到强提醒，直到点“知道了”。`)) return;
+        if (!await confirmDialog(`对方会收到弹窗和铃声提醒，直到点“知道了”。`, { title: `加急提醒 ${c.name}`, ok: "加急" })) return;
         send([]);
         return;
       }
@@ -8249,7 +8295,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         return;
       }
       const others = members.filter((u) => u.id !== me() && !u.ai);
-      modal2("加急提醒", `<p class="hint">被加急的成员会收到弹窗和铃声提醒，直到点“知道了”。</p><label class="urgent-all"><input type="checkbox" id="urgent-all" checked> 全部成员（${others.length} 人）</label><div class="urgent-people">${others.map((u) => `<label>${av2(u)}<span>${esc3(u.nickname || u.name)}</span><input type="checkbox" class="urgent-user" value="${u.id}" checked></label>`).join("")}</div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="urgent-send">加急</button>');
+      modal2("加急提醒", `<p class="hint">被加急的成员会收到弹窗和铃声提醒，直到点“知道了”。</p><label class="urgent-all"><input type="checkbox" id="urgent-all" checked> 全部成员（${others.length} 人）</label><div class="urgent-people">${others.map((u) => `<label>${av2(u)}<span>${esc4(u.nickname || u.name)}</span><input type="checkbox" class="urgent-user" value="${u.id}" checked></label>`).join("")}</div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="urgent-send">加急</button>');
       $2("#urgent-all").onchange = (e) => document.querySelectorAll(".urgent-user").forEach((b) => b.checked = e.target.checked);
       $2("#urgent-send").onclick = () => {
         const ids = [...document.querySelectorAll(".urgent-user:checked")].map((b) => b.value);
@@ -8293,7 +8339,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const { message: m, from } = urgentShowing = urgentQueue.shift();
       const layer = document.createElement("div");
       layer.className = "urgent-layer";
-      layer.innerHTML = `<div class="urgent-box" role="alertdialog" aria-label="加急消息"><div class="urgent-title">❗ 加急消息</div><div class="urgent-from">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<b>${esc3(from || m.name)}</b><small>${esc3((S2.conversations.find((c) => c.id === m.conversationId) || {}).name || "")}</small></div><div class="urgent-text">${esc3(previewText(m)).replace(/\n/g, "<br>")}</div><div class="urgent-actions"><button class="secondary" data-cx="urgent-open" data-mid="${m.id}" data-cid="${m.conversationId}">查看</button><button class="primary" data-cx="urgent-ack" data-mid="${m.id}">知道了</button></div></div>`;
+      layer.innerHTML = `<div class="urgent-box" role="alertdialog" aria-label="加急消息"><div class="urgent-title">❗ 加急消息</div><div class="urgent-from">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<b>${esc4(from || m.name)}</b><small>${esc4((S2.conversations.find((c) => c.id === m.conversationId) || {}).name || "")}</small></div><div class="urgent-text">${esc4(previewText(m)).replace(/\n/g, "<br>")}</div><div class="urgent-actions"><button class="secondary" data-cx="urgent-open" data-mid="${m.id}" data-cid="${m.conversationId}">查看</button><button class="primary" data-cx="urgent-ack" data-mid="${m.id}">知道了</button></div></div>`;
       document.body.append(layer);
       ring();
       const timer = setInterval(ring, 4e3);
@@ -8344,7 +8390,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (m.recalled) return '<i class="hint">消息已撤回</i>';
       if (m.kind === "image") return `<img src="${fileURL2(m.attachmentId)}" alt="" data-preview-image="${m.attachmentId}">`;
       const p = preview2(m) || Docs2.preview(m.text);
-      if (p || m.kind !== "text") return esc3(previewText(m));
+      if (p || m.kind !== "text") return esc4(previewText(m));
       return Mentions2.text(m);
     }
     function drawThread(scroll = false) {
@@ -8374,7 +8420,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           }
         });
       }
-      const body = panel.querySelector(".thread-body"), line = (m) => `<div class="thread-msg" data-message="${m.id}">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<div><div class="thread-meta"><b>${esc3(m.name)}</b><small>${shortTime2(m.created)}</small>${timeTag(m)}</div><div class="thread-text">${bubbleText(m)}</div>${extras({ ...m, thread: null })}</div></div>`;
+      const body = panel.querySelector(".thread-body"), line = (m) => `<div class="thread-msg" data-message="${m.id}">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<div><div class="thread-meta"><b>${esc4(m.name)}</b><small>${shortTime2(m.created)}</small>${timeTag(m)}</div><div class="thread-text">${bubbleText(m)}</div>${extras({ ...m, thread: null })}</div></div>`;
       body.innerHTML = line(thread.root) + `<div class="thread-sep">${thread.loading ? "正在加载…" : thread.replies.length + " 条回复"}</div>` + thread.replies.map(line).join("");
       if (scroll) body.scrollTop = body.scrollHeight;
     }
@@ -8446,21 +8492,34 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function pollDetail(m) {
       const spec = parse2(m.text), votes = m.poll?.votes || {};
-      modal2("投票详情：" + esc3(spec.title || ""), `<div class="poll-detail">${(spec.options || []).map((o, i) => {
+      modal2("投票详情：" + esc4(spec.title || ""), `<div class="poll-detail">${(spec.options || []).map((o, i) => {
         const who = Object.entries(votes).filter(([, v]) => v.includes(i)).map(([u]) => nameOf(u));
-        return `<div><b>${esc3(o)}</b> · ${who.length} 票<p>${who.length ? esc3(who.join("、")) : '<span class="hint">暂无</span>'}</p></div>`;
+        return `<div><b>${esc4(o)}</b> · ${who.length} 票<p>${who.length ? esc4(who.join("、")) : '<span class="hint">暂无</span>'}</p></div>`;
       }).join("")}</div>`, '<button class="secondary" data-action="close-modal">关闭</button>');
     }
-    async function joinChain(m) {
-      const mine = (m.chain || []).find((e) => e.userId === me());
-      const text = prompt("接龙内容（可留空，只写名字）", mine?.text || "");
-      if (text === null) return;
+    let chainEditing = "";
+    async function saveChain(mid, text) {
       try {
-        replace(await api2(`/api/messages/${m.id}/chain`, { method: "POST", body: { text: text.trim() || "✓" } }));
+        replace(await api2(`/api/messages/${mid}/chain`, { method: "POST", body: { text } }));
+        chainEditing = "";
         rerender();
       } catch (e) {
         toast2(e.message);
       }
+    }
+    async function joinChain(m) {
+      const mine = (m.chain || []).find((e) => e.userId === me());
+      if (!mine) {
+        await saveChain(m.id, "");
+        return;
+      }
+      chainEditing = m.id;
+      rerender();
+      setTimeout(() => {
+        const i = document.querySelector(`[data-chain-input="${m.id}"]`);
+        i?.focus();
+        i?.select();
+      }, 0);
     }
     async function translate(m) {
       const cjk = (m.text.match(/[一-鿿]/g) || []).length, lang = cjk > m.text.length * 0.3 ? "en" : "zh";
@@ -8500,7 +8559,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         $2("#unread-summary") && ($2("#unread-summary").innerHTML = "");
       } catch (e) {
         const body = document.querySelector(".summary-body");
-        if (body) body.innerHTML = `<p class="ai-error">${esc3(e.message)}</p>`;
+        if (body) body.innerHTML = `<p class="ai-error">${esc4(e.message)}</p>`;
       }
     }
     function schedule() {
@@ -8514,7 +8573,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       d.setMinutes(0, 0, 0);
       const pad3 = (n) => String(n).padStart(2, "0");
       const local = `${d.getFullYear()}-${pad3(d.getMonth() + 1)}-${pad3(d.getDate())}T${pad3(d.getHours())}:${pad3(d.getMinutes())}`;
-      modal2("定时发送", `<div class="poll-form"><p class="schedule-preview">${esc3(text).replace(/\n/g, "<br>")}</p><label>发送时间<input type="datetime-local" id="schedule-at" value="${local}"></label><label>重复<select id="schedule-repeat"><option value="once">不重复</option><option value="daily">每天</option><option value="weekdays">工作日</option></select></label></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="schedule-ok">定时发送</button>');
+      modal2("定时发送", `<div class="poll-form"><p class="schedule-preview">${esc4(text).replace(/\n/g, "<br>")}</p><label>发送时间<input type="datetime-local" id="schedule-at" value="${local}"></label><label>重复<select id="schedule-repeat"><option value="once">不重复</option><option value="daily">每天</option><option value="weekdays">工作日</option></select></label></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="schedule-ok">定时发送</button>');
       $2("#schedule-ok").onclick = async () => {
         const at = new Date($2("#schedule-at").value).getTime();
         if (!at || at < Date.now() - 6e4) {
@@ -8540,13 +8599,13 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (pdf && window.WeLinkAndroid) return false;
       const url = fileURL2(id);
       let body;
-      if (pdf) body = `<iframe class="file-frame" src="${url}?inline=1" title="${esc3(name)}"></iframe>`;
-      else if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(name)) body = `<img class="file-image" src="${url}" alt="${esc3(name)}">`;
+      if (pdf) body = `<iframe class="file-frame" src="${url}?inline=1" title="${esc4(name)}"></iframe>`;
+      else if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(name)) body = `<img class="file-image" src="${url}" alt="${esc4(name)}">`;
       else if (/\.(mp3|wav|m4a|ogg)$/i.test(name)) body = `<audio controls src="${url}"></audio>`;
       else if (media) body = `<video class="file-video" controls src="${url}"></video>`;
       else if (text) body = '<pre class="file-text">正在加载…</pre>';
-      else body = `<div class="file-doc"><p>${esc3(name)}</p><p class="hint">可以在 LinkMe 云文档中打开，多人一起在线编辑。</p></div>`;
-      modal2(esc3(name), `<div class="file-preview">${body}</div>`, `${asDoc ? '<button class="secondary" data-cx="file-doc" data-file="' + id + '">在云文档中打开</button>' : ""}<button class="primary" data-cx="file-download" data-file="${id}" data-name="${esc3(name)}">下载</button>`, true);
+      else body = `<div class="file-doc"><p>${esc4(name)}</p><p class="hint">可以在 LinkMe 云文档中打开，多人一起在线编辑。</p></div>`;
+      modal2(esc4(name), `<div class="file-preview">${body}</div>`, `${asDoc ? '<button class="secondary" data-cx="file-doc" data-file="' + id + '">在云文档中打开</button>' : ""}<button class="primary" data-cx="file-download" data-file="${id}" data-name="${esc4(name)}">下载</button>`, true);
       if (text) fetch(url).then((r) => {
         if (!r.ok) throw Error("无法读取文件");
         return r.text();
@@ -8608,7 +8667,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function statusMenu() {
       const st = S2.myStatus || {};
-      modal2("设置状态", `<div class="status-options">${STATUS_OPTIONS.map(([k, l]) => `<label><input type="radio" name="my-status" value="${k}" ${(st.manual || "") === k ? "checked" : ""}> ${l}</label>`).join("")}<label><input type="radio" name="my-status" value="custom" ${st.manual === "custom" ? "checked" : ""}> 自定义 <input id="status-text" maxlength="30" placeholder="例如：出差中" value="${esc3(st.manual === "custom" ? st.text || "" : "")}"></label></div><label class="status-until">持续<select id="status-until"><option value="0">直到我清除</option><option value="3600000">1 小时</option><option value="14400000">4 小时</option><option value="today">今天</option></select></label><p class="hint">会议、通话和远程协助时会自动显示“会议中”等状态。“请勿打扰”时不再弹出普通消息提醒，加急消息除外。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="status-save">保存</button>');
+      modal2("设置状态", `<div class="status-options">${STATUS_OPTIONS.map(([k, l]) => `<label><input type="radio" name="my-status" value="${k}" ${(st.manual || "") === k ? "checked" : ""}> ${l}</label>`).join("")}<label><input type="radio" name="my-status" value="custom" ${st.manual === "custom" ? "checked" : ""}> 自定义 <input id="status-text" maxlength="30" placeholder="例如：出差中" value="${esc4(st.manual === "custom" ? st.text || "" : "")}"></label></div><label class="status-until">持续<select id="status-until"><option value="0">直到我清除</option><option value="3600000">1 小时</option><option value="14400000">4 小时</option><option value="today">今天</option></select></label><p class="hint">会议、通话和远程协助时会自动显示“会议中”等状态。“请勿打扰”时不再弹出普通消息提醒，加急消息除外。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="status-save">保存</button>');
       $2("#status-text").onfocus = () => {
         document.querySelector("input[name=my-status][value=custom]").checked = true;
       };
@@ -8714,7 +8773,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           if (m) pollDetail(m);
           break;
         case "poll-close":
-          if (confirm("结束后不能再投票，确定吗？")) try {
+          if (await confirmDialog("结束后不能再投票。", { title: "结束投票", ok: "结束" })) try {
             replace(await api2(`/api/messages/${mid}/close`, { method: "POST", body: {} }));
             rerender();
           } catch (err) {
@@ -8726,11 +8785,20 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           break;
         case "chain-leave":
           try {
-            replace(await api2(`/api/messages/${mid}/chain`, { method: "POST", body: { text: "" } }));
+            replace(await api2(`/api/messages/${mid}/chain`, { method: "POST", body: { leave: true } }));
             rerender();
           } catch (err) {
             toast2(err.message);
           }
+          break;
+        case "chain-save": {
+          const i = document.querySelector(`[data-chain-input="${mid}"]`);
+          if (i) saveChain(mid, i.value.trim());
+          break;
+        }
+        case "chain-cancel":
+          chainEditing = "";
+          rerender();
           break;
         case "translate":
           if (m) translate(m);
@@ -8779,6 +8847,17 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (e.key === "Escape" && S2.editing && e.target.id === "composer") {
         e.preventDefault();
         cancelEdit();
+      }
+      const ci = e.target.closest?.("[data-chain-input]");
+      if (ci && !e.isComposing) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          saveChain(ci.dataset.chainInput, ci.value.trim());
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          chainEditing = "";
+          rerender();
+        }
       }
     });
     return {
@@ -8865,8 +8944,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           return true;
         }
         if (type === "meeting-minutes") {
-          toast2("会议纪要已生成：" + d.title);
-          if (confirm("会议纪要“" + d.title + "”已生成，现在打开吗？")) Docs2.open(d.docId);
+          toast2("会议纪要已生成，可在云文档中查看：" + d.title);
           return true;
         }
         if (type === "message" && d.threadId) {
@@ -8966,12 +9044,12 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     const label = day === today ? "今天" : day === today + DAY2 ? "明天" : day === today - DAY2 ? "昨天" : `${d.getMonth() + 1}月${d.getDate()}日`;
     return label + " " + hm(t);
   }
-  function createWork({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, renderSidebar: renderSidebar2, openMessage: openMessage2, preview: preview2, meetingButton: meetingButton2 }) {
+  function createWork({ S: S2, api: api2, esc: esc4, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, renderSidebar: renderSidebar2, openMessage: openMessage2, preview: preview2, meetingButton: meetingButton2 }) {
     const $2 = (s) => document.querySelector(s);
     let view = "tasks", taskScope = "mine", tasks = null, events = null, flags = null, month = startOfDay(Date.now()), selected = startOfDay(Date.now());
     const flagged = /* @__PURE__ */ new Set();
     const me = () => S2.user?.id;
-    const peopleHTML = (list) => list.slice(0, 4).map((p) => `<span class="mini-av" title="${esc3(p.name)}">${av2(p)}</span>`).join("") + (list.length > 4 ? `<span class="mini-more">+${list.length - 4}</span>` : "");
+    const peopleHTML = (list) => list.slice(0, 4).map((p) => `<span class="mini-av" title="${esc4(p.name)}">${av2(p)}</span>`).join("") + (list.length > 4 ? `<span class="mini-more">+${list.length - 4}</span>` : "");
     async function loadTasks() {
       try {
         tasks = await api2("/api/tasks?scope=" + taskScope);
@@ -9028,8 +9106,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function taskRow(t) {
       const overdue = t.due && !t.done && t.due < Date.now(), soon = t.due && !t.done && !overdue && t.due - Date.now() < DAY2;
-      const from = t.creator.id !== me() ? `${esc3(t.creator.name)} 分配` : t.assignees.length && !(t.assignees.length === 1 && t.assignees[0].id === me()) ? "我分配给 " + esc3(t.assignees.map((a) => a.name).join("、")) : "";
-      return `<div class="task-row${t.done ? " done" : ""}" data-task="${t.id}"><input type="checkbox" class="task-check" data-task-done="${t.id}" ${t.done ? "checked" : ""} aria-label="完成"><div class="task-main"><b>${esc3(t.title)}</b><small>${t.due ? `<span class="${overdue ? "overdue" : soon ? "soon" : ""}">${overdue ? "已逾期 · " : ""}截止 ${whenText(t.due)}</span>` : "无截止时间"}${from ? " · " + from : ""}${t.messageId ? " · 来自聊天" : ""}</small></div><span class="task-people">${peopleHTML(t.assignees)}</span></div>`;
+      const from = t.creator.id !== me() ? `${esc4(t.creator.name)} 分配` : t.assignees.length && !(t.assignees.length === 1 && t.assignees[0].id === me()) ? "我分配给 " + esc4(t.assignees.map((a) => a.name).join("、")) : "";
+      return `<div class="task-row${t.done ? " done" : ""}" data-task="${t.id}"><input type="checkbox" class="task-check" data-task-done="${t.id}" ${t.done ? "checked" : ""} aria-label="完成"><div class="task-main"><b>${esc4(t.title)}</b><small>${t.due ? `<span class="${overdue ? "overdue" : soon ? "soon" : ""}">${overdue ? "已逾期 · " : ""}截止 ${whenText(t.due)}</span>` : "无截止时间"}${from ? " · " + from : ""}${t.messageId ? " · 来自聊天" : ""}</small></div><span class="task-people">${peopleHTML(t.assignees)}</span></div>`;
     }
     function quickTask(text) {
       const due = parseWhen(text);
@@ -9066,16 +9144,16 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function eventRow(e) {
       const mine = e.creator.id === me(), att = e.attendees.find((a) => a.id === me()), resp = { accept: "已接受", decline: "已拒绝", tentative: "待定", "": "待回复" }[att?.response ?? ""];
-      return `<button class="event-row${att?.response === "decline" ? " declined" : ""}" data-event="${e.id}"><span class="event-time">${e.allDay ? "全天" : hm(e.start) + "–" + hm(e.end)}</span><span class="event-main"><b>${esc3(e.title)}</b><small>${startOfDay(e.start) !== startOfDay(Date.now()) ? whenText(e.start).split(" ")[0] + " · " : ""}${e.location ? esc3(e.location) + " · " : ""}${e.meeting ? "线上会议 · " : ""}${mine ? "我组织" : esc3(e.creator.name) + " 邀请 · " + resp}</small></span></button>`;
+      return `<button class="event-row${att?.response === "decline" ? " declined" : ""}" data-event="${e.id}"><span class="event-time">${e.allDay ? "全天" : hm(e.start) + "–" + hm(e.end)}</span><span class="event-main"><b>${esc4(e.title)}</b><small>${startOfDay(e.start) !== startOfDay(Date.now()) ? whenText(e.start).split(" ")[0] + " · " : ""}${e.location ? esc4(e.location) + " · " : ""}${e.meeting ? "线上会议 · " : ""}${mine ? "我组织" : esc4(e.creator.name) + " 邀请 · " + resp}</small></span></button>`;
     }
     function flagsHTML() {
       if (flags === null) return '<p class="hint">正在加载…</p>';
       if (!flags.length) return '<div class="docs-empty"><b>没有标记的消息</b><p>在聊天里右键消息选“标记”，稍后在这里集中处理。</p></div>';
-      return `<div class="flag-list">${flags.map((m) => `<div class="flag-row">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<div class="flag-main"><small>${esc3(m.conversationName)} · ${esc3(m.name)} · ${whenText(m.created)}</small><p>${esc3(preview2(m))}</p></div><div class="flag-actions"><button class="secondary" data-flag-open="${m.id}" data-cid="${m.conversationId}">查看</button><button class="secondary" data-flag-task="${m.id}">转为待办</button><button class="secondary" data-flag-done="${m.id}">完成</button></div></div>`).join("")}</div>`;
+      return `<div class="flag-list">${flags.map((m) => `<div class="flag-row">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<div class="flag-main"><small>${esc4(m.conversationName)} · ${esc4(m.name)} · ${whenText(m.created)}</small><p>${esc4(preview2(m))}</p></div><div class="flag-actions"><button class="secondary" data-flag-open="${m.id}" data-cid="${m.conversationId}">查看</button><button class="secondary" data-flag-task="${m.id}">转为待办</button><button class="secondary" data-flag-done="${m.id}">完成</button></div></div>`).join("")}</div>`;
     }
     function peoplePicker(selectedIds, id = "people") {
       const friends = (S2.friends || []).filter((f) => !f.ai);
-      return `<div class="people-picker" id="${id}"><input class="people-filter" placeholder="搜索好友"><div class="people-list">${friends.map((f) => `<label data-name="${esc3((f.remark || "") + f.name + (f.number || ""))}">${av2(f)}<span>${esc3(f.remark || f.name)}</span><input type="checkbox" value="${f.id}" ${selectedIds.includes(f.id) ? "checked" : ""}></label>`).join("") || '<p class="hint">还没有好友</p>'}</div></div>`;
+      return `<div class="people-picker" id="${id}"><input class="people-filter" placeholder="搜索好友"><div class="people-list">${friends.map((f) => `<label data-name="${esc4((f.remark || "") + f.name + (f.number || ""))}">${av2(f)}<span>${esc4(f.remark || f.name)}</span><input type="checkbox" value="${f.id}" ${selectedIds.includes(f.id) ? "checked" : ""}></label>`).join("") || '<p class="hint">还没有好友</p>'}</div></div>`;
     }
     function bindPicker(id = "people") {
       const box = document.getElementById(id);
@@ -9087,7 +9165,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     const picked = (id = "people") => [...document.querySelectorAll(`#${id} input[type=checkbox]:checked`)].map((i) => i.value);
     function newTask(prefill = {}) {
-      modal2("新建待办", `<div class="poll-form"><input id="task-title" maxlength="200" placeholder="要做什么" value="${esc3(prefill.title || "")}"><label>截止时间<input type="datetime-local" id="task-due" value="${prefill.due ? localInput(prefill.due) : ""}"></label><label>负责人（不选就是自己）</label>${peoplePicker(prefill.assignees || [])}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明（可选）">${esc3(prefill.note || "")}</textarea></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="task-save">创建</button>');
+      modal2("新建待办", `<div class="poll-form"><input id="task-title" maxlength="200" placeholder="要做什么" value="${esc4(prefill.title || "")}"><label>截止时间<input type="datetime-local" id="task-due" value="${prefill.due ? localInput(prefill.due) : ""}"></label><label>负责人（不选就是自己）</label>${peoplePicker(prefill.assignees || [])}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明（可选）">${esc4(prefill.note || "")}</textarea></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="task-save">创建</button>');
       bindPicker();
       $2("#task-title").focus();
       $2("#task-save").onclick = async () => {
@@ -9118,7 +9196,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const mine = t.creator.id === me();
       modal2(
         mine ? "编辑待办" : "待办详情",
-        `<div class="poll-form">${mine ? `<input id="task-title" maxlength="200" value="${esc3(t.title)}"><label>截止时间<input type="datetime-local" id="task-due" value="${t.due ? localInput(t.due) : ""}"></label><label>负责人</label>${peoplePicker(t.assignees.map((a) => a.id))}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明">${esc3(t.note)}</textarea>` : `<h3>${esc3(t.title)}</h3><p class="hint">${esc3(t.creator.name)} 分配 · ${t.due ? "截止 " + whenText(t.due) : "无截止时间"}</p>${t.note ? `<p>${esc3(t.note).replace(/\n/g, "<br>")}</p>` : ""}<p>负责人：${esc3(t.assignees.map((a) => a.name).join("、") || "—")}</p>`}${t.messageId ? `<button class="link" data-task-message="${t.messageId}" data-cid="${t.conversationId}">查看原消息</button>` : ""}</div>`,
+        `<div class="poll-form">${mine ? `<input id="task-title" maxlength="200" value="${esc4(t.title)}"><label>截止时间<input type="datetime-local" id="task-due" value="${t.due ? localInput(t.due) : ""}"></label><label>负责人</label>${peoplePicker(t.assignees.map((a) => a.id))}<textarea id="task-note" rows="3" maxlength="2000" placeholder="说明">${esc4(t.note)}</textarea>` : `<h3>${esc4(t.title)}</h3><p class="hint">${esc4(t.creator.name)} 分配 · ${t.due ? "截止 " + whenText(t.due) : "无截止时间"}</p>${t.note ? `<p>${esc4(t.note).replace(/\n/g, "<br>")}</p>` : ""}<p>负责人：${esc4(t.assignees.map((a) => a.name).join("、") || "—")}</p>`}${t.messageId ? `<button class="link" data-task-message="${t.messageId}" data-cid="${t.conversationId}">查看原消息</button>` : ""}</div>`,
         `${mine ? '<button class="secondary danger" id="task-delete">删除</button>' : ""}<button class="secondary" id="task-toggle">${t.done ? "标为未完成" : "完成"}</button>${mine ? '<button class="primary" id="task-update">保存</button>' : ""}`
       );
       if (mine) {
@@ -9133,7 +9211,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           }
         };
         $2("#task-delete").onclick = async () => {
-          if (!confirm("删除这个待办？")) return;
+          if (!await confirmDialog("删除后无法恢复。", { title: "删除待办", ok: "删除", danger: true })) return;
           try {
             await api2("/api/tasks/" + id, { method: "DELETE" });
             closeModal2();
@@ -9176,7 +9254,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       };
     }
     function eventForm(e) {
-      return `<div class="poll-form"><input id="event-title" maxlength="200" placeholder="日程主题" value="${esc3(e.title)}"><div class="form-row"><label>开始<input type="datetime-local" id="event-start" value="${localInput(e.start)}"></label><label>结束<input type="datetime-local" id="event-end" value="${localInput(e.end)}"></label></div><div class="form-row"><label>地点<input id="event-location" maxlength="200" value="${esc3(e.location)}" placeholder="会议室或地址"></label><label>提醒<select id="event-remind">${[[0, "不提醒"], [5, "提前 5 分钟"], [15, "提前 15 分钟"], [30, "提前 30 分钟"], [60, "提前 1 小时"], [1440, "提前 1 天"]].map(([v, l]) => `<option value="${v}" ${e.remind === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div><label class="check-row"><input type="checkbox" id="event-meeting" ${e.meeting ? "checked" : ""}> 线上会议（到时一键发起）</label><label>参与人</label>${peoplePicker(e.attendees.map((a) => a.id), "event-people")}<textarea id="event-note" rows="2" maxlength="2000" placeholder="说明（可选）">${esc3(e.note)}</textarea></div>`;
+      return `<div class="poll-form"><input id="event-title" maxlength="200" placeholder="日程主题" value="${esc4(e.title)}"><div class="form-row"><label>开始<input type="datetime-local" id="event-start" value="${localInput(e.start)}"></label><label>结束<input type="datetime-local" id="event-end" value="${localInput(e.end)}"></label></div><div class="form-row"><label>地点<input id="event-location" maxlength="200" value="${esc4(e.location)}" placeholder="会议室或地址"></label><label>提醒<select id="event-remind">${[[0, "不提醒"], [5, "提前 5 分钟"], [15, "提前 15 分钟"], [30, "提前 30 分钟"], [60, "提前 1 小时"], [1440, "提前 1 天"]].map(([v, l]) => `<option value="${v}" ${e.remind === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div><label class="check-row"><input type="checkbox" id="event-meeting" ${e.meeting ? "checked" : ""}> 线上会议（到时一键发起）</label><label>参与人</label>${peoplePicker(e.attendees.map((a) => a.id), "event-people")}<textarea id="event-note" rows="2" maxlength="2000" placeholder="说明（可选）">${esc4(e.note)}</textarea></div>`;
     }
     const eventValues = () => ({ title: $2("#event-title").value, start: new Date($2("#event-start").value).getTime(), end: new Date($2("#event-end").value).getTime(), location: $2("#event-location").value, note: $2("#event-note").value, meeting: $2("#event-meeting").checked, remind: +$2("#event-remind").value, attendees: picked("event-people") });
     async function openEvent(id) {
@@ -9195,7 +9273,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const live = e.meeting && Date.now() > e.start - 15 * 6e4 && Date.now() < e.end;
       modal2(
         mine ? "编辑日程" : "日程详情",
-        mine ? eventForm(e) : `<div class="event-detail"><h3>${esc3(e.title)}</h3><p>${e.allDay ? "全天" : whenText(e.start) + " – " + hm(e.end)}</p>${e.location ? `<p>地点：${esc3(e.location)}</p>` : ""}${e.meeting ? "<p>线上会议</p>" : ""}<p>组织者：${esc3(e.creator.name)}</p>${e.note ? `<p>${esc3(e.note).replace(/\n/g, "<br>")}</p>` : ""}</div><div class="event-people"><b>参与人</b>${e.attendees.map((a) => `<span>${av2(a)}${esc3(a.name)}<small>${{ accept: "接受", decline: "拒绝", tentative: "待定", "": "未回复" }[a.response]}</small></span>`).join("") || '<span class="hint">只有组织者</span>'}</div>`,
+        mine ? eventForm(e) : `<div class="event-detail"><h3>${esc4(e.title)}</h3><p>${e.allDay ? "全天" : whenText(e.start) + " – " + hm(e.end)}</p>${e.location ? `<p>地点：${esc4(e.location)}</p>` : ""}${e.meeting ? "<p>线上会议</p>" : ""}<p>组织者：${esc4(e.creator.name)}</p>${e.note ? `<p>${esc4(e.note).replace(/\n/g, "<br>")}</p>` : ""}</div><div class="event-people"><b>参与人</b>${e.attendees.map((a) => `<span>${av2(a)}${esc4(a.name)}<small>${{ accept: "接受", decline: "拒绝", tentative: "待定", "": "未回复" }[a.response]}</small></span>`).join("") || '<span class="hint">只有组织者</span>'}</div>`,
         (mine ? '<button class="secondary danger" id="event-delete">取消日程</button>' : att ? ["accept", "tentative", "decline"].map((r) => `<button class="${att.response === r ? "primary" : "secondary"}" data-event-response="${r}">${{ accept: "接受", tentative: "待定", decline: "拒绝" }[r]}</button>`).join("") : "") + (e.meeting ? `<button class="${live ? "primary" : "secondary"}" id="event-meet">${live ? "发起 / 加入会议" : "发起会议"}</button>` : "") + (mine ? '<button class="primary" id="event-update">保存</button>' : "")
       );
       if (mine) {
@@ -9210,7 +9288,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           }
         };
         $2("#event-delete").onclick = async () => {
-          if (!confirm("取消这个日程？参与人会收到通知。")) return;
+          if (!await confirmDialog("参与人会收到通知。", { title: "取消日程", ok: "取消日程", cancel: "不取消", danger: true })) return;
           try {
             await api2("/api/events/" + id, { method: "DELETE" });
             closeModal2();
@@ -9453,17 +9531,17 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/global-search.js
-  function createGlobalSearch({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, openMessage: openMessage2, openChat: openChat2, startChat: startChat2, Docs: Docs2, preview: preview2, whenText: whenText2 }) {
+  function createGlobalSearch({ S: S2, api: api2, esc: esc4, av: av2, icon: icon2, modal: modal2, closeModal: closeModal2, toast: toast2, openMessage: openMessage2, openChat: openChat2, startChat: startChat2, Docs: Docs2, preview: preview2, whenText: whenText2 }) {
     const $2 = (s) => document.querySelector(s);
     let ticket = 0, timer = 0;
     const mark = (text, q) => {
-      const t = esc3(text);
+      const t = esc4(text);
       if (!q) return t;
-      const i = t.toLowerCase().indexOf(esc3(q).toLowerCase());
-      return i < 0 ? t : t.slice(0, i) + "<mark>" + t.slice(i, i + esc3(q).length) + "</mark>" + t.slice(i + esc3(q).length);
+      const i = t.toLowerCase().indexOf(esc4(q).toLowerCase());
+      return i < 0 ? t : t.slice(0, i) + "<mark>" + t.slice(i, i + esc4(q).length) + "</mark>" + t.slice(i + esc4(q).length);
     };
-    function open(query = "") {
-      modal2("搜索", `<div class="global-search"><label class="docs-search">${icon2("search")}<input id="global-q" placeholder="搜索联系人、群聊、聊天记录、文档" maxlength="100" value="${esc3(query)}" autocomplete="off"></label><div id="global-results" class="global-results"><p class="hint">输入关键词开始搜索 · Ctrl + K 随时打开</p></div></div>`, '<button class="secondary" data-action="close-modal">关闭</button>', true);
+    function open2(query = "") {
+      modal2("搜索", `<div class="global-search"><label class="docs-search">${icon2("search")}<input id="global-q" placeholder="搜索联系人、群聊、聊天记录、文档" maxlength="100" value="${esc4(query)}" autocomplete="off"></label><div id="global-results" class="global-results"><p class="hint">输入关键词开始搜索 · Ctrl + K 随时打开</p></div></div>`, '<button class="secondary" data-action="close-modal">关闭</button>', true);
       const input = $2("#global-q");
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
@@ -9486,12 +9564,12 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       try {
         r = await api2("/api/search?q=" + encodeURIComponent(q));
       } catch (e) {
-        if (t === ticket) box.innerHTML = `<p class="hint">${esc3(e.message)}</p>`;
+        if (t === ticket) box.innerHTML = `<p class="hint">${esc4(e.message)}</p>`;
         return;
       }
       if (t !== ticket || !$2("#global-results")) return;
       const section = (title, items) => items.length ? `<h5>${title}</h5>${items.join("")}` : "";
-      const html = section("联系人", r.contacts.map((c) => `<button class="search-hit" data-hit-user="${c.id}" data-cid="${c.conversationId || ""}">${av2(c)}<span><b>${mark(c.name, q)}</b><small>LinkMe 号 ${esc3(c.number)}</small></span></button>`)) + section("群聊", r.chats.map((c) => `<button class="search-hit" data-hit-chat="${c.id}"><span class="avatar">${icon2("contacts")}</span><span><b>${mark(c.name, q)}</b><small>${c.count} 人</small></span></button>`)) + section("聊天记录", r.messages.map((m) => `<button class="search-hit" data-hit-message="${m.id}" data-cid="${m.conversationId}">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<span><b>${esc3(m.conversationName)} · ${esc3(m.name)}</b><small>${mark(preview2(m), q)} · ${whenText2(m.created)}</small></span></button>`)) + section("云文档", r.docs.map((d) => `<button class="search-hit" data-hit-doc="${d.id}"><span class="docs-icon ${d.kind === "sheet" ? "is-sheet" : "is-doc"}">${icon2("doc")}</span><span><b>${mark(d.title, q)}</b><small>${esc3(d.ownerName)} · ${whenText2(d.updated)}</small></span></button>`));
+      const html = section("联系人", r.contacts.map((c) => `<button class="search-hit" data-hit-user="${c.id}" data-cid="${c.conversationId || ""}">${av2(c)}<span><b>${mark(c.name, q)}</b><small>LinkMe 号 ${esc4(c.number)}</small></span></button>`)) + section("群聊", r.chats.map((c) => `<button class="search-hit" data-hit-chat="${c.id}"><span class="avatar">${icon2("contacts")}</span><span><b>${mark(c.name, q)}</b><small>${c.count} 人</small></span></button>`)) + section("聊天记录", r.messages.map((m) => `<button class="search-hit" data-hit-message="${m.id}" data-cid="${m.conversationId}">${av2({ id: m.sender, name: m.name, avatar: m.avatar })}<span><b>${esc4(m.conversationName)} · ${esc4(m.name)}</b><small>${mark(preview2(m), q)} · ${whenText2(m.created)}</small></span></button>`)) + section("云文档", r.docs.map((d) => `<button class="search-hit" data-hit-doc="${d.id}"><span class="docs-icon ${d.kind === "sheet" ? "is-sheet" : "is-doc"}">${icon2("doc")}</span><span><b>${mark(d.title, q)}</b><small>${esc4(d.ownerName)} · ${whenText2(d.updated)}</small></span></button>`));
       box.innerHTML = html || '<p class="hint">没有找到相关内容</p>';
     }
     document.addEventListener("click", (e) => {
@@ -9508,15 +9586,15 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     document.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k" && S2.user) {
         e.preventDefault();
-        open(window.getSelection()?.toString().trim().slice(0, 100) || "");
+        open2(window.getSelection()?.toString().trim().slice(0, 100) || "");
       }
     });
-    return { open };
+    return { open: open2 };
   }
 
   // internal/ui/src/assistant.js
   var SUGGESTIONS = ["总结一下我的未读消息", "明天上午十点和同事开个会", "提醒我周五下午交周报", "把状态设为请勿打扰两小时", "今天有什么需要我处理的？"];
-  function createAssistant({ S: S2, api: api2, esc: esc3, av: av2, icon: icon2, toast: toast2, openChat: openChat2, openMessage: openMessage2, startChat: startChat2, showWork: showWork2, showTab: showTab2, Docs: Docs2, Work: Work2, closeModal: closeModal2 }) {
+  function createAssistant({ S: S2, api: api2, esc: esc4, av: av2, icon: icon2, toast: toast2, openChat: openChat2, openMessage: openMessage2, startChat: startChat2, showWork: showWork2, showTab: showTab2, Docs: Docs2, Work: Work2, closeModal: closeModal2 }) {
     const $2 = (s) => document.querySelector(s);
     let prefs = { enabled: false, brief: true, nudges: true, ai: false }, notices = [], brief = null, briefing = false, asking = false, answer = null, timer = 0, bubbleTimer = 0, started = false;
     const bubbles = [], shown = /* @__PURE__ */ new Set();
@@ -9593,9 +9671,9 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         el.style.bottom = "auto";
       }
     }
-    function bubble(text, open, urgent = true) {
+    function bubble(text, open2, urgent = true) {
       if (!prefs.enabled || !prefs.nudges) return;
-      const b = { text, open, urgent };
+      const b = { text, open: open2, urgent };
       const cur = $2("#me-bubble");
       if (urgent && cur && cur.dataset.urgent !== "1") {
         bubbles.unshift(b, current);
@@ -9626,7 +9704,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       el.className = "me-bubble";
       el.setAttribute("role", "status");
       el.dataset.urgent = b.urgent ? "1" : "";
-      el.innerHTML = `<span>${esc3(b.text)}</span><button class="icon-btn" aria-label="关闭">${icon2("close")}</button>`;
+      el.innerHTML = `<span>${esc4(b.text)}</span><button class="icon-btn" aria-label="关闭">${icon2("close")}</button>`;
       document.body.append(el);
       const r = o.getBoundingClientRect();
       if (innerWidth > 700) {
@@ -9671,7 +9749,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         p.setAttribute("aria-label", "Me 管家");
         document.body.append(p);
         p.addEventListener("click", panelClick);
-        p.innerHTML = `<header><b>✦ Me 管家</b><label class="assist-switch" title="关闭后不再提醒，可在设置里重新打开"><input type="checkbox" id="assist-enabled" checked> 管理应用</label><button class="icon-btn" data-me="close" aria-label="关闭">${icon2("close")}</button></header><div class="assist-body"></div><form class="assist-ask"><div class="assist-chips">${SUGGESTIONS.map((s) => `<button type="button" data-me-suggest="${esc3(s)}">${esc3(s)}</button>`).join("")}</div><textarea rows="2" maxlength="2000" placeholder="让 Me 帮你：发消息、建待办、约日程、改状态、打开文档…"></textarea><button class="primary" type="submit">发送</button></form>`;
+        p.innerHTML = `<header><b>✦ Me 管家</b><label class="assist-switch" title="关闭后不再提醒，可在设置里重新打开"><input type="checkbox" id="assist-enabled" checked> 管理应用</label><button class="icon-btn" data-me="close" aria-label="关闭">${icon2("close")}</button></header><div class="assist-body"></div><form class="assist-ask"><div class="assist-chips">${SUGGESTIONS.map((s) => `<button type="button" data-me-suggest="${esc4(s)}">${esc4(s)}</button>`).join("")}</div><textarea rows="2" maxlength="2000" placeholder="让 Me 帮你：发消息、建待办、约日程、改状态、打开文档…"></textarea><button class="primary" type="submit">发送</button></form>`;
         p.querySelector("#assist-enabled").onchange = (e) => {
           if (!e.target.checked) setEnabled(false);
         };
@@ -9696,14 +9774,14 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (!body) return;
       const hour = (/* @__PURE__ */ new Date()).getHours(), hello = hour < 6 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
       const facts = brief?.facts;
-      body.innerHTML = `<section class="assist-hello"><h3>${hello}，${esc3(S2.user?.name || "")}</h3>${facts ? `<div class="assist-facts"><span><b>${facts.unread || 0}</b>未读</span><span><b>${facts.mentions || 0}</b>@我</span><span><b>${facts.tasks || 0}</b>待办</span><span><b>${facts.events || 0}</b>日程</span></div>` : ""}</section>
-   ${prefs.ai && prefs.brief ? `<section class="assist-brief"><h4>今日简报${brief?.text ? '<button class="link" data-me="rebrief">刷新</button>' : ""}</h4>${briefing ? '<div class="ai-loading"><span></span>Me 正在整理今天的情况…</div>' : brief?.text ? `<div class="ai-reply">${replyHTML(brief.text)}</div>` : '<button class="secondary" data-me="rebrief">生成今日简报</button>'}</section>` : ""}
+      body.innerHTML = `<section class="assist-hello"><h3>${hello}，${esc4(S2.user?.name || "")}</h3>${facts ? `<div class="assist-facts"><span><b>${facts.unread || 0}</b>未读</span><span><b>${facts.mentions || 0}</b>@我</span><span><b>${facts.tasks || 0}</b>待办</span><span><b>${facts.events || 0}</b>日程</span></div>` : ""}</section>
+   ${prefs.ai && prefs.brief ? `<section class="assist-brief"><h4>今日简报${brief?.text ? '<button class="link" data-me="rebrief">刷新</button>' : ""}</h4>${briefing ? '<div class="ai-loading"><span></span>Me 正在整理今天的情况…</div>' : brief?.text ? `<div class="ai-reply">${replyHTML(brief.text)}</div>` : `${brief?.error ? `<p class="hint">简报暂时无法生成：${esc4(brief.error)}</p>` : ""}<button class="secondary" data-me="rebrief">${brief?.error ? "重试" : "生成今日简报"}</button>`}</section>` : ""}
    <section class="assist-notices"><h4>需要关注${notices.length ? ` · ${notices.length}` : ""}</h4>${notices.length ? notices.map(noticeHTML).join("") : '<p class="hint">暂时没有需要你处理的事 🎉</p>'}</section>
    ${answer ? `<section class="assist-answer"><h4>Me 的回复</h4>${answer.loading ? '<div class="ai-loading"><span></span>Me 正在想…</div>' : `${answer.reply ? `<div class="ai-reply">${replyHTML(answer.reply)}</div>` : ""}${answer.actions.length ? `<div class="assist-actions">${answer.actions.map(actionHTML).join("")}${answer.actions.filter((a) => !a.done).length > 1 ? '<button class="primary" data-me="run-all">全部执行</button>' : ""}</div>` : ""}`}</section>` : ""}
    ${!prefs.ai ? '<p class="hint">服务器未开启 AI，Me 管家只做提醒。</p>' : ""}`;
     }
     function noticeHTML(n, i) {
-      return `<div class="notice ${n.level || ""}"><span class="notice-icon">${n.icon || "•"}</span><div class="notice-text">${esc3(n.text)}${n.sub ? `<small>${esc3(n.sub)}</small>` : ""}</div><div class="notice-actions">${(n.actions || []).map((a, j) => `<button class="${j === 0 ? "primary" : "secondary"}" data-notice="${i}" data-notice-action="${j}">${esc3(a.label)}</button>`).join("")}<button class="icon-btn" data-notice-dismiss="${i}" title="忽略" aria-label="忽略">${icon2("close")}</button></div></div>`;
+      return `<div class="notice ${n.level || ""}"><span class="notice-icon">${n.icon || "•"}</span><div class="notice-text">${esc4(n.text)}${n.sub ? `<small>${esc4(n.sub)}</small>` : ""}</div><div class="notice-actions">${(n.actions || []).map((a, j) => `<button class="${j === 0 ? "primary" : "secondary"}" data-notice="${i}" data-notice-action="${j}">${esc4(a.label)}</button>`).join("")}<button class="icon-btn" data-notice-dismiss="${i}" title="忽略" aria-label="忽略">${icon2("close")}</button></div></div>`;
     }
     async function refresh2() {
       if (!prefs.enabled || !S2.user) return;
@@ -9787,8 +9865,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         brief = { date: today(), text: r.brief, facts: r.facts };
         store("brief", brief);
       } catch (e) {
-        brief = { date: today(), text: "", facts: null };
-        if (e.status !== 429) toast2(e.message);
+        brief = { date: "", text: "", facts: null, error: e.message };
       } finally {
         briefing = false;
         draw();
@@ -9845,7 +9922,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function actionHTML(a, i) {
       const [title, detail] = describe(a);
-      return `<div class="assist-action${a.done ? " done" : ""}"><div><b>${esc3(title)}</b>${detail ? `<small>${esc3(detail)}</small>` : ""}</div>${a.done ? `<span class="ok">${a.done === true ? "已完成" : esc3(a.done)}</span>` : `<button class="primary" data-me-run="${i}">执行</button><button class="secondary" data-me-skip="${i}">取消</button>`}</div>`;
+      return `<div class="assist-action${a.done ? " done" : ""}"><div><b>${esc4(title)}</b>${detail ? `<small>${esc4(detail)}</small>` : ""}</div>${a.done ? `<span class="ok">${a.done === true ? "已完成" : esc4(a.done)}</span>` : `<button class="primary" data-me-run="${i}">执行</button><button class="secondary" data-me-skip="${i}">取消</button>`}</div>`;
     }
     async function run(a) {
       const clientId = "me-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -10060,7 +10137,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/contacts.js
-  function createContacts({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, av: av2, refresh: refresh2, renderSidebar: renderSidebar2, renderMain: renderMain2, stopMedia, requestFriend: requestFriend2, contextMenu: contextMenu2 }) {
+  function createContacts({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, av: av2, refresh: refresh2, renderSidebar: renderSidebar2, renderMain: renderMain2, stopMedia, requestFriend: requestFriend2, contextMenu: contextMenu2 }) {
     const $2 = (s) => document.querySelector(s), title = (u) => u.remark || u.name;
     const modal2 = (...args) => {
       showModal(...args);
@@ -10103,18 +10180,18 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         const people = g.people.filter(matches), hidden = !q && closed.has(g.id);
         found += people.length;
         if (q && !people.length) return "";
-        return `<section class="contact-folder-section" data-contact-folder="${g.id}"><button class="contact-folder ${hidden ? "collapsed" : ""}" data-contact="toggle" data-group-id="${g.id}" aria-expanded="${!hidden}">${icon2("down")}<b>${esc3(g.name)}</b><small>${people.filter((u) => u.online).length}/${g.people.length}</small></button>${hidden ? "" : people.map((u) => `<button class="conversation-row contact-row" data-profile="${u.id}">${av2(u, "", true)}<div class="row-text"><div class="row-title"><b>${esc3(title(u))}</b>${badge(u)}</div><div class="row-preview"><span>${esc3(u.bio || (u.online ? "[在线]" : "[离线]"))}</span></div></div></button>`).join("")}${!hidden && !q && g.id === "special-care" && !people.length ? '<p class="contact-attention-empty">在联系人设置中添加特别关心</p>' : ""}</section>`;
+        return `<section class="contact-folder-section" data-contact-folder="${g.id}"><button class="contact-folder ${hidden ? "collapsed" : ""}" data-contact="toggle" data-group-id="${g.id}" aria-expanded="${!hidden}">${icon2("down")}<b>${esc4(g.name)}</b><small>${people.filter((u) => u.online).length}/${g.people.length}</small></button>${hidden ? "" : people.map((u) => `<button class="conversation-row contact-row" data-profile="${u.id}">${av2(u, "", true)}<div class="row-text"><div class="row-title"><b>${esc4(title(u))}</b>${badge(u)}</div><div class="row-preview"><span>${esc4(u.bio || (u.online ? "[在线]" : "[离线]"))}</span></div></div></button>`).join("")}${!hidden && !q && g.id === "special-care" && !people.length ? '<p class="contact-attention-empty">在联系人设置中添加特别关心</p>' : ""}</section>`;
       }).join("");
-      const self = matches(S2.user) ? '<section class="contact-folder-section self-contact"><button class="conversation-row contact-self-row" data-profile="' + S2.user.id + '">' + av2({ ...S2.user, online: !S2.offline }, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc3(S2.user.name) + '（我）</b></div><div class="row-preview">' + (S2.offline ? "离线" : "在线") + " · " + esc3(S2.user.number) + "</div></div></button></section>" : "";
+      const self = matches(S2.user) ? '<section class="contact-folder-section self-contact"><button class="conversation-row contact-self-row" data-profile="' + S2.user.id + '">' + av2({ ...S2.user, online: !S2.offline }, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc4(S2.user.name) + '（我）</b></div><div class="row-preview">' + (S2.offline ? "离线" : "在线") + " · " + esc4(S2.user.number) + "</div></div></button></section>" : "";
       return self + '<button class="contact-manage-link" data-contact="groups">' + icon2("settings") + "分组管理</button>" + folders + (!q && !peopleSource.length && !care.length ? '<div class="empty-list">还没有最近联系人<br>搜索用户，直接开始聊天</div>' : q && !found && !self ? '<div class="empty-list">没有找到用户</div>' : "");
     }
     function profile2(u) {
-      return `${av2(u, "large", true)}<h2>${esc3(title(u))}${badge(u)}</h2>${u.remark ? '<span class="profile-line">姓名：' + esc3(u.name) + "</span>" : ""}<span class="profile-line">${APP_NAME} 账号：${esc3(u.number || u.account)}</span><dl class="profile-details"><dt>手机号</dt><dd>${esc3(u.phone || "未设置")}</dd><dt>性别</dt><dd>${esc3({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置")}</dd><dt>职位</dt><dd>${esc3(u.jobTitle || "未设置")}</dd></dl><p class="profile-bio">${esc3(u.bio || "这个人很酷，还没有写签名。")}</p>${u.note ? '<p class="contact-private-note">' + esc3(u.note) + "</p>" : ""}<div class="contact-profile-actions">${u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : `<button class="primary" data-start-chat="${u.id}">发消息</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="${u.id}">${u.specialCare ? "取消特别关心" : "设为特别关心"}</button><button class="secondary" data-contact="messages" data-user="${u.id}">${u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息"}</button><button class="secondary" data-contact="edit" data-user="${u.id}">联系人设置</button>`}</div>`;
+      return `${av2(u, "large", true)}<h2>${esc4(title(u))}${badge(u)}</h2>${u.remark ? '<span class="profile-line">姓名：' + esc4(u.name) + "</span>" : ""}<span class="profile-line">${APP_NAME} 账号：${esc4(u.number || u.account)}</span><dl class="profile-details"><dt>手机号</dt><dd>${esc4(u.phone || "未设置")}</dd><dt>性别</dt><dd>${esc4({ male: "男", female: "女", other: "其他" }[u.gender] || "未设置")}</dd><dt>职位</dt><dd>${esc4(u.jobTitle || "未设置")}</dd></dl><p class="profile-bio">${esc4(u.bio || "这个人很酷，还没有写签名。")}</p>${u.note ? '<p class="contact-private-note">' + esc4(u.note) + "</p>" : ""}<div class="contact-profile-actions">${u.id === S2.user.id ? '<button class="primary" data-action="profile">编辑资料</button>' : `<button class="primary" data-start-chat="${u.id}">发消息</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="audio">语音通话</button><button class="secondary" data-user-call="${u.id}" data-user-call-mode="video">视频通话</button><button class="secondary" data-contact="attention" data-user="${u.id}">${u.specialCare ? "取消特别关心" : "设为特别关心"}</button><button class="secondary" data-contact="messages" data-user="${u.id}">${u.messageBlocked ? "取消屏蔽" : "屏蔽私聊消息"}</button><button class="secondary" data-contact="edit" data-user="${u.id}">联系人设置</button>`}</div>`;
     }
     async function edit(id) {
       const detail = await api2("/api/contacts/" + id), u = detail.user;
       if (!detail.friend) {
-        modal2("联系人资料", `<div class="contact-person">${av2(u, "large")}<h3>${esc3(u.name)}</h3><p>${APP_NAME} 号 ${esc3(u.number)}</p></div><p class="hint">${detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。"}</p>`, detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
+        modal2("联系人资料", `<div class="contact-person">${av2(u, "large")}<h3>${esc4(u.name)}</h3><p>${APP_NAME} 号 ${esc4(u.number)}</p></div><p class="hint">${detail.blocked ? "你已将该用户加入黑名单。" : "你们还不是好友。"}</p>`, detail.blocked ? '<button class="primary" id="contact-unblock">解除拉黑</button>' : detail.canAdd ? '<button class="primary" id="contact-add">添加好友</button>' : "");
         bind("contact-unblock", async () => {
           await api2("/api/contact-blocks/" + id, { method: "DELETE" });
           await refresh2();
@@ -10123,7 +10200,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         bind("contact-add", () => requestFriend2(id, u.name));
         return;
       }
-      modal2("联系人设置", `<div class="contact-person compact">${av2(u)}<div><h3>${esc3(title(u))}</h3><p>${APP_NAME} 号 ${esc3(u.number)}</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="${esc3(u.remark || "")}" placeholder="${esc3(u.name)}"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>${S2.contactGroups.map((g) => `<option value="${g.id}" ${g.id === u.contactGroupId ? "selected" : ""}>${esc3(g.name)}</option>`).join("")}</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">${esc3(u.note || "")}</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ${u.specialCare ? "checked" : ""}></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ${detail.messageBlocked ? "checked" : ""}></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="${id}">从列表移除</button><button data-contact="block" data-user="${id}">加入黑名单</button></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
+      modal2("联系人设置", `<div class="contact-person compact">${av2(u)}<div><h3>${esc4(title(u))}</h3><p>${APP_NAME} 号 ${esc4(u.number)}</p></div></div><label for="contact-remark">备注名称</label><input id="contact-remark" maxlength="32" value="${esc4(u.remark || "")}" placeholder="${esc4(u.name)}"><label for="contact-folder">联系人分组</label><select id="contact-folder"><option value="">最近联系人</option>${S2.contactGroups.map((g) => `<option value="${g.id}" ${g.id === u.contactGroupId ? "selected" : ""}>${esc4(g.name)}</option>`).join("")}</select><label for="contact-note">描述</label><textarea id="contact-note" maxlength="200" placeholder="仅自己可见的备注信息">${esc4(u.note || "")}</textarea><p class="hint">备注、分组和描述仅自己可见，会同步到你的其他设备。</p><label class="check-row"><span>特别关心</span><input type="checkbox" id="contact-special-care" ${u.specialCare ? "checked" : ""}></label><p class="hint">在联系人中单独分组，仅自己可见，并同步到其他设备。</p><label class="check-row"><span>屏蔽 TA 的私聊消息</span><input type="checkbox" id="contact-message-blocked" ${detail.messageBlocked ? "checked" : ""}></label><p class="hint">屏蔽期间，对方无法向你发送私聊消息。历史记录保留，取消屏蔽后恢复接收。</p><div class="contact-danger-actions"><button data-contact="delete" data-user="${id}">从列表移除</button><button data-contact="block" data-user="${id}">加入黑名单</button></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-save">保存</button>');
       bind("contact-save", async () => {
         await api2("/api/contacts/" + id, { method: "PATCH", body: { remark: $2("#contact-remark").value, groupId: $2("#contact-folder").value, note: $2("#contact-note").value, specialCare: $2("#contact-special-care").checked, messageBlocked: $2("#contact-message-blocked").checked } });
         closeModal2();
@@ -10133,7 +10210,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function confirmRemove(id, block) {
       const u = S2.friends.find((u2) => u2.id === id) || S2.conversations.find((c) => c.peer?.id === id)?.peer || { name: "该用户" };
-      modal2(block ? "加入黑名单" : "从列表移除", `<p class="contact-confirm">确定${block ? "拉黑" : "移除"} ${esc3(title(u))}？</p><p class="hint">${block ? "不再接收对方的私聊，双方的远程协助和单聊会议会结束。" : "从列表移除并取消特别关心，聊天记录和备注保留。下次收发消息时会重新显示。"}</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
+      modal2(block ? "加入黑名单" : "从列表移除", `<p class="contact-confirm">确定${block ? "拉黑" : "移除"} ${esc4(title(u))}？</p><p class="hint">${block ? "不再接收对方的私聊，双方的远程协助和单聊会议会结束。" : "从列表移除并取消特别关心，聊天记录和备注保留。下次收发消息时会重新显示。"}</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="contact-remove-confirm">确定</button>');
       bind("contact-remove-confirm", async () => {
         await api2((block ? "/api/contact-blocks/" : "/api/contacts/") + id, { method: block ? "POST" : "DELETE", body: block ? {} : void 0 });
         closeModal2();
@@ -10143,11 +10220,11 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     async function groups() {
       await refresh2();
-      modal2("联系人分组", `<div class="contact-group-item"><span>最近联系人</span><small>默认分组</small></div>${S2.contactGroups.map((g, i) => `<div class="contact-group-item"><span>${esc3(g.name)}<small>${g.count} 位联系人</small></span><button data-contact="group-up" data-group-id="${g.id}" ${i === 0 ? "disabled" : ""} title="上移">↑</button><button data-contact="group-down" data-group-id="${g.id}" ${i === S2.contactGroups.length - 1 ? "disabled" : ""} title="下移">↓</button><button data-contact="group-edit" data-group-id="${g.id}">重命名</button><button data-contact="group-delete" data-group-id="${g.id}" class="danger">删除</button></div>`).join("")}<p class="hint">删除分组会将其中好友移到“最近联系人”，保留备注和描述。</p>`, '<button class="secondary" data-action="close-modal">完成</button><button class="primary" data-contact="group-create">新建分组</button>', true);
+      modal2("联系人分组", `<div class="contact-group-item"><span>最近联系人</span><small>默认分组</small></div>${S2.contactGroups.map((g, i) => `<div class="contact-group-item"><span>${esc4(g.name)}<small>${g.count} 位联系人</small></span><button data-contact="group-up" data-group-id="${g.id}" ${i === 0 ? "disabled" : ""} title="上移">↑</button><button data-contact="group-down" data-group-id="${g.id}" ${i === S2.contactGroups.length - 1 ? "disabled" : ""} title="下移">↓</button><button data-contact="group-edit" data-group-id="${g.id}">重命名</button><button data-contact="group-delete" data-group-id="${g.id}" class="danger">删除</button></div>`).join("")}<p class="hint">删除分组会将其中好友移到“最近联系人”，保留备注和描述。</p>`, '<button class="secondary" data-action="close-modal">完成</button><button class="primary" data-contact="group-create">新建分组</button>', true);
     }
     function groupForm(id) {
       const g = S2.contactGroups.find((x) => x.id === id);
-      modal2(g ? "重命名分组" : "新建分组", '<label for="contact-group-name">分组名称</label><input id="contact-group-name" maxlength="24" placeholder="例如：同事、家人" value="' + esc3(g?.name || "") + '">', '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-save">保存</button>');
+      modal2(g ? "重命名分组" : "新建分组", '<label for="contact-group-name">分组名称</label><input id="contact-group-name" maxlength="24" placeholder="例如：同事、家人" value="' + esc4(g?.name || "") + '">', '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-save">保存</button>');
       bind("contact-group-save", async () => {
         await api2("/api/contact-groups" + (g ? "/" + g.id : ""), { method: g ? "PATCH" : "POST", body: { name: $2("#contact-group-name").value } });
         await groups();
@@ -10163,7 +10240,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     async function blocks() {
       const list = await api2("/api/contact-blocks");
-      modal2("黑名单", `<p class="hint">解除拉黑后可以再次直接聊天。</p>${list.map((u) => `<div class="contact-block-row">${av2(u)}<span><b>${esc3(u.name)}</b><small>${esc3(u.number)}</small></span><button class="secondary" data-contact="unblock" data-user="${u.id}">解除</button></div>`).join("") || '<p class="empty-list">黑名单为空</p>'}`, '<button class="secondary" data-contact="privacy">返回</button>');
+      modal2("黑名单", `<p class="hint">解除拉黑后可以再次直接聊天。</p>${list.map((u) => `<div class="contact-block-row">${av2(u)}<span><b>${esc4(u.name)}</b><small>${esc4(u.number)}</small></span><button class="secondary" data-contact="unblock" data-user="${u.id}">解除</button></div>`).join("") || '<p class="empty-list">黑名单为空</p>'}`, '<button class="secondary" data-contact="privacy">返回</button>');
     }
     async function privacy() {
       modal2("联系人设置", '<p class="hint">不需要添加或批准好友。通过姓名、号码或用户 ID 搜索即可聊天；从列表移除后仍保留聊天记录。</p><button class="contact-settings-row" data-contact="blocks">黑名单' + icon2("chevron") + '</button><button class="contact-settings-row" data-contact="groups">联系人分组' + icon2("chevron") + "</button>", '<button class="primary" data-action="close-modal">完成</button>');
@@ -10182,7 +10259,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       ;
       banner.innerHTML = blocked ? `<span>当前无法私聊，请检查黑名单或账号状态。</span><button data-contact="edit" data-user="${c.peer.id}">查看联系人</button>` : "";
       if (blocked || was) $2("#composer").disabled = blocked;
-      if (c?.kind === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc3(c.name) + badge(c.peer) + `<small id="typing-status" data-presence="${c.peer?.ai ? "" : c.peer?.online ? "on" : "off"}">${c.peer?.online ? "在线" : "离线"}</small>`;
+      if (c?.kind === "direct" && $2(".chat-head h2")) $2(".chat-head h2").innerHTML = esc4(c.name) + badge(c.peer) + `<small id="typing-status" data-presence="${c.peer?.ai ? "" : c.peer?.online ? "on" : "off"}">${c.peer?.online ? "在线" : "离线"}</small>`;
     }
     function menu(id, x, y) {
       const u = S2.friends.find((u2) => u2.id === id);
@@ -10253,7 +10330,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
             break;
           case "group-delete": {
             const g = S2.contactGroups.find((g2) => g2.id === b.dataset.groupId);
-            modal2("删除分组", '<p class="contact-confirm">确定删除 ' + esc3(g.name) + "？好友会移入默认分组。</p>", '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-delete">确定</button>');
+            modal2("删除分组", '<p class="contact-confirm">确定删除 ' + esc4(g.name) + "？好友会移入默认分组。</p>", '<button class="secondary" data-contact="groups">取消</button><button class="primary" id="contact-group-delete">确定</button>');
             bind("contact-group-delete", async () => {
               await api2("/api/contact-groups/" + g.id, { method: "DELETE" });
               await groups();
@@ -10289,7 +10366,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/groups.js
-  function createGroups({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, av: av2, refresh: refresh2, selectConversation: selectConversation2, renderMain: renderMain2, copy, stopMedia }) {
+  function createGroups({ S: S2, api: api2, action: action2, modal: showModal, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, av: av2, refresh: refresh2, selectConversation: selectConversation2, renderMain: renderMain2, copy, stopMedia }) {
     const $2 = (s) => document.querySelector(s), roles = { owner: "群主", admin: "管理员", member: "成员" }, modes = { open: "允许任何人加入", approval: "需要管理员审核", closed: "不允许申请加入" };
     let detailState = null, searchVersion = 0, muteTimer;
     const modal2 = (...args) => {
@@ -10327,7 +10404,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (c.kind !== "group") return;
       detailState = c;
       const g = c.group, local = S2.conversations.find((x) => x.id === cid) || {}, me = c.members.find((x) => x.id === S2.user.id);
-      modal2("群聊设置", `<div class="group-summary">${manager(g) ? '<button class="group-avatar-link" data-avatar="group" data-group-id="' + c.id + '" aria-label="更换群头像">' : ""}${av2({ kind: "group", avatar: g.avatar || "group", name: c.name }, "large")}${manager(g) ? "</button>" : ""}<div><h3>${esc3(c.name)}</h3><p>群号 ${esc3(g.number)} <button class="group-link" data-group="copy-number">复制</button></p><small>${g.count} 人 · ${roles[g.role]}</small></div></div><div class="group-member-grid">${c.members.slice(0, 9).map((u) => `<button data-group-user="${u.id}">${av2(u)}<span>${esc3(u.nickname || u.name)}</span>${u.role !== "member" ? `<small class="group-role ${u.role}">${roles[u.role]}</small>` : ""}</button>`).join("")}${manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : ""}</div>${row("群聊成员", g.count + " 人", "members")}${row("群公告", esc3(c.announcement?.slice(0, 24) || "暂无公告"), "announcement")}${row("我的群名片", esc3(me?.nickname || me?.name || ""), "my-card")}${manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : ""}${row("查找聊天记录", "", "history")}<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ${local.pinned ? "checked" : ""}></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ${local.muted ? "checked" : ""}></label><p class="hint">${esc3(g.description || "暂无群介绍")}</p><button class="chat-remove-entry" data-conversation-action="remove" data-cid="${c.id}">${icon2("trash")}从消息列表移除</button><button class="group-danger" data-group="${g.role === "owner" ? "dissolve" : "leave"}">${g.role === "owner" ? "解散该群" : "退出该群"}</button>`, '<button class="primary" id="group-save-prefs">完成</button>', true);
+      modal2("群聊设置", `<div class="group-summary">${manager(g) ? '<button class="group-avatar-link" data-avatar="group" data-group-id="' + c.id + '" aria-label="更换群头像">' : ""}${av2({ kind: "group", avatar: g.avatar || "group", name: c.name }, "large")}${manager(g) ? "</button>" : ""}<div><h3>${esc4(c.name)}</h3><p>群号 ${esc4(g.number)} <button class="group-link" data-group="copy-number">复制</button></p><small>${g.count} 人 · ${roles[g.role]}</small></div></div><div class="group-member-grid">${c.members.slice(0, 9).map((u) => `<button data-group-user="${u.id}">${av2(u)}<span>${esc4(u.nickname || u.name)}</span>${u.role !== "member" ? `<small class="group-role ${u.role}">${roles[u.role]}</small>` : ""}</button>`).join("")}${manager(g) || g.membersInvite ? '<button data-group="invite" class="group-add-member">' + icon2("plus") + "<span>邀请</span></button>" : ""}</div>${row("群聊成员", g.count + " 人", "members")}${row("群公告", esc4(c.announcement?.slice(0, 24) || "暂无公告"), "announcement")}${row("我的群名片", esc4(me?.nickname || me?.name || ""), "my-card")}${manager(g) ? row("群管理", "入群方式、管理员、禁言", "manage") + row("加群申请", (S2.groupRequests || []).filter((x) => x.conversationId === cid && x.canReview && x.status === "pending").length + " 条待处理", "requests") : ""}${row("查找聊天记录", "", "history")}<label class="prefs-row">置顶聊天<input type="checkbox" id="group-pin" ${local.pinned ? "checked" : ""}></label><label class="prefs-row">消息免打扰<input type="checkbox" id="group-notifications" ${local.muted ? "checked" : ""}></label><p class="hint">${esc4(g.description || "暂无群介绍")}</p><button class="chat-remove-entry" data-conversation-action="remove" data-cid="${c.id}">${icon2("trash")}从消息列表移除</button><button class="group-danger" data-group="${g.role === "owner" ? "dissolve" : "leave"}">${g.role === "owner" ? "解散该群" : "退出该群"}</button>`, '<button class="primary" id="group-save-prefs">完成</button>', true);
       bind("group-save-prefs", async () => {
         await api2("/api/conversations/" + cid, { method: "PATCH", body: { pinned: $2("#group-pin").checked, muted: $2("#group-notifications").checked } });
         closeModal2();
@@ -10340,7 +10417,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       modal2("群聊成员 · " + c.members.length, '<input id="group-member-search" placeholder="搜索群成员或号码" aria-label="搜索群成员"><div id="group-members-list"></div>', '<button class="secondary" data-group="back">返回</button>', true);
       const render = () => {
         const q = $2("#group-member-search").value.toLowerCase();
-        $2("#group-members-list").innerHTML = c.members.filter((u) => (u.name + u.nickname + u.number).toLowerCase().includes(q)).map((u) => `<button class="group-person-row" data-group-user="${u.id}">${av2(u)}<span><b>${esc3(u.nickname || u.name)}</b><small>${esc3(u.number)}${u.muteUntil > Date.now() ? " · 禁言中" : ""}</small></span><i class="group-role ${u.role}">${roles[u.role]}</i>${icon2("chevron")}</button>`).join("") || '<p class="hint">没有找到成员</p>';
+        $2("#group-members-list").innerHTML = c.members.filter((u) => (u.name + u.nickname + u.number).toLowerCase().includes(q)).map((u) => `<button class="group-person-row" data-group-user="${u.id}">${av2(u)}<span><b>${esc4(u.nickname || u.name)}</b><small>${esc4(u.number)}${u.muteUntil > Date.now() ? " · 禁言中" : ""}</small></span><i class="group-role ${u.role}">${roles[u.role]}</i>${icon2("chevron")}</button>`).join("") || '<p class="hint">没有找到成员</p>';
       };
       $2("#group-member-search").oninput = render;
       render();
@@ -10355,7 +10432,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       ;
       const g = c.group, self = id === S2.user.id, canManage = manager(g) && !self && u.role !== "owner" && (g.role === "owner" || u.role !== "admin"), canCard = self || canManage;
-      modal2("群成员资料", `<div class="group-summary">${av2(u, "large")}<div><h3>${esc3(u.name)}</h3><p>${APP_NAME} 号 ${esc3(u.number)}</p><span class="group-role ${u.role}">${roles[u.role]}</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="${esc3(u.nickname || "")}" placeholder="${esc3(u.name)}" ${canCard ? "" : "disabled"}>${canManage ? `<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">${u.muteUntil > Date.now() ? "禁言至 " + esc3(new Date(u.muteUntil).toLocaleString()) : "当前未禁言"}</p>` : ""}${g.role === "owner" && !self ? `<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" ${u.role === "admin" ? "checked" : ""}></label>` : ""}${canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""}`, '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
+      modal2("群成员资料", `<div class="group-summary">${av2(u, "large")}<div><h3>${esc4(u.name)}</h3><p>${APP_NAME} 号 ${esc4(u.number)}</p><span class="group-role ${u.role}">${roles[u.role]}</span></div></div><label for="group-member-card">群名片</label><input id="group-member-card" maxlength="32" value="${esc4(u.nickname || "")}" placeholder="${esc4(u.name)}" ${canCard ? "" : "disabled"}>${canManage ? `<label for="group-member-mute">禁言</label><select id="group-member-mute"><option value="">保持当前状态</option><option value="0">解除禁言</option><option value="10">10 分钟</option><option value="60">1 小时</option><option value="1440">1 天</option><option value="43200">30 天</option></select><p class="hint">${u.muteUntil > Date.now() ? "禁言至 " + esc4(new Date(u.muteUntil).toLocaleString()) : "当前未禁言"}</p>` : ""}${g.role === "owner" && !self ? `<label class="prefs-row">设为管理员<input type="checkbox" id="group-member-admin" ${u.role === "admin" ? "checked" : ""}></label>` : ""}${canManage ? '<button class="group-danger" id="group-remove-member">移出群聊</button>' : ""}`, '<button class="secondary" data-group="members">返回成员列表</button>' + (canCard ? '<button class="primary" id="group-member-save">保存</button>' : ""));
       bind("group-member-save", async () => {
         const p = { nickname: $2("#group-member-card").value };
         if ($2("#group-member-admin") && $2("#group-member-admin").checked !== (u.role === "admin")) p.admin = $2("#group-member-admin").checked;
@@ -10365,7 +10442,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         await refresh2();
         await members();
       });
-      bind("group-remove-member", () => confirm2("移出群聊", "确定将 " + esc3(u.nickname || u.name) + " 移出群聊？", async () => {
+      bind("group-remove-member", () => confirm("移出群聊", "确定将 " + esc4(u.nickname || u.name) + " 移出群聊？", async () => {
         await api2(`/api/conversations/${c.id}/members/${id}`, { method: "DELETE" });
         await refresh2();
         await members();
@@ -10376,7 +10453,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       detailState = c;
       const g = c.group;
       if (!manager(g)) throw Error("你已没有群管理权限");
-      modal2("群管理", `<label for="group-edit-name">群名称</label><input id="group-edit-name" value="${esc3(c.name)}" maxlength="60">${g.role === "owner" ? `<label for="group-edit-number">群号</label><input id="group-edit-number" value="${esc3(g.number)}" inputmode="numeric" maxlength="9" autocomplete="off"><p class="hint">群主可改为 5–8 位数字（不能以 0 开头），不能与其他群或账号重复。</p>` : ""}<label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">${esc3(g.description)}</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ${g.discoverable ? "checked" : ""}></label><label for="group-join-mode">搜索入群方式</label><select id="group-join-mode">${Object.entries(modes).map(([v, t]) => `<option value="${v}" ${g.joinMode === v ? "selected" : ""}>${t}</option>`).join("")}</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ${g.membersInvite ? "checked" : ""}></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ${g.allMuted ? "checked" : ""}></label><p class="hint">全员禁言时，群主和管理员仍可发言。成员邀请会直接拉人入群，不需要再次申请。</p>${row("设置管理员", "在成员资料中设置，最多 10 人", "members")}${g.role === "owner" ? row("转让群主", "", "transfer") : ""}`, '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
+      modal2("群管理", `<label for="group-edit-name">群名称</label><input id="group-edit-name" value="${esc4(c.name)}" maxlength="60">${g.role === "owner" ? `<label for="group-edit-number">群号</label><input id="group-edit-number" value="${esc4(g.number)}" inputmode="numeric" maxlength="9" autocomplete="off"><p class="hint">群主可改为 5–8 位数字（不能以 0 开头），不能与其他群或账号重复。</p>` : ""}<label for="group-description">群介绍</label><textarea id="group-description" maxlength="200" placeholder="向搜索到群的人介绍一下">${esc4(g.description)}</textarea><label class="prefs-row">允许通过群号或名称搜索<input type="checkbox" id="group-discoverable" ${g.discoverable ? "checked" : ""}></label><label for="group-join-mode">搜索入群方式</label><select id="group-join-mode">${Object.entries(modes).map(([v, t]) => `<option value="${v}" ${g.joinMode === v ? "selected" : ""}>${t}</option>`).join("")}</select><label class="prefs-row">允许成员邀请好友<input type="checkbox" id="group-members-invite" ${g.membersInvite ? "checked" : ""}></label><label class="prefs-row">全员禁言<input type="checkbox" id="group-all-muted" ${g.allMuted ? "checked" : ""}></label><p class="hint">全员禁言时，群主和管理员仍可发言。成员邀请会直接拉人入群，不需要再次申请。</p>${row("设置管理员", "在成员资料中设置，最多 10 人", "members")}${g.role === "owner" ? row("转让群主", "", "transfer") : ""}`, '<button class="secondary" data-group="back">返回</button><button class="primary" id="group-manage-save">保存</button>', true);
       bind("group-manage-save", async () => {
         const number = $2("#group-edit-number")?.value.trim();
         await api2("/api/groups/" + c.id, { method: "PATCH", body: { name: $2("#group-edit-name").value, description: $2("#group-description").value, discoverable: $2("#group-discoverable").checked, joinMode: $2("#group-join-mode").value, membersInvite: $2("#group-members-invite").checked, allMuted: $2("#group-all-muted").checked, ...number && number !== g.number ? { number } : {} } });
@@ -10385,20 +10462,20 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         await detail(c.id);
       });
     }
-    function confirm2(title, text, fn) {
+    function confirm(title, text, fn) {
       modal2(title, `<p class="group-confirm">${text}</p>`, '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-confirm">确定</button>');
       bind("group-confirm", fn);
     }
     async function transfer() {
       const c = await api2("/api/conversations/" + detailState.id);
       detailState = c;
-      modal2("转让群主", '<p class="hint">转让后，你将成为普通成员。请选择新群主。</p><div class="member-select">' + c.members.filter((u) => u.id !== S2.user.id).map((u) => `<button class="group-person-row" data-group-transfer="${u.id}">${av2(u)}<span><b>${esc3(u.nickname || u.name)}</b><small>${roles[u.role]}</small></span>${icon2("chevron")}</button>`).join("") + "</div>", '<button class="secondary" data-group="manage">取消</button>');
+      modal2("转让群主", '<p class="hint">转让后，你将成为普通成员。请选择新群主。</p><div class="member-select">' + c.members.filter((u) => u.id !== S2.user.id).map((u) => `<button class="group-person-row" data-group-transfer="${u.id}">${av2(u)}<span><b>${esc4(u.nickname || u.name)}</b><small>${roles[u.role]}</small></span>${icon2("chevron")}</button>`).join("") + "</div>", '<button class="secondary" data-group="manage">取消</button>');
     }
     async function invite() {
       const c = await api2("/api/conversations/" + detailState.id);
       detailState = c;
       const list = S2.friends.filter((u) => !c.members.some((m) => m.id === u.id));
-      modal2("邀请好友入群", `<p class="hint">选择一位或多位用户，直接加入群聊</p><div class="member-select">${list.map((u) => `<label class="check-row">${av2(u)}${esc3(u.name)}<input type="checkbox" name="group-invite" value="${u.id}"></label>`).join("") || '<p class="hint">好友都已在群里</p>'}</div>`, '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-invite-send">邀请</button>');
+      modal2("邀请好友入群", `<p class="hint">选择一位或多位用户，直接加入群聊</p><div class="member-select">${list.map((u) => `<label class="check-row">${av2(u)}${esc4(u.name)}<input type="checkbox" name="group-invite" value="${u.id}"></label>`).join("") || '<p class="hint">好友都已在群里</p>'}</div>`, '<button class="secondary" data-group="back">取消</button><button class="primary" id="group-invite-send">邀请</button>');
       bind("group-invite-send", async () => {
         const result = await action2("/api/conversations/" + c.id + "/members", { members: [...document.querySelectorAll("[name=group-invite]:checked")].map((x) => x.value) });
         await refresh2();
@@ -10408,7 +10485,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     async function announcement() {
       const c = await api2("/api/conversations/" + detailState.id);
       detailState = c;
-      modal2("群公告", `<textarea id="group-announcement" maxlength="2000" placeholder="暂无群公告" ${manager(c.group) ? "" : "readonly"}>${esc3(c.announcement)}</textarea>`, '<button class="secondary" data-group="back">返回</button>' + (manager(c.group) ? '<button class="primary" id="group-announcement-save">发布</button>' : ""));
+      modal2("群公告", `<textarea id="group-announcement" maxlength="2000" placeholder="暂无群公告" ${manager(c.group) ? "" : "readonly"}>${esc4(c.announcement)}</textarea>`, '<button class="secondary" data-group="back">返回</button>' + (manager(c.group) ? '<button class="primary" id="group-announcement-save">发布</button>' : ""));
       bind("group-announcement-save", async () => {
         await api2("/api/groups/" + c.id, { method: "PATCH", body: { announcement: $2("#group-announcement").value } });
         await refresh2();
@@ -10420,7 +10497,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const list = await api2("/api/group-requests");
       S2.groupRequests = list;
       const status = { pending: "等待审核", accepted: "已同意", rejected: "已拒绝", cancelled: "群已解散" };
-      modal2("群通知", `<div class="group-requests">${list.map((q) => `<article class="group-request">${av2(q)}<div><b>${esc3(q.name)}</b><p>${q.inviter ? esc3(q.inviterName) + " 邀请加入" : "申请加入"} ${esc3(q.groupName)}</p><small>群号 ${esc3(q.number)}</small><p class="hint">${esc3(q.message)}</p>${q.status === "pending" && q.canReview ? `<button class="secondary" data-group-review="${q.id}" data-accept="false">拒绝</button><button class="primary" data-group-review="${q.id}" data-accept="true">同意</button>` : `<span class="group-request-state">${status[q.status] || q.status}</span>`}</div></article>`).join("") || '<p class="hint">暂无群通知</p>'}</div>`, "", true);
+      modal2("群通知", `<div class="group-requests">${list.map((q) => `<article class="group-request">${av2(q)}<div><b>${esc4(q.name)}</b><p>${q.inviter ? esc4(q.inviterName) + " 邀请加入" : "申请加入"} ${esc4(q.groupName)}</p><small>群号 ${esc4(q.number)}</small><p class="hint">${esc4(q.message)}</p>${q.status === "pending" && q.canReview ? `<button class="secondary" data-group-review="${q.id}" data-accept="false">拒绝</button><button class="primary" data-group-review="${q.id}" data-accept="true">同意</button>` : `<span class="group-request-state">${status[q.status] || q.status}</span>`}</div></article>`).join("") || '<p class="hint">暂无群通知</p>'}</div>`, "", true);
     }
     function search() {
       const revision = ++searchVersion;
@@ -10434,7 +10511,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         try {
           const results = await api2("/api/groups?q=" + encodeURIComponent(query));
           if (searchVersion !== revision || request !== requestVersion || !document.contains(list)) return;
-          list.innerHTML = results.map((g) => `<article class="group-search-result">${av2({ kind: "group", avatar: g.avatar || "group" })}<div><b>${esc3(g.name)}</b><p>群号 ${esc3(g.number)} · ${g.count} 人</p><p class="hint">${esc3(g.description)}</p><small>${modes[g.joinMode]}</small></div><button class="${g.joined ? "secondary" : "primary"}" data-group-join="${g.id}" data-joined="${g.joined}" data-mode="${g.joinMode}" data-name="${esc3(g.name)}" ${!g.joined && g.joinMode === "closed" ? "disabled" : ""}>${g.joined ? "发消息" : "加入"}</button></article>`).join("") || '<p class="hint">没有找到群聊</p>';
+          list.innerHTML = results.map((g) => `<article class="group-search-result">${av2({ kind: "group", avatar: g.avatar || "group" })}<div><b>${esc4(g.name)}</b><p>群号 ${esc4(g.number)} · ${g.count} 人</p><p class="hint">${esc4(g.description)}</p><small>${modes[g.joinMode]}</small></div><button class="${g.joined ? "secondary" : "primary"}" data-group-join="${g.id}" data-joined="${g.joined}" data-mode="${g.joinMode}" data-name="${esc4(g.name)}" ${!g.joined && g.joinMode === "closed" ? "disabled" : ""}>${g.joined ? "发消息" : "加入"}</button></article>`).join("") || '<p class="hint">没有找到群聊</p>';
         } catch (e2) {
           if (request === requestVersion && document.contains(list)) list.textContent = e2.message;
         }
@@ -10491,7 +10568,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (blocked && !g.allMuted) muteTimer = setTimeout(syncComposer, Math.min(6e4, Math.max(50, g.muteUntil - Date.now() + 50)));
       if (blocked || wasBlocked) $2("#composer").disabled = !!blocked;
       const header = $2(".chat-head h2");
-      if (c && header && c.kind === "group") header.innerHTML = esc3(c.name) + `<small id="typing-status">${g?.count || ""} 人 · 群号 ${esc3(g?.number || "")}</small>`;
+      if (c && header && c.kind === "group") header.innerHTML = esc4(c.name) + `<small id="typing-status">${g?.count || ""} 人 · 群号 ${esc4(g?.number || "")}</small>`;
     }
     document.addEventListener("click", async (e) => {
       const b = e.target.closest("[data-group],[data-group-user],[data-group-review],[data-group-join],[data-group-transfer]");
@@ -10522,7 +10599,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         ;
         if (b.dataset.groupTransfer) {
           const c = detailState, u = c.members.find((u2) => u2.id === b.dataset.groupTransfer);
-          confirm2("转让群主", "确定将群主转让给 " + esc3(u.nickname || u.name) + "？", async () => {
+          confirm("转让群主", "确定将群主转让给 " + esc4(u.nickname || u.name) + "？", async () => {
             await action2("/api/groups/" + c.id + "/transfer", { userId: u.id });
             await refresh2();
             toast2("群主已转让");
@@ -10568,7 +10645,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           case "leave":
           case "dissolve": {
             const c = detailState, dissolve = b.dataset.group === "dissolve";
-            confirm2(dissolve ? "解散群聊" : "退出群聊", dissolve ? "解散后所有成员都将失去该群的访问权限，群号不再使用。确定解散 " + esc3(c.name) + "？" : "确定退出 " + esc3(c.name) + "？退出后将无法继续访问群聊记录。", async () => {
+            confirm(dissolve ? "解散群聊" : "退出群聊", dissolve ? "解散后所有成员都将失去该群的访问权限，群号不再使用。确定解散 " + esc4(c.name) + "？" : "确定退出 " + esc4(c.name) + "？退出后将无法继续访问群聊记录。", async () => {
               await api2(dissolve ? "/api/groups/" + c.id : `/api/conversations/${c.id}/members/${S2.user.id}`, { method: "DELETE" });
               closeModal2();
               await refresh2();
@@ -10586,7 +10663,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/media.js
-  function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2, enqueue }) {
+  function createMedia({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, upload: upload2, enqueue }) {
     const $2 = (s, r = document) => r.querySelector(s);
     const mic = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0ZM5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>';
     const sound = '<svg class="voice-sound" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 10 4-4v12l-4-4H3v-4Z"/><path d="M13 8a6 6 0 0 1 0 8"/><path d="M17 4a11 11 0 0 1 0 16"/></svg>';
@@ -10615,7 +10692,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function bubble(m, rootID = "") {
       if (m.kind === "voice") return `<button class="voice-message" data-play-voice="${m.attachmentId}" data-media-message="${m.id || rootID}" data-duration="${Number(m.durationMs) || 0}" aria-label="播放语音 ${seconds(m.durationMs)} 秒" style="width:${Math.min(220, 95 + Math.sqrt(seconds(m.durationMs)) * 15)}px">${sound}<span>${seconds(m.durationMs)}″</span>${m.sender && m.sender !== S2.user?.id && !played().has(m.attachmentId) ? '<i class="voice-unplayed"></i>' : ""}</button>`;
-      return `<button class="video-message" data-play-video="${m.attachmentId}" data-media-message="${m.id || rootID}" data-media-root="${rootID}" data-media-name="${esc3(m.fileName || "视频")}" aria-label="播放视频"><video muted playsinline preload="metadata" src="${fileURL2(m.attachmentId)}" tabindex="-1"></video><span class="video-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" style="fill:currentColor;stroke:none"/></svg></span><span class="video-duration">${clock(m.durationMs)}</span></button>`;
+      return `<button class="video-message" data-play-video="${m.attachmentId}" data-media-message="${m.id || rootID}" data-media-root="${rootID}" data-media-name="${esc4(m.fileName || "视频")}" aria-label="播放视频"><video muted playsinline preload="metadata" src="${fileURL2(m.attachmentId)}" tabindex="-1"></video><span class="video-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" style="fill:currentColor;stroke:none"/></svg></span><span class="video-duration">${clock(m.durationMs)}</span></button>`;
     }
     function tools() {
       return `<button class="icon-btn" title="语音消息" aria-label="语音消息" data-media="voice-mode">${mic}</button>`;
@@ -10802,7 +10879,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         toast2(error.message);
         return;
       }
-      modal2("未能保存待发送内容", `<p class="hint">${esc3(error.message)}。录音或视频暂时保留在当前窗口，关闭窗口前请重试保存。</p>`, '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="media-retry">重试保存</button>');
+      modal2("未能保存待发送内容", `<p class="hint">${esc4(error.message)}。录音或视频暂时保留在当前窗口，关闭窗口前请重试保存。</p>`, '<button class="secondary" data-action="close-modal">关闭</button><button class="primary" id="media-retry">重试保存</button>');
       $2("#media-retry").onclick = async (e) => {
         e.target.disabled = true;
         try {
@@ -10856,7 +10933,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       const fallback = (error) => {
         if (accountScope() !== owner2) return;
-        modal2("无法直接发送视频", `<p class="hint">${esc3(error.message)}，可以作为普通文件发送给对方。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');
+        modal2("无法直接发送视频", `<p class="hint">${esc4(error.message)}，可以作为普通文件发送给对方。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="video-send-file">作为文件发送</button>');
         $2("#video-send-file").onclick = () => {
           closeModal2();
           if (S2.active === cid && accountScope() === owner2) upload2(file, true);
@@ -10942,7 +11019,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       finish(true);
       audio.pause();
       stopVideo();
-      modal2(button.dataset.mediaName || "视频", `<div class="video-viewer"><video id="message-video-player" controls playsinline preload="metadata" src="${fileURL2(button.dataset.playVideo)}"></video><p class="hint">${esc3(button.dataset.mediaName || "视频")}</p></div>`, (button.dataset.mediaRoot ? '<button class="secondary" data-fw="record-return">返回聊天记录</button>' : "") + '<button class="secondary" data-download="' + button.dataset.playVideo + '" data-filename="' + esc3(button.dataset.mediaName || "视频") + '">保存视频</button>', true);
+      modal2(button.dataset.mediaName || "视频", `<div class="video-viewer"><video id="message-video-player" controls playsinline preload="metadata" src="${fileURL2(button.dataset.playVideo)}"></video><p class="hint">${esc4(button.dataset.mediaName || "视频")}</p></div>`, (button.dataset.mediaRoot ? '<button class="secondary" data-fw="record-return">返回聊天记录</button>' : "") + '<button class="secondary" data-download="' + button.dataset.playVideo + '" data-filename="' + esc4(button.dataset.mediaName || "视频") + '">保存视频</button>', true);
       videoPlayer = $2("#message-video-player");
       videoPlayer.dataset.messageId = button.dataset.mediaMessage;
       videoPlayer.onerror = () => toast2("当前设备无法播放此视频，可保存文件后播放");
@@ -11035,7 +11112,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/forwarding.js
-  function createForwarding({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, av: av2, preview: preview2, fullTime: fullTime2, bytes: bytes2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, mediaBubble }) {
+  function createForwarding({ S: S2, api: api2, action: action2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, av: av2, preview: preview2, fullTime: fullTime2, bytes: bytes2, fileURL: fileURL2, randomID: randomID2, renderMessages: renderMessages2, queueRefresh: queueRefresh2, mediaBubble }) {
     const $2 = (s, r = document) => r.querySelector(s);
     let selection = null, chooser = null, viewer = null;
     function selected(message) {
@@ -11122,7 +11199,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (!state || !$2("#forward-recipients")) return;
       const query = $2("#forward-search").value.toLowerCase();
       const items = targets(state.tab).filter((c) => (c.name + (c.number || "")).toLowerCase().includes(query));
-      $2("#forward-recipients").innerHTML = items.map((c) => `<label class="forward-recipient">${av2(c)}<span>${esc3(c.name)}${c.number ? `<small>${esc3(c.number)}</small>` : ""}</span><input type="checkbox" value="${esc3(c.key)}" ${state.targets.has(c.key) ? "checked" : ""} aria-label="选择 ${esc3(c.name)}"></label>`).join("") || '<p class="empty-list">没有匹配的会话</p>';
+      $2("#forward-recipients").innerHTML = items.map((c) => `<label class="forward-recipient">${av2(c)}<span>${esc4(c.name)}${c.number ? `<small>${esc4(c.number)}</small>` : ""}</span><input type="checkbox" value="${esc4(c.key)}" ${state.targets.has(c.key) ? "checked" : ""} aria-label="选择 ${esc4(c.name)}"></label>`).join("") || '<p class="empty-list">没有匹配的会话</p>';
       $2("#forward-recipients").onchange = (e) => {
         const target = items.find((c) => c.key === e.target.value);
         if (!target) return;
@@ -11141,10 +11218,10 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     function renderChosen() {
       const state = chooser;
       $2("#forward-selected-count").textContent = `已选择 ${state.targets.size} 个会话`;
-      $2("#forward-selected").innerHTML = [...state.targets.values()].map((c) => `<button class="forward-chip" data-forward-remove="${esc3(c.key)}">${esc3(c.name)}<span>×</span></button>`).join("") || '<p class="hint">选择好友或群聊</p>';
+      $2("#forward-selected").innerHTML = [...state.targets.values()].map((c) => `<button class="forward-chip" data-forward-remove="${esc4(c.key)}">${esc4(c.name)}<span>×</span></button>`).join("") || '<p class="hint">选择好友或群聊</p>';
       $2("#forward-submit").disabled = !state.targets.size;
     }
-    function open(ids) {
+    function open2(ids) {
       const messages = S2.messages.filter((m) => ids.includes(m.id));
       if (!messages.length || messages.some((m) => m.recalled) || messages.length !== ids.length) {
         toast2("所选消息已删除或撤回");
@@ -11155,7 +11232,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         return;
       }
       const state = chooser = { cid: S2.active, ids, tab: "recent", targets: /* @__PURE__ */ new Map(), mode: ids.length > 1 ? "merge" : "each", messages, signature: "", clientId: "" };
-      modal2("发送给", `<div class="forward-chooser"><section class="forward-people"><input id="forward-search" aria-label="搜索接收人" placeholder="搜索好友或群聊"><nav class="forward-tabs"><button data-forward-tab="recent" class="active">最近</button><button data-forward-tab="friends">好友</button><button data-forward-tab="groups">群聊</button></nav><div id="forward-recipients"></div></section><section class="forward-confirm"><b id="forward-selected-count"></b><div id="forward-selected"></div>${ids.length > 1 ? '<div class="forward-mode"><label><input type="radio" name="forward-mode" value="merge" checked>合并转发</label><label><input type="radio" name="forward-mode" value="each">逐条转发</label></div>' : ""}<div class="forward-send-preview"><b>${ids.length > 1 ? "聊天记录" : esc3(preview2(messages[0]).slice(0, 60))}</b>${ids.length > 1 ? messages.slice(0, 3).map((m) => `<p>${esc3(m.name + "：" + preview2(m))}</p>`).join("") : ""}<small>${ids.length} 条消息</small></div><textarea id="forward-note" placeholder="给对方留言（可选）" aria-label="转发留言" maxlength="600"></textarea></section></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="forward-submit" disabled>发送</button>', true);
+      modal2("发送给", `<div class="forward-chooser"><section class="forward-people"><input id="forward-search" aria-label="搜索接收人" placeholder="搜索好友或群聊"><nav class="forward-tabs"><button data-forward-tab="recent" class="active">最近</button><button data-forward-tab="friends">好友</button><button data-forward-tab="groups">群聊</button></nav><div id="forward-recipients"></div></section><section class="forward-confirm"><b id="forward-selected-count"></b><div id="forward-selected"></div>${ids.length > 1 ? '<div class="forward-mode"><label><input type="radio" name="forward-mode" value="merge" checked>合并转发</label><label><input type="radio" name="forward-mode" value="each">逐条转发</label></div>' : ""}<div class="forward-send-preview"><b>${ids.length > 1 ? "聊天记录" : esc4(preview2(messages[0]).slice(0, 60))}</b>${ids.length > 1 ? messages.slice(0, 3).map((m) => `<p>${esc4(m.name + "：" + preview2(m))}</p>`).join("") : ""}<small>${ids.length} 条消息</small></div><textarea id="forward-note" placeholder="给对方留言（可选）" aria-label="转发留言" maxlength="600"></textarea></section></div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="forward-submit" disabled>发送</button>', true);
       $2(".modal").classList.add("forward-dialog");
       renderTargets();
       renderChosen();
@@ -11213,25 +11290,25 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       try {
         card2 = JSON.parse(m.text);
       } catch {
-        return esc3("[聊天记录]");
+        return esc4("[聊天记录]");
       }
       ;
-      return `<button class="forward-card" data-forward-view="${m.id}"><b>${esc3(card2.title)}</b>${(card2.preview || []).slice(0, 3).map((line) => `<p>${esc3(line)}</p>`).join("")}<small>聊天记录 · ${Number(card2.count) || 0} 条</small></button>`;
+      return `<button class="forward-card" data-forward-view="${m.id}"><b>${esc4(card2.title)}</b>${(card2.preview || []).slice(0, 3).map((line) => `<p>${esc4(line)}</p>`).join("")}<small>聊天记录 · ${Number(card2.count) || 0} 条</small></button>`;
     }
     function previewRecord(record) {
-      return `<b>${esc3(record.title)}</b>${record.items.slice(0, 3).map((item) => `<p>${esc3(item.name + "：" + preview2(item))}</p>`).join("")}<small>聊天记录 · ${record.items.length} 条</small>`;
+      return `<b>${esc4(record.title)}</b>${record.items.slice(0, 3).map((item) => `<p>${esc4(item.name + "：" + preview2(item))}</p>`).join("")}<small>聊天记录 · ${record.items.length} 条</small>`;
     }
     function showDocument() {
       const record = viewer.stack[viewer.stack.length - 1];
       modal2(record.title, `<div class="forward-record">${record.items.map((item, index) => {
-        let content = esc3(item.text);
-        if (item.kind === "image") content = `<img loading="lazy" src="${fileURL2(item.attachmentId)}" alt="${esc3(item.fileName || "图片")}" data-forward-image="${item.attachmentId}">`;
-        else if (item.kind === "file") content = `<button class="file-card" data-download="${item.attachmentId}" data-filename="${esc3(item.fileName)}">${icon2("file")}<span><b>${esc3(item.fileName)}</b><small>${bytes2(item.fileSize)} · 点击下载</small></span></button>`;
+        let content = esc4(item.text);
+        if (item.kind === "image") content = `<img loading="lazy" src="${fileURL2(item.attachmentId)}" alt="${esc4(item.fileName || "图片")}" data-forward-image="${item.attachmentId}">`;
+        else if (item.kind === "file") content = `<button class="file-card" data-download="${item.attachmentId}" data-filename="${esc4(item.fileName)}">${icon2("file")}<span><b>${esc4(item.fileName)}</b><small>${bytes2(item.fileSize)} · 点击下载</small></span></button>`;
         else if (item.kind === "voice" || item.kind === "video") content = mediaBubble(item, viewer.id);
         else if (item.record) content = `<button class="forward-card" data-forward-nested="${index}">${previewRecord(item.record)}</button>`;
-        else if (item.kind === "call") content = esc3(preview2(item));
-        else if (item.kind === "meeting") content = esc3("[会议]");
-        return `<article class="forward-record-item">${av2(item)}<div><header><b>${esc3(item.name)}</b><time>${fullTime2(item.created)}</time></header><div class="forward-record-content">${content}</div>${item.quote ? `<p class="forward-record-quote">${esc3(item.quote.name + "：" + item.quote.text)}</p>` : ""}</div></article>`;
+        else if (item.kind === "call") content = esc4(preview2(item));
+        else if (item.kind === "meeting") content = esc4("[会议]");
+        return `<article class="forward-record-item">${av2(item)}<div><header><b>${esc4(item.name)}</b><time>${fullTime2(item.created)}</time></header><div class="forward-record-content">${content}</div>${item.quote ? `<p class="forward-record-quote">${esc4(item.quote.name + "：" + item.quote.text)}</p>` : ""}</div></article>`;
       }).join("")}</div>`, viewer.stack.length > 1 ? '<button class="secondary" data-fw="record-back">返回上一层</button>' : "", true);
       $2(".modal").classList.add("forward-record-dialog");
     }
@@ -11285,7 +11362,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       switch (button.dataset.fw) {
         case "single":
-          open([button.dataset.mid]);
+          open2([button.dataset.mid]);
           break;
         case "select":
           start(button.dataset.mid);
@@ -11294,7 +11371,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           reset();
           break;
         case "selected-forward":
-          if (selection) open([...selection.ids]);
+          if (selection) open2([...selection.ids]);
           break;
         case "selected-delete":
           deleteSelected();
@@ -11309,17 +11386,17 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           break;
       }
     });
-    return { checkbox, selected, sync, reset, removed, invalidate, open, card };
+    return { checkbox, selected, sync, reset, removed, invalidate, open: open2, card };
   }
 
   // internal/ui/src/history.js
-  function createHistory({ S: S2, api: api2, modal: modal2, toast: toast2, esc: esc3, preview: preview2, fullTime: fullTime2, jump }) {
+  function createHistory({ S: S2, api: api2, modal: modal2, toast: toast2, esc: esc4, preview: preview2, fullTime: fullTime2, jump }) {
     let current = null;
     const $2 = (s) => document.querySelector(s);
     function render() {
       const state = current, list = $2("#history-results");
       if (!list || !state) return;
-      list.innerHTML = state.items.map((m) => `<button class="history-item" data-history-id="${m.id}"><small>${esc3(m.name)} · ${fullTime2(m.created)}</small><p>${esc3(preview2(m))}</p><span>查看上下文</span></button>`).join("") || '<div class="empty-list">未找到相关消息</div>';
+      list.innerHTML = state.items.map((m) => `<button class="history-item" data-history-id="${m.id}"><small>${esc4(m.name)} · ${fullTime2(m.created)}</small><p>${esc4(preview2(m))}</p><span>查看上下文</span></button>`).join("") || '<div class="empty-list">未找到相关消息</div>';
       if (S2.cacheView) list.insertAdjacentHTML("afterbegin", '<p class="hint">当前仅搜索此设备已缓存的消息，联网后可搜索完整记录。</p>');
       if (state.more) list.insertAdjacentHTML("beforeend", '<button class="history-more secondary">加载更早记录</button>');
       list.querySelectorAll("[data-history-id]").forEach((button) => button.onclick = () => jump(state.cid, button.dataset.historyId).catch((e) => toast2(e.message)));
@@ -11356,7 +11433,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         }
       }
     }
-    async function open() {
+    async function open2() {
       const state = current = { cid: S2.active, items: [], more: false, revision: 0 };
       modal2("聊天记录", `<div class="history-search-box"><input id="history-search" maxlength="200" placeholder="搜索消息内容或文件名" aria-label="搜索聊天记录"></div><div class="history-filters"><label>消息类型<select id="history-kind"><option value="">全部消息</option value="text">文字</option><option value="image">图片</option><option value="voice">语音</option><option value="video">视频</option><option value="file">文件</option><option value="meeting">会议</option><option value="call">通话</option><option value="forward">聊天记录</option></select></label><label>发送人<select id="history-sender"><option value="">所有人</option></select></label><label>开始日期<input type="date" id="history-from"></label><label>结束日期<input type="date" id="history-to"></label></div>${S2.conversations.find((c) => c.id === state.cid)?.kind === "group" ? '<label class="history-mention-filter"><input type="checkbox" id="history-mentions">只看 @我的消息</label>' : ""}<div id="history-results" class="history-results" aria-live="polite"></div>`, "", true);
       let timer;
@@ -11376,7 +11453,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       load();
       try {
         const detail = await api2("/api/conversations/" + state.cid);
-        if (current === state && $2("#history-sender")) $2("#history-sender").innerHTML = '<option value="">所有人</option>' + detail.members.map((u) => `<option value="${u.id}">${esc3(u.name)}</option>`).join("");
+        if (current === state && $2("#history-sender")) $2("#history-sender").innerHTML = '<option value="">所有人</option>' + detail.members.map((u) => `<option value="${u.id}">${esc4(u.name)}</option>`).join("");
       } catch (e) {
         toast2(e.message);
       }
@@ -11390,15 +11467,15 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       }
       render();
     }
-    return { open, changed };
+    return { open: open2, changed };
   }
 
   // internal/ui/src/security.js
-  function createSecurity({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc3, icon: icon2, logout: logout2 }) {
+  function createSecurity({ api: api2, action: action2, S: S2, modal: modal2, toast: toast2, esc: esc4, icon: icon2, logout: logout2 }) {
     const el = (id) => document.getElementById(id);
     const when = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "暂无活动记录";
-    function open() {
-      modal2("账号与安全", `<div class="security-account">${icon2("shield")}<div><b>${esc3(S2.user.name)}</b>${S2.user.email ? `<p>邮箱：${esc3(S2.user.email)}</p>` : ""}<p>${APP_NAME} 号：${esc3(S2.user.number)}</p></div></div><button class="utility-row security-option" data-security="devices">${icon2("monitor")}<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>${icon2("chevron")}</button><button class="utility-row security-option" data-security="password">${icon2("shield")}<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>${icon2("chevron")}</button>`);
+    function open2() {
+      modal2("账号与安全", `<div class="security-account">${icon2("shield")}<div><b>${esc4(S2.user.name)}</b>${S2.user.email ? `<p>邮箱：${esc4(S2.user.email)}</p>` : ""}<p>${APP_NAME} 号：${esc4(S2.user.number)}</p></div></div><button class="utility-row security-option" data-security="devices">${icon2("monitor")}<div class="body"><b>登录设备</b><p>查看设备，退出不再使用的登录</p></div>${icon2("chevron")}</button><button class="utility-row security-option" data-security="password">${icon2("shield")}<div class="body"><b>修改密码</b><p>修改后其他设备需要重新登录</p></div>${icon2("chevron")}</button>`);
     }
     async function devices() {
       if (!S2.user) return;
@@ -11407,19 +11484,19 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       try {
         const items = await api2("/api/auth/sessions");
         if (!el("device-list")) return;
-        el("device-list").innerHTML = items.map((d) => `<article class="device-row">${icon2(d.device.includes("Android") ? "phone" : "monitor")}<div class="device-details"><b>${esc3(d.device)} ${d.current ? '<span class="device-current">本设备</span>' : ""}</b><p>登录：${esc3(when(d.created))}</p><p>最近使用：${esc3(when(d.lastSeen))}</p></div>${d.current ? "" : `<button class="device-remove" data-device-id="${esc3(d.id)}">退出</button>`}</article>`).join("");
+        el("device-list").innerHTML = items.map((d) => `<article class="device-row">${icon2(d.device.includes("Android") ? "phone" : "monitor")}<div class="device-details"><b>${esc4(d.device)} ${d.current ? '<span class="device-current">本设备</span>' : ""}</b><p>登录：${esc4(when(d.created))}</p><p>最近使用：${esc4(when(d.lastSeen))}</p></div>${d.current ? "" : `<button class="device-remove" data-device-id="${esc4(d.id)}">退出</button>`}</article>`).join("");
         el("revoke-other-devices").disabled = !items.some((d) => !d.current);
         el("device-list").onclick = (e) => {
           const button = e.target.closest("[data-device-id]");
-          if (button) confirm2(items.find((d) => d.id === button.dataset.deviceId));
+          if (button) confirm(items.find((d) => d.id === button.dataset.deviceId));
         };
-        el("revoke-other-devices").onclick = () => confirm2();
+        el("revoke-other-devices").onclick = () => confirm();
       } catch (e) {
         if (el("device-list")) el("device-list").textContent = e.message;
       }
     }
-    function confirm2(device) {
-      modal2(device ? "退出登录设备" : "退出其他设备", `<p class="hint">${device ? "确认让 " + esc3(device.device) + " 退出登录？" : "确认退出其他所有登录设备？当前设备会保留登录。"}该操作会断开对应设备的聊天、会议和远程协助。</p>`, '<button class="secondary" data-security="devices">取消</button><button class="primary" id="device-confirm-revoke">确认退出</button>');
+    function confirm(device) {
+      modal2(device ? "退出登录设备" : "退出其他设备", `<p class="hint">${device ? "确认让 " + esc4(device.device) + " 退出登录？" : "确认退出其他所有登录设备？当前设备会保留登录。"}该操作会断开对应设备的聊天、会议和远程协助。</p>`, '<button class="secondary" data-security="devices">取消</button><button class="primary" id="device-confirm-revoke">确认退出</button>');
       el("device-confirm-revoke").onclick = async () => {
         const button = el("device-confirm-revoke");
         button.disabled = true;
@@ -11451,7 +11528,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         try {
           await action2("/api/auth/password", { oldPassword, newPassword });
           toast2("密码已修改，其他设备已退出");
-          open();
+          open2();
         } catch (error) {
           if (el("modal-error")) el("modal-error").textContent = error.message;
           button.disabled = false;
@@ -11469,14 +11546,14 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           password();
           break;
         default:
-          open();
+          open2();
       }
     });
-    return { open, devices, password };
+    return { open: open2, devices, password };
   }
 
   // internal/ui/src/qr-login.js
-  function createQRLogin({ action: action2, S: S2, modal: modal2, toast: toast2, esc: esc3, enter: enter2, renderAuth: renderAuth2, windows: windows2, logo: logo2, icon: icon2 }) {
+  function createQRLogin({ action: action2, S: S2, modal: modal2, toast: toast2, esc: esc4, enter: enter2, renderAuth: renderAuth2, windows: windows2, logo: logo2, icon: icon2 }) {
     let active = null, phonePending = null;
     const el = (id) => document.getElementById(id);
     function stop() {
@@ -11487,12 +11564,12 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       if (previous.id) action2("/api/auth/qr/cancel", { id: previous.id, pollSecret: previous.pollSecret }).catch(() => {
       });
     }
-    async function open() {
+    async function open2() {
       stop();
       const current = { timer: null };
       active = current;
       el("app").innerHTML = `<main class="auth-shell">${windows2()}${authShowcase()}<section class="auth-card qr-auth">${logo2()}<h2>扫码登录</h2><p class="subtitle">使用安卓 ${APP_NAME}「扫一扫」</p><div class="qr-image" id="qr-image"><span>正在生成二维码…</span></div><p class="qr-status" id="qr-status">请在手机上登录你的 ${APP_NAME} 账号</p><p class="qr-check" id="qr-check"></p><div class="auth-error" id="auth-error"></div><button class="primary" id="qr-refresh">刷新二维码</button><div class="auth-links"><button data-action="login">密码登录</button>${S2.registrationEnabled ? '<button data-action="register">注册账号</button>' : ""}</div><p class="auth-consent">扫码后请在手机上确认<br>二维码 3 分钟内有效，仅可使用一次</p></section><small class="auth-footer">${APP_NAME} ${CLIENT_VERSION}</small></main>`;
-      el("qr-refresh").onclick = open;
+      el("qr-refresh").onclick = open2;
       try {
         const q = await action2("/api/auth/qr", { device: "" + APP_NAME + " Windows 客户端" });
         if (active !== current) {
@@ -11549,7 +11626,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       try {
         const result = await action2("/api/auth/qr/scan", request);
         phonePending = request;
-        modal2("登录 Windows 版 " + APP_NAME, `<div class="qr-confirm"><div class="qr-computer">${icon2("monitor")}</div><h3>${esc3(result.device)}</h3><p>将使用 ${esc3(S2.user.name)} 登录</p><p>${APP_NAME} 号：${esc3(S2.user.number)}</p><div class="qr-check">核对码 ${esc3(result.checkCode)}</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>`, '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
+        modal2("登录 Windows 版 " + APP_NAME, `<div class="qr-confirm"><div class="qr-computer">${icon2("monitor")}</div><h3>${esc4(result.device)}</h3><p>将使用 ${esc4(S2.user.name)} 登录</p><p>${APP_NAME} 号：${esc4(S2.user.number)}</p><div class="qr-check">核对码 ${esc4(result.checkCode)}</div><p class="hint">请核对电脑上的数字，只确认你正在操作的电脑。</p></div>`, '<button class="secondary" id="qr-phone-cancel">取消登录</button><button class="primary" id="qr-phone-confirm">确认登录</button>');
         const resolve = async (accept) => {
           const button = el(accept ? "qr-phone-confirm" : "qr-phone-cancel");
           button.disabled = true;
@@ -11572,7 +11649,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     window.WeLinkQrScanned = scanned;
     document.addEventListener("click", (e) => {
       const a = e.target.closest("[data-action]")?.dataset.action;
-      if (a === "qr-login") open();
+      if (a === "qr-login") open2();
       if (a === "scan-qr") {
         if (!S2.user) {
           toast2("请先登录");
@@ -11591,7 +11668,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     window.addEventListener("pagehide", () => {
       clearTimeout(active?.timer);
     });
-    return { open, stop, scanned };
+    return { open: open2, stop, scanned };
   }
 
   // internal/ui/src/meeting-tuning.js
@@ -11822,7 +11899,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/meeting-captions.js
-  function createCaptions({ send, toast: toast2, esc: esc3, api: api2, code, stream, box }) {
+  function createCaptions({ send, toast: toast2, esc: esc4, api: api2, code, stream, box }) {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let on = false, rec = null, recorder = null, interimAt = 0, lastInterim = "", failed = false;
     const lines = /* @__PURE__ */ new Map();
@@ -11832,7 +11909,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const now = Date.now();
       for (const [id, l] of lines) if (now - l.at > (l.final ? 7e3 : 4e3)) lines.delete(id);
       el.classList.toggle("hidden", !on || !lines.size);
-      el.innerHTML = [...lines.values()].slice(-3).map((l) => `<p><b>${esc3(l.name)}：</b>${esc3(l.text)}</p>`).join("");
+      el.innerHTML = [...lines.values()].slice(-3).map((l) => `<p><b>${esc4(l.name)}：</b>${esc4(l.text)}</p>`).join("");
     }
     const tick = setInterval(draw, 1e3);
     function show(m) {
@@ -11973,7 +12050,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/meetings.js
-  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc3, icon: icon2, av: av2, Desktop: Desktop2, onCallClosed, callCurrent, historyEntry }) {
+  function createMeetings({ api: api2, action: action2, S: S2, modal: modal2, closeModal: closeModal2, toast: toast2, esc: esc4, icon: icon2, av: av2, Desktop: Desktop2, onCallClosed, callCurrent, historyEntry }) {
     let room = null, nativeCall = null, pending = /* @__PURE__ */ new Map(), checkingInvitation = false;
     function personUser(id) {
       if (!room) return null;
@@ -11983,7 +12060,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     function personHTML(id, name) {
       const u = personUser(id);
-      return u && av2 ? av2(u, "large") : '<span class="meeting-initial">' + esc3((name || "M").slice(0, 1)) + "</span>";
+      return u && av2 ? av2(u, "large") : '<span class="meeting-initial">' + esc4((name || "M").slice(0, 1)) + "</span>";
     }
     const el = (id) => document.getElementById(id);
     const display2 = meetingWindow({ active: () => !!room, toast: toast2, changed: (full) => {
@@ -12031,7 +12108,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         const copied = document.execCommand("copy");
         input.remove();
         if (!copied) {
-          modal2("会议邀请", '<textarea readonly style="width:100%;height:120px">' + esc3(text) + "</textarea>");
+          modal2("会议邀请", '<textarea readonly style="width:100%;height:120px">' + esc4(text) + "</textarea>");
           return;
         }
       }
@@ -12094,7 +12171,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       n.innerHTML = `<section class="utility meeting-home"><h2>会议</h2><p class="hint">和好友一起面对面交流，也可以分享屏幕。</p><div class="meeting-cards"><button data-action="meeting-create">${icon2("video")}<b>发起会议</b><span>邀请好友或群成员</span></button><button data-action="meeting-join">${icon2("plus")}<b>加入会议</b><span>输入 9 位会议号</span></button></div>${historyEntry()}<h3>正在进行</h3><div id="meeting-list">正在读取…</div></section>`;
       api2("/api/meetings").then((items) => {
         if (!el("meeting-list")) return;
-        el("meeting-list").innerHTML = items.map((m) => `<button class="utility-row meeting-open-row" data-meeting-code="${m.code}">${icon2("video")}<div class="body"><b>${esc3(m.title)}</b><p>${grouped(m.code)} · ${m.count} 人</p></div><span>进入</span></button>`).join("") || '<div class="empty-list">暂无进行中的会议</div>';
+        el("meeting-list").innerHTML = items.map((m) => `<button class="utility-row meeting-open-row" data-meeting-code="${m.code}">${icon2("video")}<div class="body"><b>${esc4(m.title)}</b><p>${grouped(m.code)} · ${m.count} 人</p></div><span>进入</span></button>`).join("") || '<div class="empty-list">暂无进行中的会议</div>';
       }).catch((e) => toast2(e.message));
     }
     function openCreate(cid = "", mode = "video") {
@@ -12102,7 +12179,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         show();
         return;
       }
-      modal2(mode === "audio" ? "发起语音通话" : "发起会议", `<label>会议名称</label><input id="meeting-title" maxlength="60" value="${esc3(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议")}"><p class="hint">${cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。"}最多 ${S2.policy.meetingMaxParticipants || 8} 人，最长 ${S2.policy.meetingDurationMinutes || 120} 分钟。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" >入会时开启摄像头</label>`, `<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>`);
+      modal2(mode === "audio" ? "发起语音通话" : "发起会议", `<label>会议名称</label><input id="meeting-title" maxlength="60" value="${esc4(mode === "audio" ? S2.user.name + "的语音通话" : S2.user.name + "的会议")}"><p class="hint">${cid ? "将邀请当前会话成员加入。" : "创建后可邀请好友，或分享会议号。"}最多 ${S2.policy.meetingMaxParticipants || 8} 人，最长 ${S2.policy.meetingDurationMinutes || 120} 分钟。</p><label class="check-row"><input type="checkbox" id="meeting-mic" checked>入会时开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera" >入会时开启摄像头</label>`, `<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-create-submit">立即开始</button>`);
       el("meeting-create-submit").onclick = async () => {
         const button = el("meeting-create-submit");
         button.disabled = true;
@@ -12122,7 +12199,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         show();
         return;
       }
-      modal2("加入会议", `<label>会议链接或会议号</label><input id="meeting-code" maxlength="1000" placeholder="粘贴会议邀请链接或输入 9 位会议号" value="${esc3(code)}"><label class="check-row"><input type="checkbox" id="meeting-mic" checked>开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera">开启摄像头</label>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-join-submit">加入会议</button>');
+      modal2("加入会议", `<label>会议链接或会议号</label><input id="meeting-code" maxlength="1000" placeholder="粘贴会议邀请链接或输入 9 位会议号" value="${esc4(code)}"><label class="check-row"><input type="checkbox" id="meeting-mic" checked>开启麦克风</label><label class="check-row"><input type="checkbox" id="meeting-camera">开启摄像头</label>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="meeting-join-submit">加入会议</button>');
       el("meeting-join-submit").onclick = async () => {
         const b = el("meeting-join-submit");
         b.disabled = true;
@@ -12248,7 +12325,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       {
         const active = room;
         if (active && !active.captions) {
-          active.captions = createCaptions({ send, toast: toast2, esc: esc3, api: (p, o) => api2(p, o), code: () => active.code, stream: () => active.stream, box: () => {
+          active.captions = createCaptions({ send, toast: toast2, esc: esc4, api: (p, o) => api2(p, o), code: () => active.code, stream: () => active.stream, box: () => {
             let b = document.getElementById("meeting-captions");
             const host = document.querySelector("#meeting-layer .meeting-room");
             if (!b && host) {
@@ -12372,7 +12449,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const columns = room.states.size <= 2 ? room.states.size : room.states.size <= 4 ? 2 : 3;
       el("meeting-grid").style.gridTemplateColumns = `repeat(${innerWidth <= 700 ? 1 : columns},minmax(0,1fr))`;
       el("meeting-grid").style.gridTemplateRows = `repeat(${Math.ceil(room.states.size / (innerWidth <= 700 ? 1 : columns))},minmax(0,1fr))`;
-      el("meeting-members-list").innerHTML = [...room.states.entries()].map(([id, p]) => `<div class="meeting-member"><b>${esc3(p.name)}${id === room.id ? "（我）" : ""}</b><small>${id === room.host ? "主持人 · " : ""}${p.microphone ? "麦克风开启" : "已静音"}</small>${room.id === room.host && id !== room.id ? `<div><button data-meeting-mute="${id}">静音</button><button data-meeting-transfer="${id}">设为主持人</button><button data-meeting-kick="${id}">移出</button></div>` : ""}</div>`).join("");
+      el("meeting-members-list").innerHTML = [...room.states.entries()].map(([id, p]) => `<div class="meeting-member"><b>${esc4(p.name)}${id === room.id ? "（我）" : ""}</b><small>${id === room.host ? "主持人 · " : ""}${p.microphone ? "麦克风开启" : "已静音"}</small>${room.id === room.host && id !== room.id ? `<div><button data-meeting-mute="${id}">静音</button><button data-meeting-transfer="${id}">设为主持人</button><button data-meeting-kick="${id}">移出</button></div>` : ""}</div>`).join("");
       for (const [id, p] of room.states) {
         const n = room.tiles.get(id);
         if (n) {
@@ -12656,6 +12733,51 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         await tuneMeetingPeer(p, !!room.screen, room.peers.size);
       }
     }
+    async function nativeScreen() {
+      const first = await fetch("/local/screen/frame?after=0", { cache: "no-store" });
+      if (first.status !== 200) throw Error("无法共享屏幕，请稍后重试");
+      const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
+      let seq = +first.headers.get("X-Frame") || 0, alive = true, last = null;
+      const draw = async (blob) => {
+        const bitmap = await createImageBitmap(blob);
+        if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+        }
+        ctx.drawImage(bitmap, 0, 0);
+        last?.close();
+        last = bitmap;
+      };
+      await draw(await first.blob());
+      const stream = canvas.captureStream(15), track = stream.getVideoTracks()[0], stop = track.stop.bind(track);
+      track.stop = () => {
+        alive = false;
+        last?.close();
+        last = null;
+        stop();
+      };
+      (async () => {
+        while (alive) {
+          try {
+            const r = await fetch("/local/screen/frame?after=" + seq, { cache: "no-store" });
+            if (!alive) break;
+            if (r.status === 204) {
+              if (last) ctx.drawImage(last, 0, 0);
+              continue;
+            }
+            if (!r.ok) {
+              await new Promise((t) => setTimeout(t, 500));
+              continue;
+            }
+            seq = +r.headers.get("X-Frame") || seq;
+            await draw(await r.blob());
+          } catch {
+            await new Promise((t) => setTimeout(t, 500));
+          }
+        }
+      })();
+      return stream;
+    }
     async function share() {
       const active = room;
       if (!active || active.id !== active.host || active.sharePending) return;
@@ -12663,11 +12785,12 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         await stopSharing();
         return;
       }
-      if (!navigator.mediaDevices?.getDisplayMedia) throw Error("当前系统不支持屏幕共享");
+      const native = S2.config?.platform === "windows" && !window.WeLinkAndroid;
+      if (!native && !navigator.mediaDevices?.getDisplayMedia) throw Error("当前系统不支持屏幕共享");
       active.sharePending = true;
       el("meeting-share").disabled = true;
       try {
-        const screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 }, resizeMode: "none" }, audio: false, selfBrowserSurface: "exclude" });
+        const screen = native ? await nativeScreen() : await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 30 }, resizeMode: "none" }, audio: false, selfBrowserSurface: "exclude" });
         const shared = screen.getVideoTracks()[0];
         if (shared && "contentHint" in shared) shared.contentHint = "text";
         if (room !== active || active.id !== active.host) {
@@ -12779,7 +12902,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       function render(users) {
         if (!valid()) return;
         const found = new Map([...selected, ...users.filter((u) => u.id !== S2.user.id && !active.states.has(u.id)).map((u) => [u.id, u])]);
-        panel.innerHTML = [...found.values()].map((u) => '<label class="check-row">' + esc3(u.remark || u.name) + " · " + esc3(u.number) + '<input type="checkbox" value="' + u.id + '" name="meeting-invite-user" ' + (selected.has(u.id) ? "checked" : "") + "></label>").join("") || '<p class="hint">暂无可邀请的联系人，可搜索用户或复制邀请链接。</p>';
+        panel.innerHTML = [...found.values()].map((u) => '<label class="check-row">' + esc4(u.remark || u.name) + " · " + esc4(u.number) + '<input type="checkbox" value="' + u.id + '" name="meeting-invite-user" ' + (selected.has(u.id) ? "checked" : "") + "></label>").join("") || '<p class="hint">暂无可邀请的联系人，可搜索用户或复制邀请链接。</p>';
         panel.onchange = (e) => {
           const u = found.get(e.target.value);
           if (u) {
@@ -12886,7 +13009,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       box.className = "meeting-invitation-notice";
       box.dataset.meetingNotice = m.code;
       box.setAttribute("role", "alert");
-      box.innerHTML = `<header><b>${APP_NAME} · 会议邀请</b><button data-meeting-notice-close title="关闭">${icon2("close")}</button></header><h3>${esc3(m.title)}</h3><p>会议号 ${grouped(m.code)}</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>`;
+      box.innerHTML = `<header><b>${APP_NAME} · 会议邀请</b><button data-meeting-notice-close title="关闭">${icon2("close")}</button></header><h3>${esc4(m.title)}</h3><p>会议号 ${grouped(m.code)}</p><footer><button data-meeting-notice-close>忽略</button><button class="primary" data-meeting-notice-enter>进入会议</button></footer>`;
       area.append(box);
       box.querySelectorAll("[data-meeting-notice-close]").forEach((b) => b.onclick = () => dismissInvitation(m.code));
       box.querySelector("[data-meeting-notice-enter]").onclick = () => nativeAction(m.code, true);
@@ -13013,7 +13136,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
 
   // internal/ui/src/updates.js
-  function createUpdates({ S: S2, api: api2, action: action2, esc: esc3, toast: toast2 }) {
+  function createUpdates({ S: S2, api: api2, action: action2, esc: esc4, toast: toast2 }) {
     let timer, shown = "";
     const supported = () => ["windows", "darwin", "android"].includes(S2.config?.platform);
     async function poll() {
@@ -13040,7 +13163,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
         bar.setAttribute("role", "status");
         document.body.append(bar);
       }
-      bar.innerHTML = "<span>新版本 " + esc3(st.latest) + " 已下载" + (S2.config.platform === "android" ? "" : "，重启后完成更新") + '</span><button data-update-apply>立即更新</button><button class="dismiss" data-update-later aria-label="稍后">稍后</button>';
+      bar.innerHTML = "<span>新版本 " + esc4(st.latest) + " 已下载" + (S2.config.platform === "android" ? "" : "，重启后完成更新") + '</span><button data-update-apply>立即更新</button><button class="dismiss" data-update-later aria-label="稍后">稍后</button>';
     }
     async function apply() {
       const result = await action2("/local/update/apply", {});
@@ -13107,14 +13230,14 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   var randomID = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
   var $ = (s, r = document) => r.querySelector(s);
   var $$ = (s, r = document) => [...r.querySelectorAll(s)];
-  var esc2 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  var esc3 = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var paths = { grid: "M4 4h7v7H4ZM13 4h7v7h-7ZM4 13h7v7H4ZM13 13h7v7h-7Z", doc: "M6 2h9l5 5v15H6ZM14 2v6h6M9 13h8M9 17h6", cloud: "M7 18a5 5 0 1 1 .5-9.98A7 7 0 0 1 21 10a4 4 0 0 1-1 8ZM9 14l3-3 3 3M12 11v9", notebook: "M5 3h14v18H5ZM8 3v18M3 7h4M3 12h4M3 17h4M11 8h5M11 12h5", chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H7l-4 2v-6.5A8.5 8.5 0 1 1 21 11.5ZM8 11h.01M12 11h.01M16 11h.01", contacts: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM17 4a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87", folder: "M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7h18", star: "m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9Z", monitor: "M3 4h18v13H3ZM8 21h8M12 17v4", settings: "m9 3-1 3-3 1-2 5 2 5 3 1 1 3h6l1-3 3-1 2-5-2-5-3-1-1-3ZM15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0", search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5", plus: "M12 5v14M5 12h14", more: "M5 12h.01M12 12h.01M19 12h.01", close: "m6 6 12 12M18 6 6 18", minus: "M5 12h14", maximize: "M5 5h14v14H5Z", chevron: "m9 5 7 7-7 7", back: "m15 5-7 7 7 7", down: "m5 9 7 7 7-7", emoji: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 9h.01M16 9h.01M7 14c2 4 8 4 10 0", image: "M3 3h18v18H3ZM3 16l5-5 5 5 3-3 5 5M15 7h.01", file: "M14 2H5v20h14V7ZM14 2v6h5M8 13h8M8 17h6", scissors: "M6 14a4 4 0 1 1-4 4 4 4 0 0 1 4-4ZM6 2a4 4 0 1 1-4 4 4 4 0 0 1 4-4Zm3 7 12 12M9 15 21 3", history: "M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v5l3 2", phone: "M4 3h4l2 5-3 2c1 3 4 6 7 7l2-3 5 2v4c-9 3-20-8-17-17Z", video: "M3 5h12v14H3ZM15 9l6-3v12l-6-3", mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM19 11a7 7 0 0 1-14 0M12 18v3M8 21h8", "mic-off": "M3 3l18 18M9 9v3a3 3 0 0 0 5.1 2.1M15 9.5V6a3 3 0 0 0-5.9-.8M17 16.9A7 7 0 0 1 5 11M19 11a7 7 0 0 1-.4 2.3M12 18v3M8 21h8", "video-off": "M3 3l18 18M10 5h5v5M15 15v4H3V5h2M15 9l6-3v12l-4-2", record: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z", reply: "m9 5-6 6 6 6M3 11h10c5 0 8 3 8 8", trash: "M3 6h18M8 6V3h8v3M5 6l1 15h12l1-15M10 10v7M14 10v7", check: "m4 12 5 5L20 6", bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4", mute: "M9 5a6 6 0 0 1 9 5c0 3 1 5 3 7H8M3 3l18 18M6 8c0 6-3 7-3 9h3", pin: "m8 3 8 0-1 7 4 4H5l4-4ZM12 14v8", download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", logout: "M9 4H4v16h5M9 12h12m-4-4 4 4-4 4", user: "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22v-2a7 7 0 0 1 7-7h4a7 7 0 0 1 7 7v2", shield: "m12 2 9 4v6c0 5-5 8-9 10-4-2-9-5-9-10V6ZM8 12l3 3 5-6", send: "m3 3 19 9-19 9 4-9ZM7 12h15", copy: "M8 8h13v13H8ZM16 8V3H3v13h5", refresh: "M3 11a9 9 0 0 1 15-7l3 3M21 3v5h-5M21 13a9 9 0 0 1-15 7l-3-3M3 21v-5h5", info: "M12 8h.01M12 11v6M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0" };
   var icon = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n] || paths.chat}"/></svg>`;
   var btn = (name, title, action2, extra = "") => `<button class="icon-btn" title="${title}" aria-label="${title}" data-action="${action2}" ${extra}>${icon(name)}</button>`;
   var av = (u = {}, size = "", online = false) => {
-    if (u.ai || u.avatar === "bot:me") return '<span class="avatar me-avatar ' + size + '" data-avatar-user="' + esc2(u.id) + '">M</span>';
+    if (u.ai || u.avatar === "bot:me") return '<span class="avatar me-avatar ' + size + '" data-avatar-user="' + esc3(u.id) + '">M</span>';
     const cartoon = cartoonURL(u.avatar), photo = /^image:[a-f0-9]{32}$/.test(u.avatar || "");
-    return `<span class="avatar ${photo || cartoon ? "has-photo" : esc2(u.avatar || "blue")} ${size}" ${u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc2(u.sender || u.id) + '"' : ""}>${u.kind === "group" ? icon("contacts") : esc2((u.name || "M").slice(0, 1))}${photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : ""}${online && u.online ? '<i class="dot"></i>' : ""}</span>`;
+    return `<span class="avatar ${photo || cartoon ? "has-photo" : esc3(u.avatar || "blue")} ${size}" ${u.kind !== "group" && (u.sender || u.id) ? 'data-avatar-user="' + esc3(u.sender || u.id) + '"' : ""}>${u.kind === "group" ? icon("contacts") : esc3((u.name || "M").slice(0, 1))}${photo || cartoon ? '<img class="avatar-photo" src="' + (cartoon || "/api/avatars/" + u.avatar.slice(6)) + '" alt="">' : ""}${online && u.online ? '<i class="dot"></i>' : ""}</span>`;
   };
   var logo = () => '<div class="logo"><img src="' + brandIcon() + '" alt=""><b>' + APP_NAME + "</b></div>";
   async function applyBrand(name, iconVersion) {
@@ -13315,7 +13438,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   var Navigation = createNavigation({ getHandler: () => modalHandler, setHandler: (value) => {
     modalHandler = value;
-  }, beforeOpen: () => window.WeLinkMediaBeforeModal?.(), esc: esc2, icon, onPageBack: () => RemoteDisplay.back() || pageBack(), beforeBack: () => {
+  }, beforeOpen: () => window.WeLinkMediaBeforeModal?.(), esc: esc3, icon, onPageBack: () => RemoteDisplay.back() || pageBack(), beforeBack: () => {
     if (S.remote?.state !== "pending" || !$(".remote-invite")) return false;
     (S.remote.requester === S.user?.id ? stopRemote() : acceptRemote(false)).catch(modalError);
     return true;
@@ -13333,7 +13456,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   function renderShell() {
     const utility = !["messages", "contacts"].includes(S.tab);
-    $("#app").innerHTML = `<div class="shell ${S.active && S.tab === "messages" ? "in-chat" : ""} ${utility ? "in-utility" : ""}">${nav()}<aside class="sidebar"><div class="sidebar-resizer" title="拖动调整宽度，双击恢复" aria-hidden="true"></div><div class="mobile-title"><button data-action="profile">${av(S.user)}</button><h2>${S.tab === "contacts" ? "联系人" : "消息"}</h2>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="searchbar"><label class="searchbox">${icon("search")}<input id="sidebar-search" value="${esc2(S.search)}" placeholder="搜索用户或群聊" aria-label="搜索用户或群聊" maxlength="60"></label>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">${windows()}<div id="connection-status"></div>${utility ? pageNavigation() : ""}<div id="main-content" style="display:contents"></div></main></div>`;
+    $("#app").innerHTML = `<div class="shell ${S.active && S.tab === "messages" ? "in-chat" : ""} ${utility ? "in-utility" : ""}">${nav()}<aside class="sidebar"><div class="sidebar-resizer" title="拖动调整宽度，双击恢复" aria-hidden="true"></div><div class="mobile-title"><button data-action="profile">${av(S.user)}</button><h2>${S.tab === "contacts" ? "联系人" : "消息"}</h2>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="searchbar"><label class="searchbox">${icon("search")}<input id="sidebar-search" value="${esc3(S.search)}" placeholder="搜索用户或群聊" aria-label="搜索用户或群聊" maxlength="60"></label>${btn("plus", "创建群聊或扫一扫", "add-menu")}</div><div class="sidebar-connection-status"></div><div id="sidebar-content" class="list-scroll"></div></aside><main class="main">${windows()}<div id="connection-status"></div>${utility ? pageNavigation() : ""}<div id="main-content" style="display:contents"></div></main></div>`;
     renderSidebar();
     renderMain();
     $("#sidebar-search").oninput = (e) => {
@@ -13366,10 +13489,10 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     const result = S.conversations.filter((c) => (c.name + (c.peer?.number || "") + (c.group?.number || "") + (c.last?.text || "")).toLowerCase().includes(q));
     const users = q ? S.friends.filter((u) => (u.name + (u.remark || "") + u.number + u.id + u.account).toLowerCase().includes(q)) : [];
-    list.innerHTML = Work.chips() + Me.sidebar() + Work.filter(result).map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc2(u.remark || u.name) + '</b></div><div class="row-preview">' + esc2(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
+    list.innerHTML = Work.chips() + Me.sidebar() + Work.filter(result).map(conversationRow).join("") + (users.length ? '<div class="search-section-label">搜索用户 · 直接聊天</div>' + users.map((u) => '<div class="user-search-result"><button class="conversation-row" data-start-chat="' + u.id + '">' + av(u, "", true) + '<div class="row-text"><div class="row-title"><b>' + esc3(u.remark || u.name) + '</b></div><div class="row-preview">' + esc3(u.number) + '</div></div></button><div class="user-search-actions"><button data-start-chat="' + u.id + '">发消息</button><button data-user-call="' + u.id + '" data-user-call-mode="audio" title="语音通话" aria-label="语音通话">' + icon("phone") + '</button><button data-user-call="' + u.id + '" data-user-call-mode="video" title="视频通话" aria-label="视频通话">' + icon("video") + "</button></div></div>").join("") : "") + (!result.length && !users.length ? '<div class="empty-list">' + (q ? "没有找到相关用户或会话" : "暂无消息<br>搜索用户，直接开始聊天") + "</div>" : "");
   }
   function conversationRow(c) {
-    return `<div class="conversation-item"><button class="conversation-row ${S.active === c.id ? "selected" : ""} ${c.pinned ? "pinned" : ""}" data-conversation="${c.id}">${av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c, "", c.kind === "direct" && !c.peer?.ai)}<div class="row-text"><div class="row-title"><b>${esc2(c.name)}</b>${c.peer?.ai ? '<em class="ai-label">AI</em>' : ""}${c.kind === "direct" ? Contacts.badge(c.peer) : ""}<time>${c.last ? shortTime(c.last.created) : ""}</time></div><div class="row-preview"><span>${c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : ""}${esc2(c.kind === "group" && c.last && !c.last.recalled ? `${c.last.name}：` : "")}${esc2(preview(c.last))}</span>${c.muted ? icon("mute") : ""}${c.unread ? `<i class="badge">${c.unread > 99 ? "99+" : c.unread}</i>` : ""}</div></div></button><button type="button" class="conversation-more" data-conversation-menu="${c.id}" aria-label="${esc2(c.name)}的会话操作" title="会话操作">${icon("more")}</button></div>`;
+    return `<div class="conversation-item"><button class="conversation-row ${S.active === c.id ? "selected" : ""} ${c.pinned ? "pinned" : ""}" data-conversation="${c.id}">${av(c.kind === "group" ? { name: c.name, kind: "group", avatar: c.avatar || "group" } : c.peer || c, "", c.kind === "direct" && !c.peer?.ai)}<div class="row-text"><div class="row-title"><b>${esc3(c.name)}</b>${c.peer?.ai ? '<em class="ai-label">AI</em>' : ""}${c.kind === "direct" ? Contacts.badge(c.peer) : ""}<time>${c.last ? shortTime(c.last.created) : ""}</time></div><div class="row-preview"><span>${c.mentionCount ? '<i class="mention-unread">[有人@我]</i>' : ""}${esc3(c.kind === "group" && c.last && !c.last.recalled ? `${c.last.name}：` : "")}${esc3(preview(c.last))}</span>${c.muted ? icon("mute") : ""}${c.unread ? `<i class="badge">${c.unread > 99 ? "99+" : c.unread}</i>` : ""}</div></div></button><button type="button" class="conversation-more" data-conversation-menu="${c.id}" aria-label="${esc3(c.name)}的会话操作" title="会话操作">${icon("more")}</button></div>`;
   }
   var typingTimer = 0;
   function presenceState(c) {
@@ -13455,7 +13578,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       return;
     }
     ;
-    main.innerHTML = `<header class="chat-head">${btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"')}<h2>${esc2(c.name)}<small id="typing-status" data-presence="${presenceState(c)}">${presenceLabel(c)}</small></h2><div class="chat-actions">${c.peer?.ai ? "" : c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")}${c.kind === "direct" && !c.peer?.ai ? btn("monitor", "远程协助", "remote") : ""}${ChatX.headerButtons(c)}${btn("search", "搜索聊天记录", "search-history")}${btn("more", "聊天设置", "chat-detail")}</div></header><div id="sharing-banner"></div><div id="pinned-bar"></div><div id="unread-summary"></div><div id="me-panel" class="hidden"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft edit-draft hidden" id="edit-draft"></div><div class="reply-draft hidden" id="reply-draft"></div><div class="attach-draft hidden" id="attach-draft" aria-label="待发送的文件"></div><div class="compose-tools">${Media.tools()}${Mentions.tool()}${btn("emoji", "表情", "emoji")}${btn("image", "发送图片", "image")}<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">${icon("video")}</button>${btn("folder", "发送文件", "file")}${btn("scissors", "截图", "screenshot")}${c.kind === "group" ? ChatX.tools(c) : ""}<span class="spacer"></span></div><textarea id="composer" rows="1" placeholder="" aria-label="输入消息" maxlength="6000">${esc2(S.drafts[c.id] || "")}</textarea>${Media.input()}<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ${S.drafts[c.id]?.trim() || Attachments.count(c.id) ? "" : "disabled"}>发送</button></div><input type="file" id="image-input" class="file-input" multiple accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input" multiple></section>`;
+    main.innerHTML = `<header class="chat-head">${btn("back", "返回", "back", "").replace('class="icon-btn"', 'class="icon-btn mobile-back"')}<h2>${esc3(c.name)}<small id="typing-status" data-presence="${presenceState(c)}">${presenceLabel(c)}</small></h2><div class="chat-actions">${c.peer?.ai ? "" : c.kind === "direct" ? '<button class="icon-btn" title="语音通话" aria-label="语音通话" data-call-mode="audio">' + icon("phone") + '</button><button class="icon-btn" title="视频通话" aria-label="视频通话" data-call-mode="video">' + icon("video") + "</button>" : btn("phone", "语音通话", "meeting-audio-call") + btn("video", "发起会议", "meeting-start")}${c.kind === "direct" && !c.peer?.ai ? btn("monitor", "远程协助", "remote") : ""}${ChatX.headerButtons(c)}${btn("search", "搜索聊天记录", "search-history")}${btn("more", "聊天设置", "chat-detail")}</div></header><div id="sharing-banner"></div><div id="pinned-bar"></div><div id="unread-summary"></div><div id="me-panel" class="hidden"></div><div id="mention-jump"></div><section class="message-area" id="messages" aria-label="聊天记录"></section><section class="composer" aria-label="消息输入"><div class="reply-draft edit-draft hidden" id="edit-draft"></div><div class="reply-draft hidden" id="reply-draft"></div><div class="attach-draft hidden" id="attach-draft" aria-label="待发送的文件"></div><div class="compose-tools">${Media.tools()}${Mentions.tool()}${btn("emoji", "表情", "emoji")}${btn("image", "发送图片", "image")}<button class="icon-btn" title="发送视频" aria-label="发送视频" data-media="video">${icon("video")}</button>${btn("folder", "发送文件", "file")}${btn("scissors", "截图", "screenshot")}${c.kind === "group" ? ChatX.tools(c) : ""}<span class="spacer"></span></div><textarea id="composer" rows="1" placeholder="" aria-label="输入消息" maxlength="6000">${esc3(S.drafts[c.id] || "")}</textarea>${Media.input()}<div class="compose-bottom"><small>Enter 发送，Shift + Enter 换行</small><button class="send-btn" id="send-message" data-action="send" ${S.drafts[c.id]?.trim() || Attachments.count(c.id) ? "" : "disabled"}>发送</button></div><input type="file" id="image-input" class="file-input" multiple accept="image/png,image/jpeg,image/gif,image/webp"><input type="file" id="file-input" class="file-input" multiple></section>`;
     renderMessages();
     const input = $("#composer");
     fitComposer(input);
@@ -13510,7 +13633,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     return "/api/files/" + encodeURIComponent(id);
   }
   function messageHTML(m) {
-    if (m.recalled) return `<div class="recalled" data-message="${m.id}">${Forwarding.checkbox(m)}${m.sender === S.user.id ? "你" : esc2(m.name)}撤回了一条消息</div>`;
+    if (m.recalled) return `<div class="recalled" data-message="${m.id}">${Forwarding.checkbox(m)}${m.sender === S.user.id ? "你" : esc3(m.name)}撤回了一条消息</div>`;
     const mine = m.sender === S.user.id;
     const quote = S.messages.find((x) => x.id === m.replyId) || m.reply;
     let content = Mentions.text(m);
@@ -13524,13 +13647,13 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     if (m.kind === "meeting") {
       try {
         const meeting = JSON.parse(m.text);
-        content = `<button class="file-card" data-meeting-code="${esc2(meeting.code)}">${icon("video")}<span><b>${esc2(meeting.title)}</b><small>会议号 ${esc2(meeting.code)} · 点击加入</small></span></button>`;
+        content = `<button class="file-card" data-meeting-code="${esc3(meeting.code)}">${icon("video")}<span><b>${esc3(meeting.title)}</b><small>会议号 ${esc3(meeting.code)} · 点击加入</small></span></button>`;
       } catch {
       }
     }
-    if (m.kind === "image") content = S.offline ? '<div class="file-card">' + icon("image") + "<span><b>" + esc2(m.fileName || "图片") + "</b><small>联网后查看图片</small></span></div>" : `<img src="${fileURL(m.attachmentId)}" alt="${esc2(m.fileName || "图片")}" loading="lazy" data-preview-image="${m.attachmentId}">`;
-    if (m.kind === "file") content = `<button class="file-card" data-download="${m.attachmentId}" data-filename="${esc2(m.fileName)}">${icon("file")}<span><b>${esc2(m.fileName)}</b><small>${bytes(m.fileSize)} · 点击下载</small></span></button>`;
-    return `<article class="message ${mine ? "mine" : ""}" data-message="${m.id}">${Forwarding.checkbox(m)}${av(m)}<div class="message-body"><span class="message-name">${esc2(m.name || (mine ? S.user.name : activeConversation()?.name) || "" + APP_NAME + " 用户")}</span><div class="bubble ${m.kind === "poll" || m.kind === "chain" ? "card-bubble " : ""}${m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : ""}">${content}</div>${ChatX.extras(m)}${m.replyId ? `<button class="quote" data-action="jump-message" data-mid="${m.replyId}" title="查看原消息">${quote ? esc2(quote.name + "：" + preview(quote)) : "原消息不可用"}</button>` : ""}<span class="message-time">${shortTime(m.created)}${ChatX.timeTag(m)}${mine ? Receipts.label(m) : ""}</span></div><div class="message-menu">${ChatX.hoverTools(m)}<button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="${m.id}">${icon("send")}</button>${btn("reply", "引用", "quote", `data-mid="${m.id}"`)}${btn("star", "收藏", "favorite", `data-mid="${m.id}"`)}${mine && Date.now() - m.created < 864e5 ? btn("history", "撤回", "recall", `data-mid="${m.id}"`) : ""}${btn("trash", "删除", "delete-message", `data-mid="${m.id}"`)}${ChatX.moreTool(m)}</div></article>`;
+    if (m.kind === "image") content = S.offline ? '<div class="file-card">' + icon("image") + "<span><b>" + esc3(m.fileName || "图片") + "</b><small>联网后查看图片</small></span></div>" : `<img src="${fileURL(m.attachmentId)}" alt="${esc3(m.fileName || "图片")}" loading="lazy" data-preview-image="${m.attachmentId}">`;
+    if (m.kind === "file") content = `<button class="file-card" data-download="${m.attachmentId}" data-filename="${esc3(m.fileName)}">${icon("file")}<span><b>${esc3(m.fileName)}</b><small>${bytes(m.fileSize)} · 点击下载</small></span></button>`;
+    return `<article class="message ${mine ? "mine" : ""}" data-message="${m.id}">${Forwarding.checkbox(m)}${av(m)}<div class="message-body"><span class="message-name">${esc3(m.name || (mine ? S.user.name : activeConversation()?.name) || "" + APP_NAME + " 用户")}</span><div class="bubble ${m.kind === "poll" || m.kind === "chain" ? "card-bubble " : ""}${m.kind === "image" ? "image-bubble" : m.kind === "forward" ? "forward-bubble" : m.kind === "voice" ? "voice-bubble" : m.kind === "video" ? "video-bubble" : ""}">${content}</div>${ChatX.extras(m)}${m.replyId ? `<button class="quote" data-action="jump-message" data-mid="${m.replyId}" title="查看原消息">${quote ? esc3(quote.name + "：" + preview(quote)) : "原消息不可用"}</button>` : ""}<span class="message-time">${shortTime(m.created)}${ChatX.timeTag(m)}${mine ? Receipts.label(m) : ""}</span></div><div class="message-menu">${ChatX.hoverTools(m)}<button class="icon-btn" title="转发" aria-label="转发" data-fw="single" data-mid="${m.id}">${icon("send")}</button>${btn("reply", "引用", "quote", `data-mid="${m.id}"`)}${btn("star", "收藏", "favorite", `data-mid="${m.id}"`)}${mine && Date.now() - m.created < 864e5 ? btn("history", "撤回", "recall", `data-mid="${m.id}"`) : ""}${btn("trash", "删除", "delete-message", `data-mid="${m.id}"`)}${ChatX.moreTool(m)}</div></article>`;
   }
   function renderMessages(keep = false) {
     const area = $("#messages");
@@ -13664,7 +13787,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     if (!d) return;
     d.classList.toggle("hidden", !S.reply);
     d.closest(".composer").classList.toggle("has-reply", !!S.reply);
-    d.innerHTML = S.reply ? `<span>回复 ${esc2(S.reply.name)}：${esc2(preview(S.reply))}</span>${btn("close", "取消引用", "cancel-reply")}` : "";
+    d.innerHTML = S.reply ? `<span>回复 ${esc3(S.reply.name)}：${esc3(preview(S.reply))}</span>${btn("close", "取消引用", "cancel-reply")}` : "";
   }
   async function upload(file, forceFile = false, cid = S.active) {
     if (cid === S.active && !forceFile && (/^video\//.test(file.type) || /\.(mp4|webm|m4v)$/i.test(file.name))) {
@@ -13951,7 +14074,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           const users = await api("/api/users?q=" + encodeURIComponent(q));
           const list = $("#user-results");
           if (!list) return;
-          list.innerHTML = users.map((u) => `<div class="utility-row">${av(u)}<div class="body"><b>${esc2(u.name)}</b><p>${esc2(u.number || u.account)}</p></div><button class="secondary" data-start-chat="${u.id}">发消息</button><button class="icon-btn" data-user-call="${u.id}" data-user-call-mode="audio" title="语音通话">${icon("phone")}</button><button class="icon-btn" data-user-call="${u.id}" data-user-call-mode="video" title="视频通话">${icon("video")}</button></div>`).join("") || '<div class="empty-list">未找到用户</div>';
+          list.innerHTML = users.map((u) => `<div class="utility-row">${av(u)}<div class="body"><b>${esc3(u.name)}</b><p>${esc3(u.number || u.account)}</p></div><button class="secondary" data-start-chat="${u.id}">发消息</button><button class="icon-btn" data-user-call="${u.id}" data-user-call-mode="audio" title="语音通话">${icon("phone")}</button><button class="icon-btn" data-user-call="${u.id}" data-user-call-mode="video" title="视频通话">${icon("video")}</button></div>`).join("") || '<div class="empty-list">未找到用户</div>';
         } catch (e2) {
           modalError(e2);
         }
@@ -13959,7 +14082,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     };
   }
   function requestFriend(id, name) {
-    modal("添加 " + name, '<label for="request-message">验证消息</label><input id="request-message" maxlength="150" value="你好，我是 ' + esc2(S.user.name) + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">发送申请</button>');
+    modal("添加 " + name, '<label for="request-message">验证消息</label><input id="request-message" maxlength="150" value="你好，我是 ' + esc3(S.user.name) + '">', '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">发送申请</button>');
     modalHandler = async () => {
       await action("/api/requests", { userId: id, message: $("#request-message").value });
       closeModal();
@@ -13968,7 +14091,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     };
   }
   function createGroup() {
-    modal("创建群聊", `<label for="group-name">群名称（选填）</label><input id="group-name" maxlength="60" placeholder="默认用你和第一位成员的名字命名"><label>选择好友</label><div class="member-select">${S.friends.map((u) => `<label class="check-row">${av(u)}${esc2(u.name)}<input type="checkbox" value="${u.id}" name="group-member"></label>`).join("") || '<p class="hint">请先查找用户。</p>'}</div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
+    modal("创建群聊", `<label for="group-name">群名称（选填）</label><input id="group-name" maxlength="60" placeholder="默认用你和第一位成员的名字命名"><label>选择好友</label><div class="member-select">${S.friends.map((u) => `<label class="check-row">${av(u)}${esc3(u.name)}<input type="checkbox" value="${u.id}" name="group-member"></label>`).join("") || '<p class="hint">请先查找用户。</p>'}</div>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">创建群聊</button>');
     modalHandler = async () => {
       const members = $$("input[name=group-member]:checked").map((x) => x.value);
       const c = await action("/api/conversations", { kind: "group", name: $("#group-name").value, members });
@@ -13984,7 +14107,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   async function showRequests() {
     modal("联系人通知", '<div class="inline-loading">正在读取…</div>', "", true);
     await refresh();
-    $(".modal-body").innerHTML = S.requests.map((q) => `<div class="utility-row">${av(q)}<div class="body"><b>${esc2(q.name)}</b><p>${q.sender === S.user.id ? "我：" : ""}${esc2(q.message)}</p><p>${shortTime(q.created)}</p></div>${q.status === "pending" && q.recipient === S.user.id ? `<div class="request-actions"><button class="secondary" data-resolve="${q.id}" data-accept="false">拒绝</button><button class="primary" data-resolve="${q.id}" data-accept="true">同意</button></div>` : `<span class="muted">${{ pending: "等待验证", accepted: "已添加", rejected: "已拒绝", cancelled: "已取消" }[q.status]}</span>`}</div>`).join("") || '<div class="empty-list">暂无联系人通知</div>';
+    $(".modal-body").innerHTML = S.requests.map((q) => `<div class="utility-row">${av(q)}<div class="body"><b>${esc3(q.name)}</b><p>${q.sender === S.user.id ? "我：" : ""}${esc3(q.message)}</p><p>${shortTime(q.created)}</p></div>${q.status === "pending" && q.recipient === S.user.id ? `<div class="request-actions"><button class="secondary" data-resolve="${q.id}" data-accept="false">拒绝</button><button class="primary" data-resolve="${q.id}" data-accept="true">同意</button></div>` : `<span class="muted">${{ pending: "等待验证", accepted: "已添加", rejected: "已拒绝", cancelled: "已取消" }[q.status]}</span>`}</div>`).join("") || '<div class="empty-list">暂无联系人通知</div>';
   }
   async function chatDetail() {
     if (activeConversation()?.kind === "group") {
@@ -13992,7 +14115,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       return;
     }
     const c = await api(`/api/conversations/${S.active}`), mine = c.owner === S.user.id, local = activeConversation();
-    modal("聊天设置", `<div class="detail-members">${c.members.map((u) => `<div class="detail-member">${av(u)}<span>${esc2(u.name)}${u.id === c.owner && c.kind === "group" ? " · 群主" : ""}</span></div>`).join("")}</div>${c.kind === "group" ? `<label>群名称</label><input id="detail-name" value="${esc2(c.name)}" maxlength="60" ${mine ? "" : "disabled"}><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ${mine ? "" : "disabled"}>${esc2(c.announcement)}</textarea>` : ""}<button class="chat-history-entry" data-contact="edit" data-user="${local.peer?.id || ""}">联系人设置</button><button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ${local.pinned ? "checked" : ""}></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ${local.muted ? "checked" : ""}></label><button class="chat-remove-entry" data-conversation-action="remove" data-cid="${c.id}">${icon("trash")}从消息列表移除</button>`, `<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>`);
+    modal("聊天设置", `<div class="detail-members">${c.members.map((u) => `<div class="detail-member">${av(u)}<span>${esc3(u.name)}${u.id === c.owner && c.kind === "group" ? " · 群主" : ""}</span></div>`).join("")}</div>${c.kind === "group" ? `<label>群名称</label><input id="detail-name" value="${esc3(c.name)}" maxlength="60" ${mine ? "" : "disabled"}><label>群公告</label><textarea id="detail-notice" maxlength="2000" placeholder="暂无群公告" ${mine ? "" : "disabled"}>${esc3(c.announcement)}</textarea>` : ""}<button class="chat-history-entry" data-contact="edit" data-user="${local.peer?.id || ""}">联系人设置</button><button class="chat-history-entry" data-action="search-history">查找聊天记录</button><label class="prefs-row">置顶聊天<input type="checkbox" id="detail-pin" ${local.pinned ? "checked" : ""}></label><label class="prefs-row">消息免打扰<input type="checkbox" id="detail-mute" ${local.muted ? "checked" : ""}></label><button class="chat-remove-entry" data-conversation-action="remove" data-cid="${c.id}">${icon("trash")}从消息列表移除</button>`, `<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>`);
     modalHandler = async () => {
       const p = { pinned: $("#detail-pin").checked, muted: $("#detail-mute").checked };
       if (c.kind === "group" && mine) {
@@ -14009,7 +14132,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   async function inviteMembers() {
     const cid = S.active, c = await api(`/api/conversations/${cid}`);
     const list = S.friends.filter((u) => !c.members.some((m) => m.id === u.id));
-    modal("邀请好友入群", `<div class="member-select">${list.map((u) => `<label class="check-row">${av(u)}${esc2(u.name)}<input type="checkbox" name="invite-member" value="${u.id}"></label>`).join("") || '<p class="hint">好友都已在群里。</p>'}</div>`, '<button class="primary" data-action="modal-submit">邀请</button>');
+    modal("邀请好友入群", `<div class="member-select">${list.map((u) => `<label class="check-row">${av(u)}${esc3(u.name)}<input type="checkbox" name="invite-member" value="${u.id}"></label>`).join("") || '<p class="hint">好友都已在群里。</p>'}</div>`, '<button class="primary" data-action="modal-submit">邀请</button>');
     modalHandler = async () => {
       await action(`/api/conversations/${cid}/members`, { members: $$("input[name=invite-member]:checked").map((x) => x.value) });
       closeModal();
@@ -14027,7 +14150,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const files = await api("/api/files"), list = $("#file-list");
       if (list !== target || S.tab !== "files") return;
       list.className = "";
-      list.innerHTML = files.map((f) => `<div class="utility-row">${icon(f.mime.startsWith("image/") ? "image" : "file")}<div class="body"><b>${esc2(f.name)}</b><p>${bytes(f.size)} · ${fullTime(f.created)}</p></div>${btn("download", "下载", "download", `data-download="${f.id}" data-filename="${esc2(f.name)}"`)}${f.messageId ? btn("trash", "删除文件", "delete-chat-file", `data-mid="${f.messageId}" data-cid="${f.conversationId}" data-filename="${esc2(f.name)}"`) : ""}</div>`).join("") || '<div class="empty-list">发送和接收的文件会保存在这里</div>';
+      list.innerHTML = files.map((f) => `<div class="utility-row">${icon(f.mime.startsWith("image/") ? "image" : "file")}<div class="body"><b>${esc3(f.name)}</b><p>${bytes(f.size)} · ${fullTime(f.created)}</p></div>${btn("download", "下载", "download", `data-download="${f.id}" data-filename="${esc3(f.name)}"`)}${f.messageId ? btn("trash", "删除文件", "delete-chat-file", `data-mid="${f.messageId}" data-cid="${f.conversationId}" data-filename="${esc3(f.name)}"`) : ""}</div>`).join("") || '<div class="empty-list">发送和接收的文件会保存在这里</div>';
     } catch (e) {
       toast(e.message);
     }
@@ -14038,7 +14161,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const items = await api("/api/favorites"), list = $("#favorites-list");
       if (!list) return;
       list.className = "";
-      list.innerHTML = items.map((m) => `<div class="utility-row">${av(m)}<div class="body"><b>${esc2(m.name)}</b><p>${esc2(preview(m))}</p><p>${fullTime(m.created)}</p>${m.kind === "voice" || m.kind === "video" ? `<div class="favorite-media">${Media.bubble(m)}</div>` : ""}${m.kind === "forward" ? `<button class="secondary" data-forward-view="${m.id}">查看聊天记录</button>` : ""}${m.attachmentId ? `<button class="secondary" data-download="${m.attachmentId}" data-filename="${esc2(m.fileName)}">下载附件</button>` : ""}</div>${btn("trash", "取消收藏", "unfavorite", `data-mid="${m.id}"`)}</div>`).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
+      list.innerHTML = items.map((m) => `<div class="utility-row">${av(m)}<div class="body"><b>${esc3(m.name)}</b><p>${esc3(preview(m))}</p><p>${fullTime(m.created)}</p>${m.kind === "voice" || m.kind === "video" ? `<div class="favorite-media">${Media.bubble(m)}</div>` : ""}${m.kind === "forward" ? `<button class="secondary" data-forward-view="${m.id}">查看聊天记录</button>` : ""}${m.attachmentId ? `<button class="secondary" data-download="${m.attachmentId}" data-filename="${esc3(m.fileName)}">下载附件</button>` : ""}</div>${btn("trash", "取消收藏", "unfavorite", `data-mid="${m.id}"`)}</div>`).join("") || '<div class="empty-list">在聊天中长按或右键消息，即可收藏</div>';
     } catch (e) {
       toast(e.message);
     }
@@ -14056,7 +14179,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   function profile(initial = {}) {
     const user = { ...S.user, ...initial };
-    modal("编辑资料", `<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">${av(S.user, "large")}<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">${APP_NAME} 账号：${esc2(user.number)}</p><button type="button" class="secondary status-entry" data-cx="status">个人状态：${esc2(S.myStatus?.label || "未设置")}</button><label>姓名</label><input id="profile-name" value="${esc2(user.name)}" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="${esc2(user.phone || "")}" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>${[["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => `<option value="${v}" ${user.gender === v ? "selected" : ""}>${t}</option>`).join("")}</select><label>职位</label><input id="profile-job" value="${esc2(user.jobTitle || "")}" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="${esc2(user.bio)}" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
+    modal("编辑资料", `<div style="text-align:center;margin:5px 0 25px"><button class="avatar-edit-button" data-avatar="user" aria-label="更换头像">${av(S.user, "large")}<span class="avatar-edit-hint">更换头像</span></button></div><p class="hint">${APP_NAME} 账号：${esc3(user.number)}</p><button type="button" class="secondary status-entry" data-cx="status">个人状态：${esc3(S.myStatus?.label || "未设置")}</button><label>姓名</label><input id="profile-name" value="${esc3(user.name)}" maxlength="32"><label>手机号</label><input id="profile-phone" type="tel" autocomplete="tel" value="${esc3(user.phone || "")}" maxlength="32" placeholder="未设置"><label>性别</label><select id="profile-gender"><option value="">未设置</option>${[["male", "男"], ["female", "女"], ["other", "其他"]].map(([v, t]) => `<option value="${v}" ${user.gender === v ? "selected" : ""}>${t}</option>`).join("")}</select><label>职位</label><input id="profile-job" value="${esc3(user.jobTitle || "")}" maxlength="64" placeholder="未设置"><label>个性签名</label><input id="profile-bio" value="${esc3(user.bio)}" maxlength="150" placeholder="分享此刻的心情"><p class="hint">点击头像，从 100 个卡通头像中挑选，或上传自己的照片。</p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">保存</button>');
     modalHandler = async () => {
       S.user = await api("/api/me", { method: "PATCH", body: { name: $("#profile-name").value, bio: $("#profile-bio").value, phone: $("#profile-phone").value, gender: $("#profile-gender").value, jobTitle: $("#profile-job").value, avatar: user.avatar } });
       closeModal();
@@ -14066,11 +14189,11 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     };
   }
   function renderMyPage() {
-    $("#main-content").innerHTML = `<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">${av(S.user, "large")}<h2>${esc2(S.user.name)}</h2><span class="profile-line">${APP_NAME} 号：${esc2(S.user.number || S.user.account)}</span></div><button class="utility-row" style="width:100%" data-action="profile">${icon("user")}<div class="body" style="text-align:left">个人资料</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-cx="status">${icon("bell")}<div class="body" style="text-align:left">个人状态${S.myStatus?.label ? " · " + esc2(S.myStatus.label) : ""}</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="drive">${icon("cloud")}<div class="body" style="text-align:left">我的网盘</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="files">${icon("folder")}<div class="body" style="text-align:left">我的文件</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="favorites">${icon("star")}<div class="body" style="text-align:left">我的收藏</div>${icon("chevron")}</button>${S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : ""}<button class="utility-row" style="width:100%" data-action="settings">${icon("settings")}<div class="body" style="text-align:left">设置</div>${icon("chevron")}</button></div></section>`;
+    $("#main-content").innerHTML = `<section class="utility"><div class="settings-body"><div class="contact-profile" style="padding:25px 0">${av(S.user, "large")}<h2>${esc3(S.user.name)}</h2><span class="profile-line">${APP_NAME} 号：${esc3(S.user.number || S.user.account)}</span></div><button class="utility-row" style="width:100%" data-action="profile">${icon("user")}<div class="body" style="text-align:left">个人资料</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-cx="status">${icon("bell")}<div class="body" style="text-align:left">个人状态${S.myStatus?.label ? " · " + esc3(S.myStatus.label) : ""}</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="drive">${icon("cloud")}<div class="body" style="text-align:left">我的网盘</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="files">${icon("folder")}<div class="body" style="text-align:left">我的文件</div>${icon("chevron")}</button><button class="utility-row" style="width:100%" data-nav="favorites">${icon("star")}<div class="body" style="text-align:left">我的收藏</div>${icon("chevron")}</button>${S.config.platform === "android" ? '<button class="utility-row" style="width:100%" data-action="scan-qr"><div class="body" style="text-align:left">扫一扫 · 电脑登录</div></button>' : ""}<button class="utility-row" style="width:100%" data-action="settings">${icon("settings")}<div class="body" style="text-align:left">设置</div>${icon("chevron")}</button></div></section>`;
   }
   async function settings() {
     await Sounds.ready;
-    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Assistant.settingsRow()}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>定时消息</span><button class="secondary" data-action="schedules">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION} 正式版 <button class="text-btn" data-update-check>检查更新</button></span></div><div class="prefs-row"><span>服务器</span><span>${esc2(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
+    modal("设置", `<label class="prefs-row">深色外观<input type="checkbox" id="pref-dark" ${document.body.classList.contains("dark") ? "checked" : ""}></label>${Desktop.native ? "" : '<label class="prefs-row">' + (window.WeLinkAndroid ? "手机消息通知" : "桌面消息通知") + '<button class="secondary" data-action="notifications">开启通知</button></label>'}${Sounds.row()}${window.WeLinkAndroid ? '<div class="prefs-row"><span>后台在线</span><button class="secondary" data-action="background">设置</button></div><p class="hint">离开 ' + APP_NAME + " 后，只要系统没有强制停止应用，仍会保持在线并接收消息。</p>" : ""}${Assistant.settingsRow()}${Desktop.settingsRow()}${Outbox.settingsRow()}${Received.settingsRow()}<div class="prefs-row"><span>账号与安全</span><button class="secondary" data-action="security">管理</button></div><div class="prefs-row"><span>联系人与隐私</span><button class="secondary" data-contact="privacy">管理</button></div><div class="prefs-row"><span>定时消息</span><button class="secondary" data-action="schedules">管理</button></div><div class="prefs-row"><span>当前版本</span><span>${CLIENT_VERSION} 正式版 <button class="text-btn" data-update-check>检查更新</button></span></div><div class="prefs-row"><span>服务器</span><span>${esc3(S.config.server || "本地")}</span></div><p class="hint">聊天记录保存在服务器，登录同一账号即可同步。<br>远程协助每次都需要对方明确同意。</p><button class="secondary" data-action="connection">连接设置</button> <button class="secondary" data-action="licenses">开源许可</button>`, `<button class="secondary danger" data-action="logout">退出登录</button><button class="primary" data-action="modal-submit">完成</button>`);
     modalHandler = async () => {
       applyTheme($("#pref-dark").checked);
       localStorage.setItem("welink_dark", String($("#pref-dark").checked));
@@ -14092,7 +14215,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   function connection() {
     let confirmed = false;
-    modal("连接设置", `<label>服务器地址</label><input id="server-url" value="${esc2(S.config.server || "")}" placeholder="例如 192.168.1.10 或 chat.example.com" autocomplete="off" spellcheck="false"><p class="hint">填写管理员提供的服务器 IP 或域名即可，http:// 和默认端口 8250 会自动补全；留空则使用默认服务器。</p><label>HTTPS 证书指纹（可选）</label><input id="server-pin" value="${esc2(S.config.fingerprint || "")}" placeholder="64 位十六进制指纹"><p class="hint">证书指纹仅在使用 HTTPS 时需要。</p><p class="hint connection-check" id="server-check" role="status"></p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">连接</button>');
+    modal("连接设置", `<label>服务器地址</label><input id="server-url" value="${esc3(S.config.server || "")}" placeholder="例如 192.168.1.10 或 chat.example.com" autocomplete="off" spellcheck="false"><p class="hint">填写管理员提供的服务器 IP 或域名即可，http:// 和默认端口 8250 会自动补全；留空则使用默认服务器。</p><label>HTTPS 证书指纹（可选）</label><input id="server-pin" value="${esc3(S.config.fingerprint || "")}" placeholder="64 位十六进制指纹"><p class="hint">证书指纹仅在使用 HTTPS 时需要。</p><p class="hint connection-check" id="server-check" role="status"></p>`, '<button class="secondary" data-action="close-modal">取消</button><button class="primary" data-action="modal-submit">连接</button>');
     $("#server-url").oninput = () => {
       confirmed = false;
       const note = $("#server-check");
@@ -14185,7 +14308,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   }
   function deleteChatFile(button) {
     const { mid, cid, filename } = button.dataset;
-    modal("删除聊天文件", "<p>删除「" + esc2(filename) + '」及对应的文件消息？</p><p class="hint">会从你所有设备的聊天记录和文件列表中移除。对方的记录、你的收藏及已下载到设备的副本会保留。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" data-action="modal-submit">删除</button>');
+    modal("删除聊天文件", "<p>删除「" + esc3(filename) + '」及对应的文件消息？</p><p class="hint">会从你所有设备的聊天记录和文件列表中移除。对方的记录、你的收藏及已下载到设备的副本会保留。</p>', '<button class="secondary" data-action="close-modal">取消</button><button class="primary danger" data-action="modal-submit">删除</button>');
     modalHandler = async () => {
       await api("/api/messages/" + mid, { method: "DELETE" });
       applyDeletion({ id: mid, conversationId: cid });
@@ -14280,7 +14403,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       const d = new Date(ms);
       return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
     };
-    modal("定时消息", list.length ? '<div class="schedule-list">' + list.map((s) => '<div class="schedule-row"><div><b>' + esc2(name(s.conversationId)) + "</b><small>" + fmt(s.nextRun) + " · " + (repeat[s.repeat] || s.repeat) + (s.lastError ? " · 上次失败：" + esc2(s.lastError) : "") + "</small><p>" + (s.kind === "text" ? esc2(s.text) : s.kind === "image" ? "[图片]" : "[文件]") + '</p></div><button class="secondary danger" data-action="cancel-schedule" data-id="' + esc2(s.id) + '">取消</button></div>').join("") + "</div>" : '<p class="hint">暂无定时消息。可以让 Me 帮你设置，例如“每天 9 点给项目群发早安”。</p>', '<button class="primary" data-action="close-modal">完成</button>', true);
+    modal("定时消息", list.length ? '<div class="schedule-list">' + list.map((s) => '<div class="schedule-row"><div><b>' + esc3(name(s.conversationId)) + "</b><small>" + fmt(s.nextRun) + " · " + (repeat[s.repeat] || s.repeat) + (s.lastError ? " · 上次失败：" + esc3(s.lastError) : "") + "</small><p>" + (s.kind === "text" ? esc3(s.text) : s.kind === "image" ? "[图片]" : "[文件]") + '</p></div><button class="secondary danger" data-action="cancel-schedule" data-id="' + esc3(s.id) + '">取消</button></div>').join("") + "</div>" : '<p class="hint">暂无定时消息。可以让 Me 帮你设置，例如“每天 9 点给项目群发早安”。</p>', '<button class="primary" data-action="close-modal">完成</button>', true);
   }
   async function inviteRemote(mode, direction) {
     const local = direction === "share" ? await ensureSharing() : await api("/local/remote/state");
@@ -14304,7 +14427,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       S.remote = v;
       if (S.config.platform === "windows" && typeof window.welinkTakeNativeInviteAction === "function") return;
       const from = S.friends.find((u) => u.id === v.requester) || { name: "好友" };
-      modal("远程协助邀请", `<div class="remote-invite">${av(from, "large")}<h3>${esc2(from.name)}</h3><p>${v.host === S.user.id ? v.mode === "control" ? "请求观看并控制你的设备" : "请求观看你的屏幕" : "邀请你远程协助"}<br>同意后开始，随时可以结束</p></div>`, '<button class="secondary" data-action="reject-remote">拒绝</button><button class="primary" data-action="accept-remote">同意</button>');
+      modal("远程协助邀请", `<div class="remote-invite">${av(from, "large")}<h3>${esc3(from.name)}</h3><p>${v.host === S.user.id ? v.mode === "control" ? "请求观看并控制你的设备" : "请求观看你的屏幕" : "邀请你远程协助"}<br>同意后开始，随时可以结束</p></div>`, '<button class="secondary" data-action="reject-remote">拒绝</button><button class="primary" data-action="accept-remote">同意</button>');
       return;
     }
     ;
@@ -14409,7 +14532,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
       pill.setAttribute("role", "status");
       document.body.append(pill);
     }
-    const html = `<i class="live-dot"></i>${icon("monitor")}<span>${esc2(peer?.name || "对方")}${S.remote.mode === "control" ? " 正在远程控制你的设备" : " 正在观看你的屏幕"}</span><button data-action="stop-remote">结束共享</button>`;
+    const html = `<i class="live-dot"></i>${icon("monitor")}<span>${esc3(peer?.name || "对方")}${S.remote.mode === "control" ? " 正在远程控制你的设备" : " 正在观看你的屏幕"}</span><button data-action="stop-remote">结束共享</button>`;
     if (pill.dataset.html !== html) {
       pill.dataset.html = html;
       pill.innerHTML = html;
@@ -14421,7 +14544,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     const node = document.createElement("section");
     node.className = "remote-screen";
     const remotePeer = S.friends.find((u) => u.id === S.remote?.host) || activeConversation()?.peer;
-    node.innerHTML = `<header class="remote-toolbar">${icon("monitor")}<b>远程协助${remotePeer ? " · " + esc2(remotePeer.remark || remotePeer.name) : ""}</b><span class="remote-mode">${S.remote?.mode === "control" ? "可控制" : "仅观看"}</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-actual" aria-pressed="false" title="按原始像素 1:1 显示">1:1</button><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>${S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : ""}<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><canvas id="remote-image" tabindex="0" role="img" aria-label="远程设备屏幕"></canvas></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>`;
+    node.innerHTML = `<header class="remote-toolbar">${icon("monitor")}<b>远程协助${remotePeer ? " · " + esc3(remotePeer.remark || remotePeer.name) : ""}</b><span class="remote-mode">${S.remote?.mode === "control" ? "可控制" : "仅观看"}</span><span id="remote-status" class="status">正在连接…</span><button class="secondary" data-action="remote-actual" aria-pressed="false" title="按原始像素 1:1 显示">1:1</button><button class="secondary" data-action="remote-fullscreen" aria-pressed="false">全屏</button>${S.config.platform !== "android" ? '<button class="secondary" data-action="remote-minimize" aria-label="最小化远程窗口">最小化</button>' : ""}<button class="primary" data-action="stop-remote">结束协助</button></header><div class="remote-canvas"><p id="remote-loading"><i class="remote-spinner"></i>正在等待对方画面…</p><canvas id="remote-image" tabindex="0" role="img" aria-label="远程设备屏幕"></canvas></div><div class="remote-touchbar"><button data-remote-key="Escape">返回</button><button data-remote-key="Home">主页</button><button data-action="remote-text">输入文字</button><button data-remote-key="Enter">回车</button></div>`;
     document.body.append(node);
     remoteFrameLoop();
     const img = $("#remote-image");
@@ -14642,7 +14765,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
           break;
         case "licenses": {
           const text = await (await fetch("/assets/licenses.txt")).text();
-          modal("开源许可", '<pre class="license-text">' + esc2(text) + "</pre>", "", true);
+          modal("开源许可", '<pre class="license-text">' + esc3(text) + "</pre>", "", true);
           break;
         }
         case "profile":
@@ -14898,8 +15021,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     if ((event.key === "welink_token" || event.key === null) && S.token && localStorage.getItem("welink_token") !== S.token) logout(false);
   });
   applyTheme(localStorage.getItem("welink_dark") === "true");
-  var Directory = createDirectorySearch({ S, api, esc: esc2, av, icon, renderSidebar, contextMenu });
-  var Received = createReceivedCache({ S, toast, modal, closeModal: finishModal, esc: esc2, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
+  var Directory = createDirectorySearch({ S, api, esc: esc3, av, icon, renderSidebar, contextMenu });
+  var Received = createReceivedCache({ S, toast, modal, closeModal: finishModal, esc: esc3, bytes, connectionState, onReconciled: (cid, messages, ids, denied) => {
     if (S.active !== cid) return;
     const live = new Map(messages.map((m) => [m.id, m])), checked = new Set(ids);
     S.messages = denied ? [] : S.messages.filter((m) => !checked.has(m.id) || live.has(m.id)).map((m) => live.get(m.id) || m);
@@ -14909,14 +15032,14 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     }
     renderMessages(true);
   } });
-  var Transfers = createTransfers({ S, api, esc: esc2, av, bytes, randomID, renderMessages, queueRefresh, toast });
-  var Cloud = createCloud({ S, api, modal, closeModal, toast, esc: esc2, icon, bytes, fullTime, upload: Transfers.upload });
-  createConversationActions({ S, api, modal, closeModal, toast, esc: esc2, icon, contextMenu, refresh });
-  var Media = createMedia({ S, api, action, modal, closeModal, toast, esc: esc2, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
-  var Desktop = createDesktop({ S, modal, closeModal: finishModal, toast, markRead, esc: esc2 });
+  var Transfers = createTransfers({ S, api, esc: esc3, av, bytes, randomID, renderMessages, queueRefresh, toast });
+  var Cloud = createCloud({ S, api, modal, closeModal, toast, esc: esc3, icon, bytes, fullTime, upload: Transfers.upload });
+  createConversationActions({ S, api, modal, closeModal, toast, esc: esc3, icon, contextMenu, refresh });
+  var Media = createMedia({ S, api, action, modal, closeModal, toast, esc: esc3, icon, fileURL, randomID, renderMessages, queueRefresh, upload, enqueue: (...args) => Outbox.enqueue(...args) });
+  var Desktop = createDesktop({ S, modal, closeModal: finishModal, toast, markRead, esc: esc3 });
   var Sounds = createMessageSounds({ toast, native: Desktop.native, hidden: Desktop.hidden });
-  var Attachments = createAttachments({ S, esc: esc2, icon, bytes, toast });
-  var Receipts = createReceipts({ S, api, esc: esc2, av, modal });
+  var Attachments = createAttachments({ S, esc: esc3, icon, bytes, toast });
+  var Receipts = createReceipts({ S, api, esc: esc3, av, modal });
   function downloadURL(url, name) {
     if (window.WeLinkAndroid) {
       window.WeLinkAndroid.downloadFile(url, name);
@@ -14938,14 +15061,14 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     renderShell();
     Docs.open(id);
   }
-  var Docs = createDocs({ S, api, esc: esc2, av, modal, closeModal, toast, downloadURL, showDocsTab, when: shortTime });
-  var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc: esc2, attach: (file, cid) => Attachments.add([file], cid) });
-  var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc: esc2, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
-  var Mentions = createMentions({ S, api, esc: esc2, av, toast, jump: jumpMessage });
+  var Docs = createDocs({ S, api, esc: esc3, av, modal, closeModal, toast, downloadURL, showDocsTab, when: shortTime });
+  var Screenshots = createScreenshots({ S, modal, closeModal, toast, esc: esc3, attach: (file, cid) => Attachments.add([file], cid) });
+  var Avatars = createAvatars({ S, api, modal, closeModal, toast, esc: esc3, av, refresh, renderMessages, renderMain, updateRail, profile, groupDetail: (id) => Groups.detail(id) });
+  var Mentions = createMentions({ S, api, esc: esc3, av, toast, jump: jumpMessage });
   sidebarResize();
-  var Work = createWork({ S, api, esc: esc2, av, icon, modal, closeModal, toast, renderSidebar, openMessage, preview, meetingButton });
-  var GlobalSearch = createGlobalSearch({ S, api, esc: esc2, av, icon, modal, closeModal, toast, openMessage, openChat, startChat, Docs, preview, whenText });
-  var Assistant = createAssistant({ S, api, esc: esc2, av, icon, toast, openChat, openMessage, startChat, showWork, showTab, Docs, Work, closeModal });
+  var Work = createWork({ S, api, esc: esc3, av, icon, modal, closeModal, toast, renderSidebar, openMessage, preview, meetingButton });
+  var GlobalSearch = createGlobalSearch({ S, api, esc: esc3, av, icon, modal, closeModal, toast, openMessage, openChat, startChat, Docs, preview, whenText });
+  var Assistant = createAssistant({ S, api, esc: esc3, av, icon, toast, openChat, openMessage, startChat, showWork, showTab, Docs, Work, closeModal });
   function showTab(tab) {
     pageHistory.length = 0;
     closeModal();
@@ -14984,20 +15107,20 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     b.click();
     b.remove();
   }
-  var ChatX = createChatFeatures({ S, api, esc: esc2, av, icon, modal, closeModal, toast, renderMessages, jumpMessage, messageMenu, Received, fileURL, download, Docs, shortTime, Mentions, queueRefresh, showPresence });
-  var Me = createMe({ S, api, action, esc: esc2, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar, remote: async (d) => {
+  var ChatX = createChatFeatures({ S, api, esc: esc3, av, icon, modal, closeModal, toast, renderMessages, jumpMessage, messageMenu, Received, fileURL, download, Docs, shortTime, Mentions, queueRefresh, showPresence });
+  var Me = createMe({ S, api, action, esc: esc3, icon, modal, closeModal, toast, refresh, selectConversation, renderSidebar, remote: async (d) => {
     if (!d.conversationId) return;
     await selectConversation(d.conversationId);
     await inviteRemote(d.mode === "control" ? "control" : "view", d.direction === "share" ? "share" : "request");
   } });
-  var Updates = createUpdates({ S, api, action, esc: esc2, toast });
-  var Outbox = createOutbox({ onSent: (message) => Me.onSent(message), sendLarge: Transfers.chat, S, api, toast, esc: esc2, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
-  var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc: esc2, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
-  var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc: esc2, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
-  var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc: esc2, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
-  var History = createHistory({ S, api, modal, toast, esc: esc2, preview, fullTime, jump: jumpMessage });
-  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc: esc2, icon, av, Desktop, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
-  var Calls = createCalls({ S, api, action, esc: esc2, av, icon, toast, modal, closeModal, randomID, Meetings, Desktop, renderMessages, queueRefresh, fullTime });
+  var Updates = createUpdates({ S, api, action, esc: esc3, toast });
+  var Outbox = createOutbox({ onSent: (message) => Me.onSent(message), sendLarge: Transfers.chat, S, api, toast, esc: esc3, av, bytes, randomID, Mentions, renderMessages, renderReply, queueRefresh, modal, closeModal: finishModal });
+  var Groups = createGroups({ S, api, action, modal, closeModal, toast, esc: esc3, icon, av, refresh, selectConversation, renderMain, copy: copyMessage, stopMedia: () => Media.reset() });
+  var Contacts = createContacts({ S, api, action, modal, closeModal: finishModal, toast, esc: esc3, icon, av, refresh, renderSidebar, renderMain, stopMedia: () => Media.reset(), requestFriend, contextMenu });
+  var Forwarding = createForwarding({ S, api, action, modal, closeModal, toast, esc: esc3, icon, av, preview, fullTime, bytes, fileURL, randomID, renderMessages, queueRefresh, mediaBubble: Media.bubble });
+  var History = createHistory({ S, api, modal, toast, esc: esc3, preview, fullTime, jump: jumpMessage });
+  var Meetings = createMeetings({ api, action, S, modal, closeModal, toast, esc: esc3, icon, av, Desktop, onCallClosed: (id) => Calls.mediaClosed(id), callCurrent: (id) => Calls.isCurrent(id), historyEntry: () => Calls.historyEntry() });
+  var Calls = createCalls({ S, api, action, esc: esc3, av, icon, toast, modal, closeModal, randomID, Meetings, Desktop, renderMessages, queueRefresh, fullTime });
   async function nativeInviteEvent(event) {
     const n = event.detail;
     if (!S.user || !n || n.userId && n.userId !== S.user.id) return;
@@ -15035,8 +15158,8 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
   window.addEventListener("welink-native-invite-action", (event) => {
     nativeInviteQueue = nativeInviteQueue.then(() => nativeInviteAction(event)).catch((e) => toast(e.message));
   });
-  var Security = createSecurity({ api, action, S, modal, toast, esc: esc2, icon, logout });
-  var QR = createQRLogin({ action, S, modal, toast, esc: esc2, enter, renderAuth, windows, logo, icon });
+  var Security = createSecurity({ api, action, S, modal, toast, esc: esc3, icon, logout });
+  var QR = createQRLogin({ action, S, modal, toast, esc: esc3, enter, renderAuth, windows, logo, icon });
   var EmailAuth = createEmailAuth({ S, action, enter, QR, Desktop, windows, logo });
   async function loadRegistration() {
     try {
@@ -15081,7 +15204,7 @@ linkme-doc:${doc.id}`).then(() => toast2("已复制，粘贴到聊天发送即�
     } catch (error) {
       Outbox.stop();
       S.user = null;
-      $("#app").innerHTML = '<main class="auth-shell">' + windows() + '<section class="auth-card">' + logo() + '<h2>正在重新连接</h2><p class="subtitle">登录状态与本机草稿已保留</p><p class="auth-error">' + esc2(error.message) + '</p><button class="primary" id="retry-connect">立即重试</button><div class="auth-links"><button data-action="logout">返回登录</button><button data-action="connection">连接设置</button></div></section></main>';
+      $("#app").innerHTML = '<main class="auth-shell">' + windows() + '<section class="auth-card">' + logo() + '<h2>正在重新连接</h2><p class="subtitle">登录状态与本机草稿已保留</p><p class="auth-error">' + esc3(error.message) + '</p><button class="primary" id="retry-connect">立即重试</button><div class="auth-links"><button data-action="logout">返回登录</button><button data-action="connection">连接设置</button></div></section></main>';
       $("#retry-connect").onclick = bootstrap;
       setTimeout(() => {
         if ($("#retry-connect")) bootstrap();

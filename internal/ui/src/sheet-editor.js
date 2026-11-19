@@ -1,5 +1,6 @@
 import {createCalculator,display,isError,parseRef,refName,colName,functionNames} from './formula.js';
 import {peerColor} from './doc-editor.js';
+import {confirmDialog,inputDialog} from './dialogs.js';
 
 // The spreadsheet editor, after Feishu Sheets: a grid that only draws what is
 // on screen, a formula bar, sheet tabs and a toolbar. Cell edits are applied
@@ -248,11 +249,11 @@ export function createSheetEditor({mount,content,editable,newId,onChange,onWhere
  tabs.addEventListener('click',e=>{const t=e.target.closest('[data-tab]');if(t){switchTo(+t.dataset.tab);return}const a=e.target.closest('[data-sh]');if(a)command(a.dataset.sh)});
  tabs.addEventListener('dblclick',e=>{const t=e.target.closest('[data-tab]');if(t&&canEdit)rename(+t.dataset.tab)});
  tabs.addEventListener('contextmenu',e=>{const t=e.target.closest('[data-tab]');if(!t||!canEdit)return;e.preventDefault();const i=+t.dataset.tab;document.querySelector('.sheet-menu')?.remove();const m=document.createElement('div');m.className='sheet-menu doc-block-menu';m.innerHTML=`<button data-tab-op="rename">重命名</button><button data-tab-op="left">左移</button><button data-tab-op="right">右移</button><button data-tab-op="delete" class="danger">删除工作表</button>`;document.body.append(m);m.style.left=e.clientX+'px';m.style.top=Math.max(8,e.clientY-m.offsetHeight)+'px';
-  m.addEventListener('mousedown',ev=>{const b=ev.target.closest('[data-tab-op]');if(!b)return;ev.preventDefault();m.remove();const op=b.dataset.tabOp,p=pages[i];
-   if(op==='rename')rename(i);else if(op==='delete'){if(pages.length===1){toast('至少保留一个工作表');return}if(confirm(`删除工作表“${p.name}”？引用它的公式会显示 #REF!`)){queueOps.push({op:'deleteSheet',sheet:p.id});onChange()}}
+  m.addEventListener('mousedown',async ev=>{const b=ev.target.closest('[data-tab-op]');if(!b)return;ev.preventDefault();m.remove();const op=b.dataset.tabOp,p=pages[i];
+   if(op==='rename')rename(i);else if(op==='delete'){if(pages.length===1){toast('至少保留一个工作表');return}if(await confirmDialog('引用它的公式会显示 #REF!。',{title:`删除工作表“${p.name}”`,ok:'删除',danger:true})){queueOps.push({op:'deleteSheet',sheet:p.id});onChange()}}
    else{const at=op==='left'?i-1:i+1;if(at>=0&&at<pages.length){queueOps.push({op:'moveSheet',sheet:p.id,at});onChange()}}});
   setTimeout(()=>document.addEventListener('mousedown',function off(ev){if(!m.contains(ev.target)){m.remove();document.removeEventListener('mousedown',off)}}),0)});
- function rename(i){const p=pages[i];const name=prompt('工作表名称',p.name);if(name===null||!name.trim()||name.trim()===p.name)return;queueOps.push({op:'renameSheet',sheet:p.id,name:name.trim()});onChange()}
+ async function rename(i){const p=pages[i];const name=await inputDialog('工作表名称',{value:p.name,max:31});if(name===null||!name.trim()||name.trim()===p.name)return;queueOps.push({op:'renameSheet',sheet:p.id,name:name.trim()});onChange()}
  function switchTo(i){if(editing)finishEdit(true);active=Math.max(0,Math.min(pages.length-1,i));sel={r1:1,c1:1,r2:1,c2:1,ar:1,ac:1};scroll.scrollTop=0;scroll.scrollLeft=0;drawTabs();redraw();onWhere(page().id+'!A1')}
 
  // Sync ------------------------------------------------------------------------------------

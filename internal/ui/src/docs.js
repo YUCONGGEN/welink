@@ -1,6 +1,7 @@
 import {createDocEditor,peerColor} from './doc-editor.js';
 import {createSheetEditor} from './sheet-editor.js';
 import {toHTML,plain,replyHTML} from './docs-text.js';
+import {confirmDialog,inputDialog} from './dialogs.js';
 
 // 云文档: the list of documents and the page that hosts one editor, after
 // Feishu Docs. It keeps the live connection (operations in, operations out),
@@ -57,9 +58,9 @@ export function createDocs({S,api,esc,av,modal,closeModal,toast,downloadURL,show
   document.body.append(box);const r=anchor.getBoundingClientRect();box.style.left=Math.min(r.left,innerWidth-170)+'px';box.style.top=Math.min(r.bottom+4,innerHeight-box.offsetHeight-8)+'px';
   box.addEventListener('mousedown',async e=>{const b=e.target.closest('[data-docs-op]');if(!b)return;e.preventDefault();box.remove();const op=b.dataset.docsOp;
    try{if(op==='open')await open(id);
-    else if(op==='rename'){const t=prompt('文档标题',d.title);if(t!==null&&t.trim()&&t.trim()!==d.title){await api('/api/docs/'+id,{method:'PATCH',body:{title:t.trim()}});await loadList()}}
-    else if(op==='delete'){if(confirm(`删除“${d.title}”？所有协作者都将无法再打开，且无法恢复。`)){await api('/api/docs/'+id,{method:'DELETE'});toast('已删除');await loadList()}}
-    else if(op==='leave'){if(confirm(`将“${d.title}”移出列表？如果是直接分享给你的，你将失去访问权限。`)){await api(`/api/docs/${id}/members/${S.user.id}`,{method:'DELETE'});await loadList()}}}catch(err){toast(err.message)}});
+    else if(op==='rename'){const t=await inputDialog('文档标题',{value:d.title,max:100});if(t!==null&&t.trim()&&t.trim()!==d.title){await api('/api/docs/'+id,{method:'PATCH',body:{title:t.trim()}});await loadList()}}
+    else if(op==='delete'){if(await confirmDialog('所有协作者都将无法再打开，且无法恢复。',{title:`删除“${d.title}”`,ok:'删除',danger:true})){await api('/api/docs/'+id,{method:'DELETE'});toast('已删除');await loadList()}}
+    else if(op==='leave'){if(await confirmDialog('如果是直接分享给你的，你将失去访问权限。',{title:`将“${d.title}”移出列表`,ok:'移出'})){await api(`/api/docs/${id}/members/${S.user.id}`,{method:'DELETE'});await loadList()}}}catch(err){toast(err.message)}});
   setTimeout(()=>document.addEventListener('mousedown',function off(ev){if(!box.contains(ev.target)){box.remove();document.removeEventListener('mousedown',off)}}),0);
  }
 
@@ -200,7 +201,7 @@ export function createDocs({S,api,esc,av,modal,closeModal,toast,downloadURL,show
    else if(t.id==='share-export')run(()=>api('/api/docs/'+doc.id,{method:'PATCH',body:{viewerExport:t.checked}}));
   });
   root.addEventListener('click',e=>{
-   const rm=e.target.closest('[data-share-remove]');if(rm){const me=rm.dataset.shareRemove===S.user.id;if(!me||confirm('退出后你将无法再打开这篇文档，确定吗？'))run(async()=>{await api(`/api/docs/${doc.id}/members/${rm.dataset.shareRemove}`,{method:'DELETE'});if(me){closeModal();closeDoc();drawHome();loadList();throw Object.assign(Error('已退出协作'),{quiet:true})}},'已移除');return}
+   const rm=e.target.closest('[data-share-remove]');if(rm){const me=rm.dataset.shareRemove===S.user.id;(async()=>{if(me&&!await confirmDialog('退出后你将无法再打开这篇文档。',{title:'退出协作',ok:'退出',danger:true}))return;run(async()=>{await api(`/api/docs/${doc.id}/members/${rm.dataset.shareRemove}`,{method:'DELETE'});if(me){closeModal();closeDoc();drawHome();loadList();throw Object.assign(Error('已退出协作'),{quiet:true})}},'已移除')})();return}
    const un=e.target.closest('[data-share-unchat]');if(un){run(()=>api(`/api/docs/${doc.id}/chats/${un.dataset.shareUnchat}`,{method:'DELETE'}),'已移除');return}
    const add=e.target.closest('[data-share-add]');if(add){const role=$('#share-role').value;const [kind,id]=add.dataset.shareAdd.split(':');run(()=>kind==='user'?api(`/api/docs/${doc.id}/members/${id}`,{method:'PUT',body:{role}}):api(`/api/docs/${doc.id}/chats/${id}`,{method:'PUT',body:{role:role==='manage'?'edit':role}}),'已添加协作者');return}
    if(e.target.id==='share-copy'){const text=`[${doc.kind==='sheet'?'表格':'文档'}] ${doc.title}\nlinkme-doc:${doc.id}`;navigator.clipboard?.writeText(text).then(()=>toast(info.linkRole?'已复制，粘贴到聊天里即可打开':'已复制。链接分享已关闭，只有协作者能打开'),()=>toast('复制失败'));return}
@@ -226,7 +227,7 @@ export function createDocs({S,api,esc,av,modal,closeModal,toast,downloadURL,show
    if(b){box.querySelectorAll('[data-version]').forEach(x=>x.classList.toggle('active',x===b));const view=box.querySelector('.doc-history-view');view.innerHTML='<p class="hint">正在加载…</p>';
     try{const v=await api(`/api/docs/${doc.id}/versions/${b.dataset.version}`);view.innerHTML=`<div class="doc-history-head"><b>${esc(v.title)}</b>${RANK[doc.role]>=2?`<button class="primary" data-restore="${b.dataset.version}">恢复此版本</button>`:''}</div><div class="doc-history-body">${previewHTML(doc.kind,v.content)}</div>`}catch(err){view.innerHTML=`<p class="hint">${esc(err.message)}</p>`}return}
    const r=e.target.closest('[data-restore]');
-   if(r&&confirm('用这个版本替换当前内容？当前内容会先存为一个历史版本，可以再恢复回来。')){try{await api(`/api/docs/${doc.id}/versions/${r.dataset.restore}/restore`,{method:'POST',body:{}});closeModal();toast('已恢复到所选版本');await reopen()}catch(err){toast(err.message)}}
+   if(r&&await confirmDialog('当前内容会先存为一个历史版本，可以再恢复回来。',{title:'恢复到这个版本',ok:'恢复'})){try{await api(`/api/docs/${doc.id}/versions/${r.dataset.restore}/restore`,{method:'POST',body:{}});closeModal();toast('已恢复到所选版本');await reopen()}catch(err){toast(err.message)}}
   });
  }
  function previewHTML(kind,content){
@@ -247,7 +248,7 @@ export function createDocs({S,api,esc,av,modal,closeModal,toast,downloadURL,show
    if(op==='export'){if(doc.editor.hasPending())doc.sync.schedule(0);const sheet=doc.kind==='sheet'&&arg==='csv'?'&sheet='+encodeURIComponent(doc.editor.activeSheet()):'';setTimeout(()=>downloadURL(`/api/docs/${doc.id}/export?format=${arg}${sheet}`,doc.title+'.'+arg),doc.editor.hasPending()?800:0)}
    else if(op==='history')history();
    else if(op==='copy'){navigator.clipboard?.writeText(`[${doc.kind==='sheet'?'表格':'文档'}] ${doc.title}\nlinkme-doc:${doc.id}`).then(()=>toast('已复制，粘贴到聊天发送即可'),()=>toast('复制失败'))}
-   else if(op==='delete'){if(confirm(`删除“${doc.title}”？所有协作者都将无法再打开，且无法恢复。`)){try{await api('/api/docs/'+doc.id,{method:'DELETE'});closeDoc();toast('已删除');drawHome();loadList()}catch(err){toast(err.message)}}}});
+   else if(op==='delete'){if(await confirmDialog('所有协作者都将无法再打开，且无法恢复。',{title:`删除“${doc.title}”`,ok:'删除',danger:true})){try{await api('/api/docs/'+doc.id,{method:'DELETE'});closeDoc();toast('已删除');drawHome();loadList()}catch(err){toast(err.message)}}}});
   setTimeout(()=>document.addEventListener('mousedown',function off(ev){if(!box.contains(ev.target)){box.remove();document.removeEventListener('mousedown',off)}}),0);
  }
 

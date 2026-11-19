@@ -657,8 +657,13 @@ func (s *Server) createChain(w http.ResponseWriter, r *http.Request) {
 	s.insertStructured(w, r, "chain", chainSpec{Title: title, Note: strings.TrimSpace(p.Note)})
 }
 
+// joinChain adds or updates the caller's line (text may be empty: just the
+// name); leave removes it.
 func (s *Server) joinChain(w http.ResponseWriter, r *http.Request) {
-	var p struct{ Text string }
+	var p struct {
+		Text  string
+		Leave bool
+	}
 	if !decode(w, r, &p) {
 		return
 	}
@@ -672,7 +677,7 @@ func (s *Server) joinChain(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(strings.ReplaceAll(p.Text, "\n", " "))
 	var err error
-	if text == "" {
+	if p.Leave {
 		_, err = s.db.Exec("DELETE FROM chain_entries WHERE message_id=? AND user_id=?", m.ID, uid(r))
 	} else {
 		if !validText(text, 100) {

@@ -1,3 +1,4 @@
+import {confirmDialog,inputDialog} from './dialogs.js';
 import {mergeText,shiftOffset,runs,toMarkdown,plain,toHTML,domRuns,domMarkdown,caretOffset,placeCaret,sliceRuns,toggleMark,markdownBlocks,blocksMarkdown} from './docs-text.js';
 
 // The document editor, after Feishu Docs: one editable page of blocks with
@@ -258,9 +259,9 @@ export function createDocEditor({mount,outline,content,editable,newId,onChange,o
    [['h1','H1'],['h2','H2'],['h3','H3'],['bullet','•'],['ordered','1.'],['todo','☐']].map(([t,l])=>`<button data-turn="${t}" title="${TYPES.find(x=>x[0]===t)[1]}">${l}</button>`).join('')+(askAI?'<span class="sep"></span><button data-bar-ai class="ai">✦ AI</button>':'');
   const w=bar.offsetWidth||360;bar.style.left=Math.max(8,Math.min(innerWidth-w-8,rect.left+rect.width/2-w/2))+'px';bar.style.top=Math.max(8,rect.top-46)+'px';
  }
- function linkPrompt(){
+ async function linkPrompt(){
   const r=range();if(!r||r.collapsed||!r.single)return;const current=runs(localText(r.start.id));const has=sliceRuns(current,r.start.off,r.end.off).find(x=>x.link)?.link||'';
-  const url=prompt('链接地址（留空则移除链接）',has||'https://');if(url===null)return;
+  const url=await inputDialog('留空则移除链接',{title:'链接地址',value:has||'https://',placeholder:'https://'});if(url===null)return;
   selectText(r.start.id,r.start.off,r.end.off);const clean=url.trim();
   if(clean&&!/^(https?:\/\/|mailto:|www\.)/i.test(clean)){toast('请输入以 http:// 或 https:// 开头的链接');return}
   markSelection('link',clean===''||clean==='https://'?'':clean);

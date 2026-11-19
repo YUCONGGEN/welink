@@ -78,7 +78,7 @@ export function createAssistant({S,api,esc,av,icon,toast,openChat,openMessage,st
   const hour=new Date().getHours(),hello=hour<6?'夜深了':hour<11?'早上好':hour<14?'中午好':hour<18?'下午好':'晚上好';
   const facts=brief?.facts;
   body.innerHTML=`<section class="assist-hello"><h3>${hello}，${esc(S.user?.name||'')}</h3>${facts?`<div class="assist-facts"><span><b>${facts.unread||0}</b>未读</span><span><b>${facts.mentions||0}</b>@我</span><span><b>${facts.tasks||0}</b>待办</span><span><b>${facts.events||0}</b>日程</span></div>`:''}</section>
-   ${prefs.ai&&prefs.brief?`<section class="assist-brief"><h4>今日简报${brief?.text?'<button class="link" data-me="rebrief">刷新</button>':''}</h4>${briefing?'<div class="ai-loading"><span></span>Me 正在整理今天的情况…</div>':brief?.text?`<div class="ai-reply">${replyHTML(brief.text)}</div>`:'<button class="secondary" data-me="rebrief">生成今日简报</button>'}</section>`:''}
+   ${prefs.ai&&prefs.brief?`<section class="assist-brief"><h4>今日简报${brief?.text?'<button class="link" data-me="rebrief">刷新</button>':''}</h4>${briefing?'<div class="ai-loading"><span></span>Me 正在整理今天的情况…</div>':brief?.text?`<div class="ai-reply">${replyHTML(brief.text)}</div>`:`${brief?.error?`<p class="hint">简报暂时无法生成：${esc(brief.error)}</p>`:''}<button class="secondary" data-me="rebrief">${brief?.error?'重试':'生成今日简报'}</button>`}</section>`:''}
    <section class="assist-notices"><h4>需要关注${notices.length?` · ${notices.length}`:''}</h4>${notices.length?notices.map(noticeHTML).join(''):'<p class="hint">暂时没有需要你处理的事 🎉</p>'}</section>
    ${answer?`<section class="assist-answer"><h4>Me 的回复</h4>${answer.loading?'<div class="ai-loading"><span></span>Me 正在想…</div>':`${answer.reply?`<div class="ai-reply">${replyHTML(answer.reply)}</div>`:''}${answer.actions.length?`<div class="assist-actions">${answer.actions.map(actionHTML).join('')}${answer.actions.filter(a=>!a.done).length>1?'<button class="primary" data-me="run-all">全部执行</button>':''}</div>`:''}`}</section>`:''}
    ${!prefs.ai?'<p class="hint">服务器未开启 AI，Me 管家只做提醒。</p>':''}`;
@@ -119,7 +119,7 @@ export function createAssistant({S,api,esc,av,icon,toast,openChat,openMessage,st
   const cached=store('brief');if(!force&&cached?.date===today()){brief=cached;draw();return}
   briefing=true;draw();
   try{const r=await api('/api/assistant/brief?tz='+tz(),{method:'POST',body:{}});brief={date:today(),text:r.brief,facts:r.facts};store('brief',brief)}
-  catch(e){brief={date:today(),text:'',facts:null};if(e.status!==429)toast(e.message)}
+  catch(e){brief={date:'',text:'',facts:null,error:e.message}}
   finally{briefing=false;draw()}
  }
  async function ask(text){

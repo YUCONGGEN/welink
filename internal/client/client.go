@@ -58,6 +58,7 @@ type Client struct {
 	ai             localAIState
 	codex          codexInstall
 	update         appUpdate
+	screen         screenFeed
 }
 
 func New(o Options) (*Client, error) {
@@ -313,6 +314,8 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(300 * time.Millisecond)
 			}
 			localJSON(w, c.appUpdateStatus())
+		case "/local/screen/frame":
+			c.serveScreenFrame(w, r)
 		case "/local/remote/state":
 			localJSON(w, c.Remote.State())
 		case "/local/remote/tiles":

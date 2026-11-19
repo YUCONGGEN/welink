@@ -114,11 +114,27 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  }
  async function toggle(kind){const active=room;if(!active)return;active.pendingMedia??=new Set();if(active.pendingMedia.has(kind))return;active.pendingMedia.add(kind);try{const tracks=kind==='audio'?active.stream.getAudioTracks():active.stream.getVideoTracks();if(tracks.length)tracks.forEach(t=>t.enabled=!t.enabled);else{const stream=await navigator.mediaDevices.getUserMedia(kind==='audio'?{audio:{echoCancellation:true}}:{video:true});if(room!==active){stream.getTracks().forEach(t=>t.stop());return}for(const t of stream.getTracks()){active.stream.addTrack(t);for(const p of active.peers.values()){if(room!==active)return;if(kind==='video'&&active.screen)continue;const sender=p.pc.getSenders().find(s=>s.track?.kind===kind);if(sender)await sender.replaceTrack(t);else p.pc.addTrack(t,active.stream)}}}if(room!==active)return;if(!active.screen)tile(active.id,S.user.name,active.stream,true);state()}finally{active.pendingMedia.delete(kind)}}
  async function replaceVideo(track,stream){for(const p of room.peers.values()){const transceiver=p.pc.getTransceivers().find(t=>t.sender.track?.kind==='video'||t.receiver.track?.kind==='video');if(transceiver){if(track&&transceiver.direction==='recvonly')transceiver.direction='sendrecv';await transceiver.sender.replaceTrack(track)}else if(track)p.pc.addTrack(track,stream);p.tuningKey='';await tuneMeetingPeer(p,!!room.screen,room.peers.size)}}
+ // On the Windows app the screen comes from LinkMe's own capture, so the
+ // browser shows no separate "sharing your screen" bar or window.
+ async function nativeScreen(){
+  const first=await fetch('/local/screen/frame?after=0',{cache:'no-store'});
+  if(first.status!==200)throw Error('无法共享屏幕，请稍后重试');
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');let seq=+first.headers.get('X-Frame')||0,alive=true,last=null;
+  const draw=async blob=>{const bitmap=await createImageBitmap(blob);if(canvas.width!==bitmap.width||canvas.height!==bitmap.height){canvas.width=bitmap.width;canvas.height=bitmap.height}ctx.drawImage(bitmap,0,0);last?.close();last=bitmap};
+  await draw(await first.blob());
+  const stream=canvas.captureStream(15),track=stream.getVideoTracks()[0],stop=track.stop.bind(track);
+  track.stop=()=>{alive=false;last?.close();last=null;stop()};
+  (async()=>{while(alive){try{const r=await fetch('/local/screen/frame?after='+seq,{cache:'no-store'});if(!alive)break;
+   // Unchanged screen: repaint so people who join later still get a picture.
+   if(r.status===204){if(last)ctx.drawImage(last,0,0);continue}
+   if(!r.ok){await new Promise(t=>setTimeout(t,500));continue}seq=+r.headers.get('X-Frame')||seq;await draw(await r.blob())}catch{await new Promise(t=>setTimeout(t,500))}}})();
+  return stream;
+ }
  async function share(){
   const active=room;if(!active||active.id!==active.host||active.sharePending)return;
-  if(active.screen){await stopSharing();return}if(!navigator.mediaDevices?.getDisplayMedia)throw Error('当前系统不支持屏幕共享');
+  if(active.screen){await stopSharing();return}const native=S.config?.platform==='windows'&&!window.WeLinkAndroid;if(!native&&!navigator.mediaDevices?.getDisplayMedia)throw Error('当前系统不支持屏幕共享');
   active.sharePending=true;el('meeting-share').disabled=true;
-  try{const screen=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30},resizeMode:'none'},audio:false,selfBrowserSurface:'exclude'});
+  try{const screen=native?await nativeScreen():await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30},resizeMode:'none'},audio:false,selfBrowserSurface:'exclude'});
    // Native resolution (no resizing), encoded for text and fine detail.
    const shared=screen.getVideoTracks()[0];if(shared&&'contentHint'in shared)shared.contentHint='text';
    if(room!==active||active.id!==active.host){screen.getTracks().forEach(t=>t.stop());return}

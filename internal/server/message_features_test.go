@@ -159,9 +159,14 @@ func TestUrgentPollChainThread(t *testing.T) {
 	if len(chain.Chain) != 2 || chain.Chain[0].Text != "3 人" {
 		t.Fatalf("chain: %+v", chain.Chain)
 	}
-	f.request("POST", "/api/messages/"+chain.ID+"/chain", c.Token, map[string]string{"text": ""}, 200, &chain)
+	f.request("POST", "/api/messages/"+chain.ID+"/chain", c.Token, map[string]any{"leave": true}, 200, &chain)
 	if len(chain.Chain) != 1 {
 		t.Fatal("leaving the sign-up failed")
+	}
+	// Joining with nothing written just adds the name.
+	f.request("POST", "/api/messages/"+chain.ID+"/chain", a.Token, map[string]string{"text": ""}, 200, &chain)
+	if len(chain.Chain) != 2 || chain.Chain[1].Text != "" {
+		t.Fatalf("name-only sign-up: %+v", chain.Chain)
 	}
 
 	// Threads: replies stay out of the main list and are counted on the root.

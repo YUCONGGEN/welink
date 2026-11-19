@@ -1,4 +1,5 @@
 import {replyHTML} from './docs-text.js';
+import {confirmDialog,inputDialog} from './dialogs.js';
 
 // Feishu-style chat features: reactions, editing, pinned messages, urgent
 // reminders, threads, polls and sign-ups, translation, AI summaries of unread
@@ -37,8 +38,8 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
  function chainCard(m){
   const spec=parse(m.text),list=m.chain||[],mine=list.find(e=>e.userId===me());
   return `<div class="chain-card"><div class="card-kind">🐉 接龙</div><h4>${esc(spec.title||'')}</h4>${spec.note?`<p class="chain-note">${esc(spec.note)}</p>`:''}
-   ${list.length?`<ol>${list.map(e=>`<li><b>${esc(e.name)}</b>${e.text?' '+esc(e.text):''}</li>`).join('')}</ol>`:'<p class="chain-note">还没有人参与，来做第一个</p>'}
-   <div class="card-foot"><span>${list.length} 人已接龙</span><button class="primary" data-cx="chain-join" data-mid="${m.id}">${mine?'修改':'+ 参与接龙'}</button>${mine?`<button data-cx="chain-leave" data-mid="${m.id}">退出</button>`:''}</div></div>`;
+   ${list.length?`<ol>${list.map(e=>e.userId===me()&&chainEditing===m.id?`<li><b>${esc(e.name)}</b> <input class="chain-input" data-chain-input="${m.id}" maxlength="100" value="${esc(e.text)}" placeholder="补充说明，可留空"></li>`:`<li><b>${esc(e.name)}</b>${e.text?' '+esc(e.text):''}</li>`).join('')}</ol>`:'<p class="chain-note">还没有人参与，来做第一个</p>'}
+   <div class="card-foot"><span>${list.length} 人已接龙</span>${chainEditing===m.id&&mine?`<button class="primary" data-cx="chain-save" data-mid="${m.id}">保存</button><button data-cx="chain-cancel" data-mid="${m.id}">取消</button>`:`<button class="primary" data-cx="chain-join" data-mid="${m.id}">${mine?'修改':'+ 参与接龙'}</button>${mine?`<button data-cx="chain-leave" data-mid="${m.id}">退出</button>`:''}`}</div></div>`;
  }
  function card(m){if(m.recalled)return '';if(m.kind==='poll')return pollCard(m);if(m.kind==='chain')return chainCard(m);return ''}
  function preview(m){if(m?.recalled)return null;if(m?.kind==='poll')return '[投票] '+(parse(m.text).title||'');if(m?.kind==='chain')return '[接龙] '+(parse(m.text).title||'');return null}
@@ -106,7 +107,7 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
  // Urgent reminders ------------------------------------------------------------------------
  async function urgent(m){
   const c=S.conversations.find(c=>c.id===m.conversationId);if(!c)return;
-  if(c.kind==='direct'){if(!confirm(`加急提醒 ${c.name}？对方会收到强提醒，直到点“知道了”。`))return;send([]);return}
+  if(c.kind==='direct'){if(!await confirmDialog(`对方会收到弹窗和铃声提醒，直到点“知道了”。`,{title:`加急提醒 ${c.name}`,ok:'加急'}))return;send([]);return}
   let members=[];try{members=(await api('/api/conversations/'+c.id)).members||[]}catch(e){toast(e.message);return}
   const others=members.filter(u=>u.id!==me()&&!u.ai);
   modal('加急提醒',`<p class="hint">被加急的成员会收到弹窗和铃声提醒，直到点“知道了”。</p><label class="urgent-all"><input type="checkbox" id="urgent-all" checked> 全部成员（${others.length} 人）</label><div class="urgent-people">${others.map(u=>`<label>${av(u)}<span>${esc(u.nickname||u.name)}</span><input type="checkbox" class="urgent-user" value="${u.id}" checked></label>`).join('')}</div>`,'<button class="secondary" data-action="close-modal">取消</button><button class="primary" id="urgent-send">加急</button>');
@@ -172,7 +173,9 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
  }
  async function vote(mid){const box=document.querySelector(`[data-poll="${mid}"]`);const options=[...box.querySelectorAll('input:checked')].map(i=>+i.value);if(!options.length){toast('请先选择选项');return}try{replace(await api(`/api/messages/${mid}/votes`,{method:'POST',body:{options}}));rerender()}catch(e){toast(e.message)}}
  function pollDetail(m){const spec=parse(m.text),votes=m.poll?.votes||{};modal('投票详情：'+esc(spec.title||''),`<div class="poll-detail">${(spec.options||[]).map((o,i)=>{const who=Object.entries(votes).filter(([,v])=>v.includes(i)).map(([u])=>nameOf(u));return `<div><b>${esc(o)}</b> · ${who.length} 票<p>${who.length?esc(who.join('、')):'<span class="hint">暂无</span>'}</p></div>`}).join('')}</div>`,'<button class="secondary" data-action="close-modal">关闭</button>')}
- async function joinChain(m){const mine=(m.chain||[]).find(e=>e.userId===me());const text=prompt('接龙内容（可留空，只写名字）',mine?.text||'');if(text===null)return;try{replace(await api(`/api/messages/${m.id}/chain`,{method:'POST',body:{text:text.trim()||'✓'}}));rerender()}catch(e){toast(e.message)}}
+ let chainEditing='';
+ async function saveChain(mid,text){try{replace(await api(`/api/messages/${mid}/chain`,{method:'POST',body:{text}}));chainEditing='';rerender()}catch(e){toast(e.message)}}
+ async function joinChain(m){const mine=(m.chain||[]).find(e=>e.userId===me());if(!mine){await saveChain(m.id,'');return}chainEditing=m.id;rerender();setTimeout(()=>{const i=document.querySelector(`[data-chain-input="${m.id}"]`);i?.focus();i?.select()},0)}
 
  // Translation and AI summary ------------------------------------------------------------------
  async function translate(m){
@@ -269,9 +272,11 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
    case 'thread-close':closeThread();break;
    case 'vote':vote(mid);break;
    case 'poll-detail':if(m)pollDetail(m);break;
-   case 'poll-close':if(confirm('结束后不能再投票，确定吗？'))try{replace(await api(`/api/messages/${mid}/close`,{method:'POST',body:{}}));rerender()}catch(err){toast(err.message)}break;
+   case 'poll-close':if(await confirmDialog('结束后不能再投票。',{title:'结束投票',ok:'结束'}))try{replace(await api(`/api/messages/${mid}/close`,{method:'POST',body:{}}));rerender()}catch(err){toast(err.message)}break;
    case 'chain-join':if(m)joinChain(m);break;
-   case 'chain-leave':try{replace(await api(`/api/messages/${mid}/chain`,{method:'POST',body:{text:''}}));rerender()}catch(err){toast(err.message)}break;
+   case 'chain-leave':try{replace(await api(`/api/messages/${mid}/chain`,{method:'POST',body:{leave:true}}));rerender()}catch(err){toast(err.message)}break;
+   case 'chain-save':{const i=document.querySelector(`[data-chain-input="${mid}"]`);if(i)saveChain(mid,i.value.trim());break}
+   case 'chain-cancel':chainEditing='';rerender();break;
    case 'translate':if(m)translate(m);break;
    case 'translate-hide':translations.delete(mid);rerender();break;
    case 'summary':if(summary)summarize(summary.afterSeq,summary.count);break;
@@ -284,7 +289,7 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
    case 'copy-image':if(m)copyImage(m);break;
   }
  });
- document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.editing&&e.target.id==='composer'){e.preventDefault();cancelEdit()}});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&S.editing&&e.target.id==='composer'){e.preventDefault();cancelEdit()}const ci=e.target.closest?.('[data-chain-input]');if(ci&&!e.isComposing){if(e.key==='Enter'){e.preventDefault();saveChain(ci.dataset.chainInput,ci.value.trim())}else if(e.key==='Escape'){e.preventDefault();chainEditing='';rerender()}}});
 
  return {
   card,extras,timeTag,hoverTools,moreTool,menuItems,preview,previewFile,statusLabel,
@@ -301,7 +306,7 @@ export function createChatFeatures({S,api,esc,av,icon,modal,closeModal,toast,ren
    if(type==='pins'){loadPins(d.conversationId);return true}
    if(type==='urgent'){if(!urgentQueue.some(x=>x.message.id===d.message.id))urgentQueue.push(d);showUrgent();return true}
    if(type==='status'){statuses.set(d.userId,d.status);if(d.userId===me())S.myStatus=d.status;refreshStatus();return true}
-   if(type==='meeting-minutes'){toast('会议纪要已生成：'+d.title);if(confirm('会议纪要“'+d.title+'”已生成，现在打开吗？'))Docs.open(d.docId);return true}
+   if(type==='meeting-minutes'){toast('会议纪要已生成，可在云文档中查看：'+d.title);return true}
    if(type==='message'&&d.threadId){if(thread?.root.id===d.threadId&&!thread.replies.some(x=>x.id===d.id)){thread.replies.push(d);drawThread(true)}return false}
    return false;
   },
