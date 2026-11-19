@@ -630,6 +630,12 @@ func deleteAccountData(tx *sql.Tx, target string) ([]string, error) {
 	}{
 		{"DELETE FROM drive_files WHERE owner=?", []any{target}},
 		{"DELETE FROM drive_folders WHERE owner=?", []any{target}},
+		{"DELETE FROM doc_members WHERE user_id=? OR doc_id IN (SELECT id FROM docs WHERE owner=?)", []any{target, target}},
+		{"DELETE FROM doc_groups WHERE doc_id IN (SELECT id FROM docs WHERE owner=?)", []any{target}},
+		{"DELETE FROM doc_recents WHERE user_id=? OR doc_id IN (SELECT id FROM docs WHERE owner=?)", []any{target, target}},
+		{"DELETE FROM doc_versions WHERE doc_id IN (SELECT id FROM docs WHERE owner=?)", []any{target}},
+		{"DELETE FROM docs WHERE owner=?", []any{target}},
+		{"DELETE FROM user_statuses WHERE user_id=?", []any{target}},
 		{"DELETE FROM user_profile_details WHERE user_id=?", []any{target}},
 		{"DELETE FROM user_emails WHERE user_id=?", []any{target}},
 		{"DELETE FROM user_status WHERE user_id=?", []any{target}},

@@ -310,6 +310,10 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 	}
 	query := messageQuery + "WHERE m.conversation_id=? AND m.seq<? AND " + messageVisible
 	args := []any{r.PathValue("id"), before, uid(r)}
+	// Thread replies live in their thread, except in search results.
+	if strings.TrimSpace(r.URL.Query().Get("q")) == "" {
+		query += "AND NOT EXISTS(SELECT 1 FROM message_threads t WHERE t.message_id=m.id) "
+	}
 	if around := r.URL.Query().Get("around"); around != "" {
 		var seq int64
 		if s.db.QueryRow("SELECT m.seq FROM messages m WHERE m.id=? AND m.conversation_id=? AND "+messageVisible, around, r.PathValue("id"), uid(r)).Scan(&seq) != nil {
@@ -399,6 +403,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 			out[i], out[j] = out[j], out[i]
 		}
 	}
+	s.decorate(out)
 	ok(w, out)
 }
 func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
@@ -410,8 +415,8 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p struct {
-		Kind, Text, AttachmentID, ReplyID, ClientID string
-		Mentions                                    []Mention
+		Kind, Text, AttachmentID, ReplyID, ClientID, ThreadID string
+		Mentions                                              []Mention
 	}
 	if !decode(w, r, &p) {
 		return
@@ -472,6 +477,12 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.dbError(w, e)
 		return
 	}
+	if p.ThreadID != "" {
+		if e = threadRoot(tx, cid, p.ThreadID); e != nil {
+			s.dbError(w, e)
+			return
+		}
+	}
 	recipients, e := validateMentions(tx, cid, uid(r), p.Kind, p.Text, p.Mentions)
 	if e != nil {
 		s.dbError(w, e)
@@ -485,6 +496,12 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	if e = saveMentions(tx, id, p.Mentions, recipients); e != nil {
 		s.dbError(w, e)
 		return
+	}
+	if p.ThreadID != "" {
+		if _, e = tx.Exec("INSERT INTO message_threads(message_id,root_id,conversation_id) VALUES(?,?,?)", id, p.ThreadID, cid); e != nil {
+			s.dbError(w, e)
+			return
+		}
 	}
 	m, e := scanMessage(tx.QueryRow(messageQuery+"WHERE m.sender=? AND m.client_id=?", uid(r), p.ClientID))
 	if e != nil {
@@ -501,6 +518,9 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.ID == id {
 		s.pushConversation(cid, "message", m)
+		if m.ThreadID != "" {
+			s.pushThreadUpdate(cid, m.ThreadID)
+		}
 	}
 	ok(w, m)
 }
@@ -508,19 +528,27 @@ func (s *Server) readConversation(w http.ResponseWriter, r *http.Request) {
 	if !s.requireMember(w, r) {
 		return
 	}
-	var p struct{ Seq int64 }
+	// Without a seq ("标为已读") everything so far is read.
+	var p struct{ Seq *int64 }
 	if !decode(w, r, &p) {
 		return
 	}
 	var maxSeq sql.NullInt64
 	_ = s.db.QueryRow("SELECT MAX(seq) FROM messages WHERE conversation_id=?", r.PathValue("id")).Scan(&maxSeq)
-	p.Seq = min(max(0, p.Seq), maxSeq.Int64)
-	_, e := s.db.Exec("UPDATE members SET read_seq=MAX(read_seq,?) WHERE conversation_id=? AND user_id=?", p.Seq, r.PathValue("id"), uid(r))
+	seq := maxSeq.Int64
+	if p.Seq != nil {
+		seq = min(max(0, *p.Seq), maxSeq.Int64)
+	}
+	result, e := s.db.Exec("UPDATE members SET read_seq=? WHERE conversation_id=? AND user_id=? AND read_seq<?", seq, r.PathValue("id"), uid(r), seq)
 	if e != nil {
 		s.dbError(w, e)
 		return
 	}
-	s.pushConversation(r.PathValue("id"), "read", map[string]any{"conversationId": r.PathValue("id"), "userId": uid(r), "seq": p.Seq})
+	// Senders see 已读 from this event, so it goes out only when the read
+	// position actually moved, not for every repeat of the same position.
+	if moved, _ := result.RowsAffected(); moved > 0 {
+		s.pushConversation(r.PathValue("id"), "read", map[string]any{"conversationId": r.PathValue("id"), "userId": uid(r), "seq": seq})
+	}
 	ok(w, map[string]bool{"ok": true})
 }
 func (s *Server) recall(w http.ResponseWriter, r *http.Request) {
@@ -529,8 +557,8 @@ func (s *Server) recall(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, "无法撤回该消息")
 		return
 	}
-	if now()-m.Created > 120000 {
-		fail(w, 400, "只能撤回两分钟内的消息")
+	if now()-m.Created > recallWindow.Milliseconds() {
+		fail(w, 400, "只能撤回 24 小时内的消息")
 		return
 	}
 	if _, e = s.db.Exec("UPDATE messages SET recalled=1,text='',attachment_id='' WHERE id=?", m.ID); e != nil {

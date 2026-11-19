@@ -223,9 +223,18 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 	if typ == "image/png" || typ == "image/jpeg" || typ == "image/gif" || typ == "image/webp" || typ == "audio/wav" || typ == "video/mp4" || typ == "video/webm" {
 		disposition = "inline"
 	}
+	// PDFs open in the browser viewer when previewed; the viewer needs an
+	// unsandboxed document, and a PDF runs no page script.
+	pdfPreview := typ == "application/pdf" && r.URL.Query().Get("inline") == "1"
+	if pdfPreview {
+		disposition = "inline"
+	}
 	w.Header().Set("Content-Type", typ)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
-	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	if !pdfPreview {
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	}
 	http.ServeContent(w, r, name, stat.ModTime(), f)
 }
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {

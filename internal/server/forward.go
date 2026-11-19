@@ -286,6 +286,9 @@ func forwardPreview(kind, text, file string, recalled bool) string {
 	if recalled {
 		return "消息已撤回"
 	}
+	if p, ok := structuredPreview(kind, text); ok {
+		return p
+	}
 	switch kind {
 	case "image":
 		return "[图片]"

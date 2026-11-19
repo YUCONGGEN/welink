@@ -47,6 +47,9 @@ func (s *Server) messageNotification(w http.ResponseWriter, r *http.Request) {
 		name = m.Name
 	}
 	body := m.Text
+	if p, ok := structuredPreview(m.Kind, m.Text); ok {
+		body = p
+	}
 	switch m.Kind {
 	case "image":
 		body = "[图片]"

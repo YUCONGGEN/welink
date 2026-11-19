@@ -42,6 +42,8 @@ type meetingSignal struct {
 	Screen     bool          `json:"screen,omitempty"`
 	Recording  bool          `json:"recording,omitempty"`
 	Message    string        `json:"message,omitempty"`
+	Text       string        `json:"text,omitempty"`
+	Final      bool          `json:"final,omitempty"`
 }
 type meetingParticipant struct {
 	meetingPeer
@@ -60,6 +62,8 @@ type meetingRoom struct {
 	Peers          map[string]*meetingParticipant `json:"-"`
 	Banned         map[string]bool                `json:"-"`
 	Invitees       map[string]bool                `json:"-"`
+	Attendees      map[string]bool                `json:"-"`
+	Transcript     []meetingLine                  `json:"-"`
 }
 type meetingDirectory struct {
 	sync.Mutex
@@ -222,6 +226,9 @@ func (s *Server) finishMeetingLocked(code, reason string) {
 		return
 	}
 	delete(s.meetings.rooms, code)
+	if rec := snapshotMeeting(room); rec != nil {
+		go s.writeMinutes(rec)
+	}
 	invitees := make([]string, 0, len(room.Invitees))
 	for id := range room.Invitees {
 		invitees = append(invitees, id)
@@ -401,6 +408,8 @@ func (s *Server) applyMeetingSignal(code string, p *meetingParticipant, m meetin
 		}
 		_, e = s.finishCallLocked(c, reason)
 		return e == nil
+	case "caption":
+		return meetingCaption(room, p, m)
 	case "ping":
 		meetingQueue(p, meetingSignal{Type: "pong"})
 	case "signal":

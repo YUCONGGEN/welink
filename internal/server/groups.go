@@ -153,6 +153,9 @@ func addGroupMember(tx *sql.Tx, cid, user string) error {
 	if _, e := tx.Exec("INSERT INTO members(conversation_id,user_id,read_seq) VALUES(?,?,COALESCE((SELECT MAX(seq) FROM messages WHERE conversation_id=?),0))", cid, user, cid); e != nil {
 		return e
 	}
+	if e := recordJoin(tx, cid, user); e != nil {
+		return e
+	}
 	_, e := tx.Exec("UPDATE group_requests SET status='accepted',resolved=? WHERE conversation_id=? AND user_id=? AND status='pending'", now(), cid, user)
 	return e
 }

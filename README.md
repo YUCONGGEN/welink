@@ -2,7 +2,7 @@
 
 面向企业员工的即时通讯应用，服务端和客户端内核使用 Go，提供 Windows、Apple Silicon macOS 与 Android 客户端。支持单聊、群聊、文件传输、音视频通话、多人会议、远程协助、5 GB 个人网盘和 AI 助手 Me。
 
-Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。当前为 **0.1.24** 正式版。
+Windows 使用原生 WebView2，Android 使用原生宿主；macOS Apple Silicon 客户端在本机运行 Go 服务并通过默认浏览器显示界面。三端统一使用邮箱和密码登录；注册及找回密码均通过 YuDesk 使用的腾讯云邮件 API 发送验证码。界面交互参考 QQ，远程协助与会议技术参考 YuDesk；使用 LinkMe 品牌和独立账号系统。当前为 **0.1.25** 正式版。
 
 ## 下载
 

@@ -37,7 +37,9 @@
 
 /* A media bubble must shrink with its image, including portrait images. */
 .bubble.image-bubble{max-width:min(330px,100%);width:fit-content;display:flex}
-.bubble.image-bubble>img{max-width:min(320px,100%);width:auto;min-width:0}
+/* A viewport limit, not a percentage, so a tall image's bubble (and the
+   forward/quote/favorite/delete buttons beside it) hugs the picture. */
+.bubble.image-bubble>img{max-width:min(320px,62vw);max-height:300px;width:auto;height:auto;min-width:0}
 .message.mine .image-bubble{justify-content:flex-end}
 
 /* Hide the registration scrollbar while keeping wheel, touch and focus scrolling. */
@@ -96,3 +98,37 @@
 #typing-status[data-presence=on]{color:#2fb877}
 #typing-status[data-presence=on]::before{background:#3dc887}
 @media(max-width:700px){.chat-head h2 small#typing-status[data-presence]{display:inline-flex;font-size:10px;margin-left:6px}}
+
+/* Files waiting above the message box until the user presses send. */
+.attach-draft{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 19px 0;max-height:154px;overflow-y:auto}
+.attach-item{position:relative;display:flex;align-items:center;gap:8px;height:64px;max-width:230px;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--white)}
+.attach-item.is-image{width:64px;padding:0;overflow:hidden}
+.attach-item img{width:100%;height:100%;object-fit:cover;display:block}
+.attach-icon svg{width:26px;height:26px;color:var(--blue)}
+.attach-meta{display:flex;flex-direction:column;min-width:0;gap:3px}
+.attach-meta b{font-weight:500;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attach-meta small{font-size:11px;color:var(--muted)}
+.attach-remove{position:absolute;top:3px;right:3px;width:19px;height:19px;border-radius:50%;border:0;padding:0;background:#00000073;color:#fff;font-size:14px;line-height:19px;text-align:center;cursor:pointer}
+.attach-remove:hover{background:#000000b3}
+.attach-hint{font-size:11px;color:var(--muted)}
+.composer.has-attachments{height:auto;min-height:168px}
+.composer.has-attachments textarea{flex:0 0 auto;height:72px}
+.dark .attach-item{background:#1d232b;border-color:#38404b}
+@media(max-width:700px){
+ .attach-draft{order:1;padding:8px 13px 0;max-height:150px}
+ .composer.has-attachments{min-height:0}
+ .composer.has-attachments textarea{height:auto}
+ .attach-hint{display:none}
+}
+
+/* Read receipts beside the time of your own messages. */
+.receipt{border:0;background:none;padding:0;margin-left:6px;font:inherit;font-size:inherit;color:var(--blue);cursor:default}
+.receipt.done{color:var(--muted)}
+.receipt:not([tabindex]){cursor:pointer}
+.receipt:not([tabindex]):hover{text-decoration:underline}
+.receipt-lists{display:grid;grid-template-columns:1fr 1fr;gap:18px;min-width:min(460px,80vw)}
+.receipt-lists h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--muted)}
+.receipt-lists section{max-height:50vh;overflow-y:auto}
+.receipt-person{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13px}
+.receipt-person .avatar{width:28px;height:28px;font-size:12px;flex:0 0 28px}
+@media(max-width:700px){.receipt-lists{grid-template-columns:1fr;min-width:0}}

@@ -52,6 +52,7 @@ type Server struct {
 	media                *mediaRelay
 	emailSender          emailSender
 	ai                   *aiService
+	docs                 docHub
 	brand                brandState
 	configPath           string
 	supervised           bool
@@ -233,14 +234,23 @@ func (s *Server) routes() {
 		"GET /api/users": s.users, "GET /api/friends": s.friends, "GET /api/requests": s.requests, "POST /api/requests": s.addRequest, "POST /api/requests/{id}": s.resolveRequest,
 		"GET /api/schedules": s.listSchedules, "POST /api/schedules": s.createSchedule, "DELETE /api/schedules/{id}": s.deleteSchedule,
 		"GET /api/conversations": s.conversations, "POST /api/conversations": s.createConversation, "GET /api/conversations/{id}": s.conversationDetail, "PATCH /api/conversations/{id}": s.updateConversation, "POST /api/conversations/{id}/members": s.addMembers, "DELETE /api/conversations/{id}/members/{user}": s.removeMember,
-		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation,
+		"GET /api/conversations/{id}/messages": s.messages, "POST /api/conversations/{id}/messages": s.sendMessage, "POST /api/conversations/{id}/read": s.readConversation, "GET /api/conversations/{id}/reads": s.conversationReads,
 		"GET /api/messages/{id}/notification": s.messageNotification,
 		"GET /api/outbox/{clientId}":          s.messageReceipt,
 		"POST /api/calls":                     s.createCall, "GET /api/calls/active": s.activeCalls, "GET /api/calls/history": s.callHistory, "GET /api/calls/{id}": s.getCall, "POST /api/calls/{id}/respond": s.respondCall, "POST /api/calls/{id}/end": s.endCall, "DELETE /api/calls/{id}": s.deleteCall,
-		"POST /api/messages/{id}/recall": s.recall, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
+		"POST /api/messages/{id}/recall": s.recall, "PATCH /api/messages/{id}": s.editMessage, "POST /api/messages/{id}/reactions": s.reactMessage,
+		"GET /api/conversations/{id}/pins": s.listPins, "POST /api/messages/{id}/pin": s.setPin, "DELETE /api/messages/{id}/pin": s.setPin,
+		"POST /api/messages/{id}/urgent": s.urgentMessage, "POST /api/messages/{id}/urgent/ack": s.ackUrgent, "GET /api/urgent": s.pendingUrgent,
+		"POST /api/conversations/{id}/polls": s.createPoll, "POST /api/messages/{id}/votes": s.votePoll, "POST /api/messages/{id}/close": s.closePoll,
+		"POST /api/conversations/{id}/chains": s.createChain, "POST /api/messages/{id}/chain": s.joinChain, "GET /api/messages/{id}/thread": s.threadMessages,
+		"POST /api/conversations/{id}/summary": s.summarizeConversation, "POST /api/messages/{id}/translate": s.translateMessage, "GET /api/statuses": s.statuses, "PUT /api/me/status": s.setStatus, "POST /api/meetings/{code}/transcribe": s.transcribeMeeting, "DELETE /api/messages/{id}": s.deleteMessage, "GET /api/files": s.files, "POST /api/files": s.upload, "GET /api/files/{id}": s.download,
 		"POST /api/messages/forward": s.forwardMessages, "GET /api/messages/{id}/forward": s.forwardRecord, "POST /api/conversations/{id}/messages/delete": s.deleteMessages,
 		"POST /api/conversations/{id}/messages/sync": s.syncCachedMessages,
 		"GET /api/favorites":                         s.favorites, "POST /api/favorites/{id}": s.favorite, "DELETE /api/favorites/{id}": s.unfavorite,
+		"GET /api/docs": s.listDocs, "POST /api/docs": s.createDoc, "POST /api/docs/import": s.importDoc, "POST /api/docs/import-attachment": s.importAttachment, "GET /api/docs/{id}": s.getDoc, "PATCH /api/docs/{id}": s.updateDoc, "DELETE /api/docs/{id}": s.deleteDoc,
+		"POST /api/docs/{id}/ops": s.docOps, "POST /api/docs/{id}/presence": s.docPresence, "GET /api/docs/{id}/members": s.docMembers, "PUT /api/docs/{id}/members/{user}": s.setDocMember, "DELETE /api/docs/{id}/members/{user}": s.removeDocMember,
+		"PUT /api/docs/{id}/chats/{cid}": s.setDocChat, "DELETE /api/docs/{id}/chats/{cid}": s.removeDocChat, "POST /api/docs/{id}/send": s.sendDoc, "GET /api/docs/{id}/export": s.exportDoc,
+		"GET /api/docs/{id}/versions": s.docVersions, "GET /api/docs/{id}/versions/{version}": s.docVersion, "POST /api/docs/{id}/versions/{version}/restore": s.restoreDocVersion, "POST /api/docs/{id}/ai": s.docAI,
 		"GET /api/ws": s.events, "POST /api/remotes": s.inviteRemote, "GET /api/remotes/{id}": s.getRemote, "POST /api/remotes/{id}/respond": s.respondRemote, "POST /api/remotes/{id}/end": s.endRemote, "GET /api/remotes/{id}/tunnel": s.tunnel,
 	} {
 		s.mux.Handle(pattern, s.auth(h))

@@ -190,7 +190,7 @@ func TestHistorySearchFiltersPaginationContextAndReplyRedaction(t *testing.T) {
 		t.Fatal("recalled original leaked in quote")
 	}
 	f.request("POST", "/api/conversations/"+cid+"/messages", a.Token, map[string]string{"text": "不能引用撤回的记录", "replyId": root.ID, "clientId": newID()}, 400, nil)
-	if _, err := f.s.db.Exec("UPDATE messages SET created=? WHERE id=?", now()-121000, reply.ID); err != nil {
+	if _, err := f.s.db.Exec("UPDATE messages SET created=? WHERE id=?", now()-recallWindow.Milliseconds()-1000, reply.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.request("POST", "/api/messages/"+reply.ID+"/recall", b.Token, nil, 400, nil)
