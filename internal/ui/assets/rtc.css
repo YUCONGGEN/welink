@@ -213,8 +213,8 @@ body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#
  #meeting-layer .meeting-members{width:120px;padding:14px 8px}
  #remote-sharing-pill{top:auto;bottom:calc(76px + env(safe-area-inset-bottom))}
 }
-.remote-screen .remote-canvas canvas{display:block;max-width:100%;max-height:100%;touch-action:none;outline:0;box-shadow:0 10px 40px rgba(0,0,0,.45)}
-.remote-screen .remote-canvas canvas:not([data-width]){visibility:hidden}
+.remote-screen .remote-canvas #remote-image{display:block;max-width:100%;max-height:100%;touch-action:none;outline:0;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.remote-screen .remote-canvas #remote-image:not([data-width]){visibility:hidden}
 
 /* Minimised 1:1 call (audio or video, desktop or phone): a compact card in the
    corner. Last in the file so it beats the call-size rules above. */
@@ -227,8 +227,8 @@ body .remote-screen .remote-toolbar [data-action=stop-remote]:hover{background:#
 
 /* 1:1 remote pixels: no scaling, scroll when larger than the window */
 .remote-screen .remote-canvas.actual-size{display:block;overflow:auto;text-align:center}
-.remote-screen .remote-canvas.actual-size canvas{display:inline-block;max-width:none;max-height:none;margin:auto;vertical-align:top}
-.remote-screen .remote-canvas canvas{image-rendering:auto}
+.remote-screen .remote-canvas.actual-size #remote-image{display:inline-block;max-width:none;max-height:none;margin:auto;vertical-align:top}
+.remote-screen .remote-canvas #remote-image{image-rendering:auto}
 body .remote-screen .remote-toolbar button.on{border-color:#3d8bff;background:#1d3a5f;color:#cfe4ff}
 
 /* Viewers enlarge the presenter's shared screen: the tile fills the window */
@@ -240,4 +240,5 @@ body .remote-screen .remote-toolbar button.on{border-color:#3d8bff;background:#1
 #meeting-layer.screen-focus .meeting-tile.meeting-focus{position:fixed;inset:0;z-index:90;border:0;border-radius:0;background:#000;cursor:zoom-out}
 #meeting-layer.screen-focus .meeting-tile.meeting-focus video{object-fit:contain}
 #meeting-layer.screen-focus .meeting-tile.meeting-focus .meeting-tile-full{top:14px;right:14px}
-.remote-screen .remote-canvas .resampled-view{box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.remote-screen .remote-canvas .resampled-view{display:block;visibility:visible;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.remote-screen .remote-canvas .resampled-view[hidden]{display:none}

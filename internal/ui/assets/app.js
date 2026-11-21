@@ -834,7 +834,7 @@ void main(){
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.28";
+  var CLIENT_VERSION = "0.1.29";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {

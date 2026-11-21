@@ -37,6 +37,10 @@ async function signIn(p,person){await p.route('**/api/auth/login',r=>{const b=JS
 // The invited person is online; the engine itself is synthetic.
 const hostPage=await (await browser.newContext()).newPage();await hostPage.route('**/local/remote/**',route=>route.fulfill({json:{ok:true}}));await signIn(hostPage,host);
 
+// Sessions are ended even when an assertion fails, so a rerun can invite again.
+const started=[];
+const endAll=()=>Promise.all(started.map(id=>fetch(base+'/api/remotes/'+id+'/end',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+viewer.token},body:'{}'}).catch(()=>{})));
+try{
 for(const dpr of [1,1.25]){
  const ctx=await browser.newContext({viewport:{width:1100,height:740},deviceScaleFactor:dpr}),p=await ctx.newPage(),inputs=[];
  p.on('pageerror',e=>errors.push(e.message));
@@ -50,11 +54,17 @@ for(const dpr of [1,1.25]){
  await signIn(p,viewer);
  await p.locator('[data-conversation="'+cid+'"]').click();await p.locator('[data-action=remote]:visible').click();
  const waiting=p.waitForResponse(r=>new URL(r.url()).pathname==='/api/remotes'&&r.request().method()==='POST');
- await p.locator('[data-invite-remote=control][data-direction=request]').click();const invited=await waiting,reply=await invited.json();assert.equal(invited.status(),200,JSON.stringify(reply));const rid=reply.id;
+ await p.locator('[data-invite-remote=control][data-direction=request]').click();const invited=await waiting,reply=await invited.json();assert.equal(invited.status(),200,JSON.stringify(reply));const rid=reply.id;started.push(rid);
  await api('/api/remotes/'+rid+'/respond',host.token,{accept:true,deviceId:'123456789012345678901234'});
  await p.locator('.remote-screen').waitFor();await p.waitForFunction(()=>document.querySelector('#remote-image')?.dataset.resampling);
  const fit=await p.evaluate(()=>{const c=document.querySelector('#remote-image'),o=document.querySelector('.resampled-view'),b=c.getBoundingClientRect(),d=devicePixelRatio;return {mode:c.dataset.resampling,opacity:c.style.opacity,outW:o?.width,outH:o?.height,shown:o&&!o.hidden,w:b.width*d,h:b.height*d,x:b.left*d,y:b.top*d}});
  const whole=v=>Math.abs(v-Math.round(v))<0.02;
+ // What is on screen, not just element state: the picture is light, the
+ // area around it dark, so a hidden or transparent picture reads as dark.
+ const seen=async()=>{const box=await p.locator('.remote-canvas').boundingBox(),shot=(await p.screenshot({clip:{x:box.x+box.width*.3,y:box.y+box.height*.3,width:box.width*.4,height:box.height*.4}})).toString('base64');return p.evaluate(async b=>{const i=new Image();i.src='data:image/png;base64,'+b;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const g=c.getContext('2d');g.drawImage(i,0,0);const d=g.getImageData(0,0,c.width,c.height).data;let s=0;for(let k=0;k<d.length;k+=4)s+=d[k+1];return s/(d.length/4)},shot)};
+ const visible=await p.evaluate(()=>{const o=document.querySelector('.resampled-view'),st=getComputedStyle(o);return st.visibility==='visible'&&st.display!=='none'});
+ assert.ok(visible,`dpr ${dpr}: the scaled copy is visible`);
+ const brightness=await seen();assert.ok(brightness>150,`dpr ${dpr}: the remote picture is on screen (brightness ${brightness.toFixed(0)})`);
  assert.equal(fit.mode,'lanczos3',`dpr ${dpr}: scaled through Lanczos3`);
  assert.ok(fit.shown&&fit.opacity==='0',`dpr ${dpr}: the scaled copy covers the canvas`);
  assert.equal(fit.outW,Math.round(fit.w),`dpr ${dpr}: copy has one pixel per device pixel`);
@@ -65,6 +75,7 @@ for(const dpr of [1,1.25]){
  assert.ok(Math.abs(move.x-W*0.25)<=2&&Math.abs(move.y-H*0.5)<=2,`dpr ${dpr}: click maps to ${move.x},${move.y}`);
  // 1:1 shows every remote pixel on exactly one device pixel.
  await p.locator('[data-action=remote-actual]').click();
+ assert.ok(await seen()>150,'1:1 picture on screen');
  const actual=await p.evaluate(()=>{const c=document.querySelector('#remote-image'),b=c.getBoundingClientRect(),d=devicePixelRatio;return {mode:c.dataset.resampling,w:b.width*d,h:b.height*d,render:c.style.imageRendering,x:b.left*d}});
  assert.equal(actual.mode,'native');assert.ok(Math.abs(actual.w-W)<0.5&&Math.abs(actual.h-H)<0.5,`dpr ${dpr}: 1:1 is ${actual.w}x${actual.h}`);assert.equal(actual.render,'pixelated');assert.ok(whole(actual.x));
  await p.locator('[data-action=remote-actual]').click();
@@ -78,6 +89,7 @@ for(const dpr of [1,1.25]){
  console.log(`dpr ${dpr}: Lanczos3 ${fit.outW}x${fit.outH} at (${fit.x},${fit.y}); 1:1 ${actual.w}x${actual.h}; click -> ${move.x},${move.y}`);
  await ctx.close();
 }
+}finally{await endAll()}
 await browser.close();
 assert.deepEqual(errors,[]);
 console.log('remote view ok');
