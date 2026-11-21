@@ -238,12 +238,17 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Receipts: the staff member's read position, so YzDesk shows 已读 / 未读
-	// under the user's own messages (seq <= peerReadSeq is read).
+	// under the user's own messages (seq <= peerReadSeq is read), and the
+	// user's own, for the divider before staff messages not read yet.
 	peerRead, err := s.yudeskPeerReadSeq(cid, peer.ID)
 	if err != nil {
 		peerRead = 0
 	}
-	ok(w, map[string]any{"ok": true, "userId": id, "messages": messages, "peerReadSeq": peerRead})
+	ownRead, err := s.yudeskPeerReadSeq(cid, id)
+	if err != nil {
+		ownRead = 0
+	}
+	ok(w, map[string]any{"ok": true, "userId": id, "messages": messages, "peerReadSeq": peerRead, "readSeq": ownRead})
 }
 
 // yudeskSupportImageSend turns the bridge's bounded base64 image into the

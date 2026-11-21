@@ -59,6 +59,22 @@ func TestYuDeskSupportFilesAndReceipts(t *testing.T) {
 	if h.PeerReadSeq == nil || *h.PeerReadSeq < h.Messages[0].Seq {
 		t.Fatal("staff read not reported", h.PeerReadSeq)
 	}
+	// The customer's own read position: behind a staff message until read.
+	reply := forwardAttachment(t, f, cid, staff, "reply.txt", "file", "text/plain", []byte("ok"))
+	var own struct {
+		Messages []Message
+		ReadSeq  *int64
+	}
+	f.request("POST", path, key, history, 200, &own)
+	if own.ReadSeq == nil || *own.ReadSeq >= reply.Seq {
+		t.Fatal("own read position missing or ahead", own.ReadSeq)
+	}
+	read := map[string]any{"action": "read", "email": "file-bridge@example.com", "staff": []string{staff.User.Number}, "peer": staff.User.Number, "messageId": reply.ID}
+	f.request("POST", path, key, read, 200, nil)
+	f.request("POST", path, key, history, 200, &own)
+	if own.ReadSeq == nil || *own.ReadSeq < reply.Seq {
+		t.Fatal("own read not reported", own.ReadSeq)
+	}
 
 	// Refused: too large, no name, bad data.
 	big := map[string]any{}
