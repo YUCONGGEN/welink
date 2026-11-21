@@ -314,8 +314,8 @@ func (c *Client) local(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(300 * time.Millisecond)
 			}
 			localJSON(w, c.appUpdateStatus())
-		case "/local/screen/frame":
-			c.serveScreenFrame(w, r)
+		case "/local/screen/tiles":
+			c.serveScreenTiles(w, r)
 		case "/local/remote/state":
 			localJSON(w, c.Remote.State())
 		case "/local/remote/tiles":

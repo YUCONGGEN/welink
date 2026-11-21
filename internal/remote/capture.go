@@ -51,9 +51,9 @@ const (
 var motionTiles = 16 // a variable so the latency test can compare without it
 
 const (
-	motionQuality = 82
-	refineDelay   = 200 * time.Millisecond
-	refineTiles   = 8
+	motionQuality = 85
+	refineDelay   = 150 * time.Millisecond
+	refineTiles   = 16
 )
 
 // capture runs grab+encode on this goroutine and the network write on

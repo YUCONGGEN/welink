@@ -174,3 +174,22 @@ func (h *tileHub) Wait(ctx context.Context, after uint64, timeout time.Duration)
 		return append(body, data...)
 	}
 }
+
+// TileHub lets other local pictures (the meeting screen share) use the same
+// revisioned tile cache and long-poll body as the remote viewer.
+type TileHub struct{ h *tileHub }
+
+func NewTileHub() *TileHub { return &TileHub{h: newTileHub()} }
+
+// Publish stores a tile frame from a stream.TileEncoder.
+func (t *TileHub) Publish(f stream.TileFrame, data []byte) error { return t.h.publish(f, data, false) }
+
+// PublishImage stores one complete JPEG or PNG picture as a reset frame.
+func (t *TileHub) PublishImage(data []byte, width, height int) error {
+	return t.h.publishJPEG(data, width, height)
+}
+
+// Wait is tileHub.Wait.
+func (t *TileHub) Wait(ctx context.Context, after uint64, timeout time.Duration) []byte {
+	return t.h.Wait(ctx, after, timeout)
+}

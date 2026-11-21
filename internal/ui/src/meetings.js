@@ -1,3 +1,4 @@
+import {runRemoteFrames} from './remote-frames.js';
 import {APP_NAME} from './branding.js';
 import {tuneMeetingPeer,lowLatencyReceiver} from './meeting-tuning.js';
 import {meetingWindow} from './meeting-window.js';
@@ -115,19 +116,18 @@ export function createMeetings({api,action,S,modal,closeModal,toast,esc,icon,av,
  async function toggle(kind){const active=room;if(!active)return;active.pendingMedia??=new Set();if(active.pendingMedia.has(kind))return;active.pendingMedia.add(kind);try{const tracks=kind==='audio'?active.stream.getAudioTracks():active.stream.getVideoTracks();if(tracks.length)tracks.forEach(t=>t.enabled=!t.enabled);else{const stream=await navigator.mediaDevices.getUserMedia(kind==='audio'?{audio:{echoCancellation:true}}:{video:true});if(room!==active){stream.getTracks().forEach(t=>t.stop());return}for(const t of stream.getTracks()){active.stream.addTrack(t);for(const p of active.peers.values()){if(room!==active)return;if(kind==='video'&&active.screen)continue;const sender=p.pc.getSenders().find(s=>s.track?.kind===kind);if(sender)await sender.replaceTrack(t);else p.pc.addTrack(t,active.stream)}}}if(room!==active)return;if(!active.screen)tile(active.id,S.user.name,active.stream,true);state()}finally{active.pendingMedia.delete(kind)}}
  async function replaceVideo(track,stream){for(const p of room.peers.values()){const transceiver=p.pc.getTransceivers().find(t=>t.sender.track?.kind==='video'||t.receiver.track?.kind==='video');if(transceiver){if(track&&transceiver.direction==='recvonly')transceiver.direction='sendrecv';await transceiver.sender.replaceTrack(track)}else if(track)p.pc.addTrack(track,stream);p.tuningKey='';await tuneMeetingPeer(p,!!room.screen,room.peers.size)}}
  // On the Windows app the screen comes from LinkMe's own capture, so the
- // browser shows no separate "sharing your screen" bar or window.
+ // browser shows no separate "sharing your screen" bar or window. The page
+ // receives the screen as lossless tiles at its own resolution (only what
+ // changed) and WebRTC encodes those exact pixels.
  async function nativeScreen(){
-  const first=await fetch('/local/screen/frame?after=0',{cache:'no-store'});
-  if(first.status!==200)throw Error('无法共享屏幕，请稍后重试');
-  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');let seq=+first.headers.get('X-Frame')||0,alive=true,last=null;
-  const draw=async blob=>{const bitmap=await createImageBitmap(blob);if(canvas.width!==bitmap.width||canvas.height!==bitmap.height){canvas.width=bitmap.width;canvas.height=bitmap.height}ctx.drawImage(bitmap,0,0);last?.close();last=bitmap};
-  await draw(await first.blob());
-  const stream=canvas.captureStream(15),track=stream.getVideoTracks()[0],stop=track.stop.bind(track);
-  track.stop=()=>{alive=false;last?.close();last=null;stop()};
-  (async()=>{while(alive){try{const r=await fetch('/local/screen/frame?after='+seq,{cache:'no-store'});if(!alive)break;
-   // Unchanged screen: repaint so people who join later still get a picture.
-   if(r.status===204){if(last)ctx.drawImage(last,0,0);continue}
-   if(!r.ok){await new Promise(t=>setTimeout(t,500));continue}seq=+r.headers.get('X-Frame')||seq;await draw(await r.blob())}catch{await new Promise(t=>setTimeout(t,500))}}})();
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=0;let alive=true,painted=0;
+  const first=new Promise((resolve,reject)=>{runRemoteFrames(canvas,()=>alive,()=>{painted=Date.now();resolve()},error=>{if(alive)reject(error)},'/local/screen/tiles').catch(reject)});
+  try{await Promise.race([first,new Promise((_,reject)=>setTimeout(()=>reject(Error('无法共享屏幕，请稍后重试')),8000))])}catch(e){alive=false;throw e}
+  const stream=canvas.captureStream(30),track=stream.getVideoTracks()[0],stop=track.stop.bind(track),ctx=canvas.getContext('2d',{alpha:false});
+  // An unchanged screen still sends a picture now and then, so people who
+  // join later get one.
+  const keep=setInterval(()=>{if(Date.now()-painted<1000||!canvas.width)return;try{ctx.putImageData(ctx.getImageData(0,0,1,1),0,0);painted=Date.now()}catch{}},500);
+  track.stop=()=>{alive=false;clearInterval(keep);stop()};
   return stream;
  }
  async function share(){

@@ -77,12 +77,13 @@ async function paintStream(canvas,stream,meta,size,shouldPaint){
 
 // runRemoteFrames paints until live() turns false. onFrame runs after each
 // painted update; onError receives repeated failures.
-export async function runRemoteFrames(canvas,live,onFrame,onError){
+// endpoint serves the same format for another picture (meeting screen share).
+export async function runRemoteFrames(canvas,live,onFrame,onError,endpoint='/local/remote/tiles'){
  let revision=0,failures=0;
  while(live()){
   let reader,failed=false;
   try{
-   const response=await fetch('/local/remote/tiles?after='+revision,{cache:'no-store'});
+   const response=await fetch(endpoint+'?after='+revision,{cache:'no-store'});
    if(!live())return;
    if(response.status===204){failures=0;continue}
    if(!response.ok)throw Error('远程画面暂时不可用');

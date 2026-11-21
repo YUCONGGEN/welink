@@ -32,5 +32,5 @@ export function remotePoint(event,image){
  const box=image.getBoundingClientRect(),width=Number(image.dataset.width),height=Number(image.dataset.height);
  if(!width||!height||!box.width||!box.height)return {type:'move',x:0,y:0};
  const scale=Math.min(box.width/width,box.height/height),left=box.left+(box.width-width*scale)/2,top=box.top+(box.height-height*scale)/2;
- return {type:'move',x:Math.max(0,Math.min(width-1,Math.round((event.clientX-left)/scale))),y:Math.max(0,Math.min(height-1,Math.round((event.clientY-top)/scale)))};
+ return {type:'move',x:Math.max(0,Math.min(width-1,Math.floor((event.clientX-left)/scale))),y:Math.max(0,Math.min(height-1,Math.floor((event.clientY-top)/scale)))};
 }
