@@ -43,6 +43,9 @@ type yudeskSupportRequest struct {
 	MessageID    string   `json:"messageId"`
 	Credential   string   `json:"credential"`
 	Revision     int64    `json:"revision"`
+	FileData     string   `json:"fileData"`
+	FileName     string   `json:"fileName"`
+	FileMime     string   `json:"fileMime"`
 }
 
 func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
@@ -77,11 +80,11 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 			p.Phone = "email:" + email
 		}
 	}
-	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send" && p.Action != "account-sync" && p.Action != "image" && p.Action != "read") {
+	if (p.Action != "validate" && !validIdentity) || len(p.Staff) > 20 || (p.Action != "validate" && p.Action != "bootstrap" && p.Action != "history" && p.Action != "send" && p.Action != "account-sync" && p.Action != "image" && p.Action != "file" && p.Action != "read") {
 		fail(w, 400, "客服请求无效")
 		return
 	}
-	if p.Action == "send" && p.Kind != "" && p.Kind != "text" && p.Kind != "image" {
+	if p.Action == "send" && p.Kind != "" && p.Kind != "text" && p.Kind != "image" && p.Kind != "file" {
 		fail(w, 400, "客服消息类型无效")
 		return
 	}
@@ -167,7 +170,7 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 			s.dbError(w, e)
 			return
 		}
-		ok(w, map[string]any{"ok": true, "userId": id, "origin": "来自 YuDesk", "staff": contacts, "credentialRevision": revision})
+		ok(w, map[string]any{"ok": true, "userId": id, "origin": "来自 YuDesk", "staff": contacts, "credentialRevision": revision, "features": yudeskBridgeFeatures})
 		return
 	}
 	if peer.ID == id {
@@ -200,11 +203,19 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		s.yudeskSupportImage(w, r, id, cid, p.AttachmentID)
 		return
 	}
+	if p.Action == "file" {
+		s.yudeskSupportFile(w, r, id, cid, p.AttachmentID)
+		return
+	}
 	child := r.Clone(context.WithValue(r.Context(), userKey{}, id))
 	child.SetPathValue("id", cid)
 	if p.Action == "send" {
 		if p.Kind == "image" {
 			s.yudeskSupportImageSend(w, child, p)
+			return
+		}
+		if p.Kind == "file" {
+			s.yudeskSupportFileSend(w, child, p)
 			return
 		}
 		raw, _ := json.Marshal(map[string]string{"kind": "text", "text": p.Text, "clientId": p.ClientID})
@@ -226,7 +237,13 @@ func (s *Server) yudeskSupport(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "忙碌中")
 		return
 	}
-	ok(w, map[string]any{"ok": true, "userId": id, "messages": messages})
+	// Receipts: the staff member's read position, so YzDesk shows 已读 / 未读
+	// under the user's own messages (seq <= peerReadSeq is read).
+	peerRead, err := s.yudeskPeerReadSeq(cid, peer.ID)
+	if err != nil {
+		peerRead = 0
+	}
+	ok(w, map[string]any{"ok": true, "userId": id, "messages": messages, "peerReadSeq": peerRead})
 }
 
 // yudeskSupportImageSend turns the bridge's bounded base64 image into the
