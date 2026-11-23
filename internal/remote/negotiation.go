@@ -25,6 +25,9 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 		Seed    []byte `json:"laneSeed"`
 		Tiles   bool   `json:"tiles,omitempty"`
 		Ack     bool   `json:"ack,omitempty"`
+		// InputFast: the input lane repeats unacknowledged clicks and moves
+		// (peerpath inputfast.go). Older versions ignore it.
+		InputFast bool `json:"inputFastV1,omitempty"`
 	}
 	deadline := time.Now().Add(20 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
@@ -33,7 +36,7 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 	if err := base.SetDeadline(deadline); err != nil {
 		return nil, peerpath.Info{}, transportFeatures{}, err
 	}
-	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond), Tiles: true, Ack: true}
+	local := capabilities{Version: 2, Timeout: int(options.Timeout / time.Millisecond), Tiles: true, Ack: true, InputFast: true}
 	write := func() error {
 		raw, _ := json.Marshal(local)
 		return base.WriteMessageContext(ctx, protocol.Message{Kind: "linkme-transport", Params: raw})
@@ -73,6 +76,7 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 			// The viewer only echoes tiles when the agent offered them.
 			local.Tiles = remote.Tiles
 			local.Ack = remote.Ack
+			local.InputFast = remote.InputFast
 			err = write()
 		}
 	}
@@ -83,12 +87,12 @@ func negotiateTransport(ctx context.Context, base *protocol.Conn, role string, o
 	if err = base.SetDeadline(time.Time{}); err != nil {
 		return nil, peerpath.Info{}, transportFeatures{}, err
 	}
-	features := transportFeatures{Tiles: local.Tiles && remote.Tiles, Ack: local.Ack && remote.Ack}
+	features := transportFeatures{Tiles: local.Tiles && remote.Tiles, Ack: local.Ack && remote.Ack, InputFast: local.InputFast && remote.InputFast}
 	options.Timeout = min(options.Timeout, time.Duration(remote.Timeout)*time.Millisecond)
 	options.TrickleICE = true
-	pc, info, err := peerpath.Negotiate(ctx, base, role, nil, options.WithSessionLanes(local.Seed))
+	pc, info, err := peerpath.Negotiate(ctx, base, role, nil, options.WithSessionLanes(local.Seed).WithInputFast(features.InputFast))
 	return pc, info, features, err
 }
 
 // transportFeatures are the optional capabilities both sides agreed on.
-type transportFeatures struct{ Tiles, Ack bool }
+type transportFeatures struct{ Tiles, Ack, InputFast bool }

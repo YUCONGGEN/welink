@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pion/ice/v4"
+	"github.com/pion/logging"
 	"github.com/pion/sdp/v3"
 	"github.com/pion/stun/v4"
 	"github.com/pion/webrtc/v4"
@@ -103,6 +104,9 @@ func newAttempt(ctx context.Context, o Options, gatherBudget time.Duration) (*at
 	settings.SetICETimeouts(disconnectedTimeout, failedTimeout, time.Second)
 	settings.SetSCTPMaxReceiveBufferSize(bufferLimit)
 	settings.SetSCTPMaxMessageSize(chunkSize)
+	// The input lane repeats its unacknowledged messages when both peers
+	// agreed (inputfast.go); otherwise this is Pion's default factory.
+	settings.LoggerFactory = withThinStreams(logging.NewDefaultLoggerFactory(), o)
 	makeNetwork := newAttemptNetwork
 	if o.newNet != nil {
 		makeNetwork = o.newNet

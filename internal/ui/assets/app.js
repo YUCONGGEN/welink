@@ -730,6 +730,12 @@ void main(){
       this.container = source.parentElement;
       this.failed = false;
       this.closed = false;
+      this.moving = false;
+      this.settle = 0;
+      this.behind = 0;
+      this.passes = 0;
+      this.lastEnd = 0;
+      this.lastMs = 0;
       this.output = document.createElement("canvas");
       this.output.className = "resampled-view";
       this.output.setAttribute("aria-hidden", "true");
@@ -757,23 +763,58 @@ void main(){
         if (!this.failed) source.dataset.resampling = nativePixels ? "native" : "identity";
         return;
       }
+      if (newFrame && this.frame()) return;
+      if (this.moving) return;
       if (!changed && !this.output.hidden) return;
+      this.pass();
+    }
+    // frame notes a new picture and reports whether it is shown unscaled
+    // (motion) rather than through a pass.
+    frame() {
+      const now = performance.now();
+      if (this.passes > 1 && now - this.lastEnd < this.lastMs) {
+        if (++this.behind >= BEHIND) {
+          this.moving = true;
+          this.slow = 0;
+        }
+      } else if (!this.moving) this.behind = 0;
+      if (!this.moving) return false;
+      clearTimeout(this.settle);
+      this.settle = setTimeout(() => {
+        this.settle = 0;
+        this.moving = false;
+        this.behind = 0;
+        if (!this.closed && !this.failed) this.pass();
+      }, SETTLE_MS);
+      this.output.hidden = true;
+      this.source.style.opacity = "";
+      this.source.dataset.resampling = "motion";
+      return true;
+    }
+    pass() {
+      const source = this.source, dpr = Number(window.devicePixelRatio) || 1, box = source.getBoundingClientRect();
+      const width = Math.max(1, Math.round(box.width * dpr)), height = Math.max(1, Math.round(box.height * dpr));
+      if (width === source.width && height === source.height) return;
       try {
         this.scaler ??= new GPUScaler(this.output);
         const started = performance.now(), count = this.scaler.draw(source, width, height);
         const ms = performance.now() - started;
+        this.passes++;
+        this.lastMs = ms;
+        this.lastEnd = performance.now();
         this.output.hidden = false;
         source.style.opacity = "0";
         source.dataset.resampling = "lanczos3";
         source.dataset.resamplePasses = String(count);
         source.dataset.resampleMs = ms.toFixed(2);
-        this.slow = ms > SLOW_DRAW ? (this.slow || 0) + 1 : 0;
+        this.slow = ms > SLOW_DRAW && this.passes > 1 ? (this.slow || 0) + 1 : 0;
         if (this.slow >= SLOW_FRAMES) this.fail();
       } catch {
         this.fail();
       }
     }
     close() {
+      clearTimeout(this.settle);
       this.closed = true;
       this.scaler?.close();
       this.output.remove();
@@ -782,6 +823,8 @@ void main(){
   };
   var SLOW_DRAW = 20;
   var SLOW_FRAMES = 5;
+  var SETTLE_MS = 150;
+  var BEHIND = 4;
   var fitted = /* @__PURE__ */ new WeakMap();
   var presenters = /* @__PURE__ */ new WeakMap();
   function fitRemoteView(canvas, container, actualSize = false, newFrame = false) {
@@ -834,7 +877,7 @@ void main(){
   }
 
   // internal/ui/src/branding.js
-  var CLIENT_VERSION = "0.1.29";
+  var CLIENT_VERSION = "0.1.30";
   var APP_NAME = "LinkMe";
   var brandIconURL = "";
   function setBrand(name, iconVersion) {

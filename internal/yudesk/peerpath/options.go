@@ -80,6 +80,8 @@ type Options struct {
 	RelayLane func(context.Context, string) (net.Conn, error)
 	laneSeed  []byte // accepted only inside the authorized E2E auth bootstrap
 	laneRole  string
+	// inputFast: both peers negotiated the input fast lane (inputfast.go).
+	inputFast bool
 
 	// Per-call fault injection; never global, so concurrent tests stay isolated.
 	configure func(*webrtc.SettingEngine)

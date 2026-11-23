@@ -95,9 +95,22 @@ class GPUScaler{
 
 // Presenter draws the scaled copy synchronously on the main thread, one
 // frame at a time; the newest frame wins while one is being drawn.
+//
+// Motion (YuDesk resample.js, 191): while new frames come faster than
+// Lanczos passes can keep up (scrolling, dragging, video in a large window),
+// the source canvas is shown scaled by the compositor and one Lanczos pass
+// runs once the picture settles: no new frame for SETTLE_MS. A frame counts
+// as behind when it arrives before the previous pass's own duration has
+// passed again, i.e. the scaler would take half the main thread or more;
+// BEHIND such frames in a row switch to motion. The first pass (which
+// compiles the program and builds the kernels) never counts, and typing or
+// small sources that keep up are resampled every frame as before. The tiles
+// sent during motion are lossy anyway and are refined shortly after the
+// picture settles, which the settled pass then shows sharp.
 class Presenter{
  constructor(source){
   this.source=source;this.container=source.parentElement;this.failed=false;this.closed=false;
+  this.moving=false;this.settle=0;this.behind=0;this.passes=0;this.lastEnd=0;this.lastMs=0;
   this.output=document.createElement('canvas');this.output.className='resampled-view';this.output.setAttribute('aria-hidden','true');this.output.hidden=true;
   Object.assign(this.output.style,{position:'absolute',pointerEvents:'none',maxWidth:'none',maxHeight:'none',margin:'0',padding:'0',border:'0',flex:'none',zIndex:'0'});
   this.container.append(this.output);
@@ -111,20 +124,41 @@ class Presenter{
   const enabled=!nativePixels&&source.dataset.ready==='1'&&(width!==source.width||height!==source.height);
   Object.assign(this.output.style,{left:box.left-parent.left-this.container.clientLeft+this.container.scrollLeft+'px',top:box.top-parent.top-this.container.clientTop+this.container.scrollTop+'px',width:box.width+'px',height:box.height+'px'});
   if(!enabled||this.failed){this.output.hidden=true;source.style.opacity='';if(!this.failed)source.dataset.resampling=nativePixels?'native':'identity';return}
+  if(newFrame&&this.frame())return;
+  // A resize or scroll during motion waits for the settled pass.
+  if(this.moving)return;
   if(!changed&&!this.output.hidden)return;
+  this.pass();
+ }
+ // frame notes a new picture and reports whether it is shown unscaled
+ // (motion) rather than through a pass.
+ frame(){
+  const now=performance.now();
+  if(this.passes>1&&now-this.lastEnd<this.lastMs){if(++this.behind>=BEHIND){this.moving=true;this.slow=0}}else if(!this.moving)this.behind=0;
+  if(!this.moving)return false;
+  clearTimeout(this.settle);
+  this.settle=setTimeout(()=>{this.settle=0;this.moving=false;this.behind=0;if(!this.closed&&!this.failed)this.pass()},SETTLE_MS);
+  this.output.hidden=true;this.source.style.opacity='';this.source.dataset.resampling='motion';
+  return true;
+ }
+ pass(){
+  const source=this.source,dpr=Number(window.devicePixelRatio)||1,box=source.getBoundingClientRect();
+  const width=Math.max(1,Math.round(box.width*dpr)),height=Math.max(1,Math.round(box.height*dpr));
+  if(width===source.width&&height===source.height)return;
   try{
    this.scaler??=new GPUScaler(this.output);
    const started=performance.now(),count=this.scaler.draw(source,width,height);
-   const ms=performance.now()-started;this.output.hidden=false;source.style.opacity='0';source.dataset.resampling='lanczos3';source.dataset.resamplePasses=String(count);source.dataset.resampleMs=ms.toFixed(2);
+   const ms=performance.now()-started;this.passes++;this.lastMs=ms;this.lastEnd=performance.now();this.output.hidden=false;source.style.opacity='0';source.dataset.resampling='lanczos3';source.dataset.resamplePasses=String(count);source.dataset.resampleMs=ms.toFixed(2);
    // Without real GPU acceleration the scaler would hold up every frame:
-   // fall back to the browser's scaling rather than add latency.
-   this.slow=ms>SLOW_DRAW?(this.slow||0)+1:0;if(this.slow>=SLOW_FRAMES)this.fail();
+   // fall back to the browser's scaling rather than add latency. Passes that
+   // only fell behind fast frames do not count; motion takes those.
+   this.slow=ms>SLOW_DRAW&&this.passes>1?(this.slow||0)+1:0;if(this.slow>=SLOW_FRAMES)this.fail();
   }catch{this.fail()}
  }
- close(){this.closed=true;this.scaler?.close();this.output.remove();this.source.style.opacity=''}
+ close(){clearTimeout(this.settle);this.closed=true;this.scaler?.close();this.output.remove();this.source.style.opacity=''}
 }
 
-const SLOW_DRAW=20,SLOW_FRAMES=5;
+const SLOW_DRAW=20,SLOW_FRAMES=5,SETTLE_MS=150,BEHIND=4;
 const fitted=new WeakMap(),presenters=new WeakMap();
 
 // fitRemoteView sizes canvas inside container. nativePixels shows every
@@ -163,4 +197,4 @@ export function fitRemoteView(canvas,container,actualSize=false,newFrame=false){
 }
 
 export function disposeRemoteView(canvas){presenters.get(canvas)?.close();presenters.delete(canvas);fitted.delete(canvas)}
-export const remoteViewInternals={passes,kernel};
+export const remoteViewInternals={passes,kernel,SETTLE_MS,BEHIND};

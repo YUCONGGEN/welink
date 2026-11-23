@@ -6,6 +6,12 @@ go 1.25.0
 
 replace github.com/wlynxg/anet => ./third_party/anet
 
+// YuDesk's patched Pion SCTP v1.11.1 (third_party/sctp/YZDESK_PATCH.md):
+// immediate SACK on a burst's last chunk, a path-derived tail-loss probe and
+// RTO, and thin streams for the input fast lane. Sender-side only; the wire
+// format is standard SCTP, so older LinkMe peers interoperate.
+replace github.com/pion/sctp => ./third_party/sctp
+
 require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/gorilla/websocket v1.5.3

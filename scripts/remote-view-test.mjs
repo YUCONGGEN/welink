@@ -37,6 +37,10 @@ async function signIn(p,person){await p.route('**/api/auth/login',r=>{const b=JS
 // The invited person is online; the engine itself is synthetic.
 const hostPage=await (await browser.newContext()).newPage();await hostPage.route('**/local/remote/**',route=>route.fulfill({json:{ok:true}}));await signIn(hostPage,host);
 
+// What is on screen, not just element state: the picture is light, the
+// area around it dark, so a hidden or transparent picture reads as dark.
+async function seenOn(p){const box=await p.locator('.remote-canvas').boundingBox(),shot=(await p.screenshot({clip:{x:box.x+box.width*.3,y:box.y+box.height*.3,width:box.width*.4,height:box.height*.4}})).toString('base64');return p.evaluate(async b=>{const i=new Image();i.src='data:image/png;base64,'+b;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const g=c.getContext('2d');g.drawImage(i,0,0);const d=g.getImageData(0,0,c.width,c.height).data;let s=0;for(let k=0;k<d.length;k+=4)s+=d[k+1];return s/(d.length/4)},shot)}
+
 // Sessions are ended even when an assertion fails, so a rerun can invite again.
 const started=[];
 const endAll=()=>Promise.all(started.map(id=>fetch(base+'/api/remotes/'+id+'/end',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+viewer.token},body:'{}'}).catch(()=>{})));
@@ -59,9 +63,7 @@ for(const dpr of [1,1.25]){
  await p.locator('.remote-screen').waitFor();await p.waitForFunction(()=>document.querySelector('#remote-image')?.dataset.resampling);
  const fit=await p.evaluate(()=>{const c=document.querySelector('#remote-image'),o=document.querySelector('.resampled-view'),b=c.getBoundingClientRect(),d=devicePixelRatio;return {mode:c.dataset.resampling,opacity:c.style.opacity,outW:o?.width,outH:o?.height,shown:o&&!o.hidden,w:b.width*d,h:b.height*d,x:b.left*d,y:b.top*d}});
  const whole=v=>Math.abs(v-Math.round(v))<0.02;
- // What is on screen, not just element state: the picture is light, the
- // area around it dark, so a hidden or transparent picture reads as dark.
- const seen=async()=>{const box=await p.locator('.remote-canvas').boundingBox(),shot=(await p.screenshot({clip:{x:box.x+box.width*.3,y:box.y+box.height*.3,width:box.width*.4,height:box.height*.4}})).toString('base64');return p.evaluate(async b=>{const i=new Image();i.src='data:image/png;base64,'+b;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const g=c.getContext('2d');g.drawImage(i,0,0);const d=g.getImageData(0,0,c.width,c.height).data;let s=0;for(let k=0;k<d.length;k+=4)s+=d[k+1];return s/(d.length/4)},shot)};
+ const seen=()=>seenOn(p);
  const visible=await p.evaluate(()=>{const o=document.querySelector('.resampled-view'),st=getComputedStyle(o);return st.visibility==='visible'&&st.display!=='none'});
  assert.ok(visible,`dpr ${dpr}: the scaled copy is visible`);
  const brightness=await seen();assert.ok(brightness>150,`dpr ${dpr}: the remote picture is on screen (brightness ${brightness.toFixed(0)})`);
@@ -88,6 +90,42 @@ for(const dpr of [1,1.25]){
  assert.equal(await p.locator('.resampled-view').count(),0,'the scaled copy is removed with the session');
  console.log(`dpr ${dpr}: Lanczos3 ${fit.outW}x${fit.outH} at (${fit.x},${fit.y}); 1:1 ${actual.w}x${actual.h}; click -> ${move.x},${move.y}`);
  await ctx.close();
+}
+// Motion (YuDesk 191): frames that come faster than Lanczos passes finish
+// are shown scaled by the browser; one pass runs once the picture settles.
+// The GPU is slowed by 40 ms a pass (a 4K picture on a weak GPU), so passes
+// cannot keep up with frames arriving every few tens of milliseconds.
+{
+ const ctx=await browser.newContext({viewport:{width:1100,height:740}}),p=await ctx.newPage();
+ p.on('pageerror',e=>errors.push(e.message));
+ await ctx.addInitScript(()=>{const flush=WebGLRenderingContext.prototype.flush;WebGLRenderingContext.prototype.flush=function(){const t=performance.now();while(performance.now()-t<40);return flush.call(this)}});
+ const tile=png(128,128,(x,y)=>(x+y)%7?240:30);
+ let revision=1,streaming=false,served=false;
+ const delta=()=>{revision++;const m=Buffer.from(JSON.stringify({revision,width:W,height:H,sourceWidth:W,sourceHeight:H,reset:false,tiles:[{x:(revision%10)*128,y:256,w:128,h:128,size:tile.length,mime:'image/png'}]})),h=Buffer.alloc(8);h.writeUInt32BE(m.length,0);h.writeUInt32BE(tile.length,4);return Buffer.concat([h,m,tile])};
+ await p.route('**/local/remote/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/tiles')){if(!served){served=true;return route.fulfill({contentType:'application/octet-stream',body})}if(streaming){await new Promise(r=>setTimeout(r,4));return route.fulfill({contentType:'application/octet-stream',body:delta()})}await new Promise(r=>setTimeout(r,500));return route.fulfill({status:204})}
+  return route.fulfill({json:path.endsWith('/state')?{status:'connected',role:'viewer',deviceId:'123456789012345678901234',width:W,height:H,frame:1,path:'p2p',rtt:3}:{ok:true}});
+ });
+ await signIn(p,viewer);
+ await p.locator('[data-conversation="'+cid+'"]').click();await p.locator('[data-action=remote]:visible').click();
+ const waiting=p.waitForResponse(r=>new URL(r.url()).pathname==='/api/remotes'&&r.request().method()==='POST');
+ await p.locator('[data-invite-remote=control][data-direction=request]').click();const rid=(await (await waiting).json()).id;started.push(rid);
+ await api('/api/remotes/'+rid+'/respond',host.token,{accept:true,deviceId:'123456789012345678901234'});
+ await p.waitForFunction(()=>document.querySelector('#remote-image')?.dataset.resampling==='lanczos3');
+ const mode=()=>p.evaluate(()=>{const c=document.querySelector('#remote-image'),o=document.querySelector('.resampled-view');return {mode:c.dataset.resampling,opacity:c.style.opacity,shown:!o.hidden}});
+ streaming=true;
+ await p.waitForFunction(()=>document.querySelector('#remote-image')?.dataset.resampling==='motion',null,{timeout:5000});
+ const moving=await mode();assert.ok(!moving.shown&&moving.opacity==='','motion shows the source canvas');
+ assert.ok(await seenOn(p)>150,'the picture is on screen in motion');
+ const before=revision;await p.waitForTimeout(400);assert.ok(revision-before>=10,`frames keep flowing in motion (${revision-before} in 400 ms)`);
+ assert.equal((await mode()).mode,'motion','stays in motion while frames keep coming');
+ streaming=false;const stopped=Date.now();
+ await p.waitForFunction(()=>document.querySelector('#remote-image')?.dataset.resampling==='lanczos3',null,{timeout:2000});
+ const settled=await mode();assert.ok(settled.shown&&settled.opacity==='0','the settled picture is Lanczos3 again');
+ assert.ok(await seenOn(p)>150,'the settled picture is on screen');
+ console.log(`motion: ${revision-1} delta frames, Lanczos3 again ${Date.now()-stopped} ms after the last frame`);
+ await p.locator('[data-action=stop-remote]').click();await ctx.close();
 }
 }finally{await endAll()}
 await browser.close();

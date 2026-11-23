@@ -49,8 +49,8 @@ func TestNegotiatedTransportAndInput(t *testing.T) {
 				if errs[i] != nil {
 					t.Fatal(errs[i])
 				}
-				if !features[i].Tiles || !features[i].Ack {
-					t.Fatal("both current endpoints must agree on tile updates and acks")
+				if !features[i].Tiles || !features[i].Ack || !features[i].InputFast {
+					t.Fatal("both current endpoints must agree on tile updates, acks and the input fast lane")
 				}
 				defer pc[i].Close()
 				pc[i].EnableInterleaving()
